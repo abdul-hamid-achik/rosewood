@@ -1,0 +1,11 @@
+[editor]
+autoSaveDelay = 2.0
+autoSaveEnabled = true
+fontFamily = 'SF Mono'
+fontSize = 13.0
+showLineNumbers = true
+tabSize = 4
+wordWrap = false
+
+[theme]
+name = 'nord'

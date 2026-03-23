@@ -1,0 +1,872 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		039A973A787C334B32C884AC /* FileItemTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3ED1D114A15A9352FF4B576 /* FileItemTests.swift */; };
+		065DDB5B564397C71FFCD975 /* Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D208E8EA661925BAEC0BF80 /* Extensions.swift */; };
+		09C219A8F94BCA39D4F5E541 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99605CE3D48406BAA5A539F0 /* SettingsView.swift */; };
+		0DDC1ADBC5DBEC2E6238C089 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7416394F3D6ADF193A83EF3 /* ContentView.swift */; };
+		19C3DC274B0D61EF93A4AFD9 /* CompletionPopupController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BEF7C942E735DEBCD2A5BFD7 /* CompletionPopupController.swift */; };
+		1D2B8256911EB8AA1206816E /* DebugSessionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C1ED559A640C0B57B9C65C5 /* DebugSessionService.swift */; };
+		1ECA6EB0D383DA94BCFAD3E0 /* JSONValueCodec.swift in Sources */ = {isa = PBXBuildFile; fileRef = 429E745BD3928BEF840632A6 /* JSONValueCodec.swift */; };
+		1EE229C88C2D31571E7BEE1F /* SessionStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F1BB1AF8037DFEEC1B4E515 /* SessionStateTests.swift */; };
+		20C8B6E00F38E7E614EFDFDA /* FileItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 472BA953100F865352D3BA38 /* FileItem.swift */; };
+		221959B628D173C5782C920B /* TabBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C934F12EA29C0BB1468C6713 /* TabBarView.swift */; };
+		230A1D1EAAC33A7CBDD1014B /* EditorTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E5BD33FB585F36C04ED2489 /* EditorTab.swift */; };
+		26660D492C69C1692CFF20FB /* CommandPaletteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C03E37445832BA5ECDF32F6E /* CommandPaletteView.swift */; };
+		2896EF33CC92D274DF2D7E4C /* EditorTabLSPTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DF1DCB788593285D11AFA32 /* EditorTabLSPTests.swift */; };
+		28AEE726216E009197959513 /* AppSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8C3C5BC3586B4EE563DE1EA /* AppSettings.swift */; };
+		2C1CD9C052981FD0CA9DBDD6 /* LSPClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A2EA394D9F69A6C4020607E /* LSPClient.swift */; };
+		2E73A871CFB1DC00E6BBABD8 /* CompletionPopupTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68A5335869847ADA25622DA9 /* CompletionPopupTests.swift */; };
+		398396F46497BCE2ECA34452 /* DebugConfigurationServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83CA571E1FE285D163FE12F8 /* DebugConfigurationServiceTests.swift */; };
+		39C47DA5161EEE62000A75EA /* LSPTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64C610EC296FC028C3645A41 /* LSPTypes.swift */; };
+		3B7D987B3BD5A5904794DC80 /* BreakpointStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = DDA507BAC460EDB6D13B45FE /* BreakpointStore.swift */; };
+		3CFD5E5F6816ED232309692F /* DebugSessionState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F3DAC70B0F9689F9ACE9882 /* DebugSessionState.swift */; };
+		3FAA497515F78B17F548A225 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F6CAA0F623BE0FD5FB8EA42 /* main.swift */; };
+		419E60BC8631DAD5165EB6EA /* LSPClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D71D91F39C0E3AB7765908AE /* LSPClientTests.swift */; };
+		41FA3A9E08C57A4384962E3A /* FileServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1A6C869FE137B135BD494BD /* FileServiceTests.swift */; };
+		446A8A413857138BAB626068 /* LSPPositionConverterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17556CB8AA236346DFD52D65 /* LSPPositionConverterTests.swift */; };
+		495860AFDF9552AB8015932A /* EditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E1B11BE228F78309D859B13 /* EditorView.swift */; };
+		4A379E53F553E14727CD7AEE /* LSPServerRegistryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A165B3CE2826AE1A763168AD /* LSPServerRegistryTests.swift */; };
+		4D8971723FBCEFECF0CCBDF0 /* HighlightService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C854D8DE762DA72DCFDA643 /* HighlightService.swift */; };
+		4F0B7DAC9142C66FB2CB15F8 /* AppDelegateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D3315E13F7E364C3F5CD623 /* AppDelegateTests.swift */; };
+		5072678B390CF1DE51450DB2 /* DebugSidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69E1334AC3C780DBDDCAD61E /* DebugSidebarView.swift */; };
+		548A3646426FD824BF0A6CE9 /* ReferencesPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3D25452665CFFDCE71BF732 /* ReferencesPanelView.swift */; };
+		55048687A0790B89F7E04EFC /* JSONRPCTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7DB9D55197C7DE1B9B57F7EA /* JSONRPCTransport.swift */; };
+		5C3B2AF5814EF86FA142A974 /* DAPClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF1AFA39C70E01EFC16F2A59 /* DAPClient.swift */; };
+		607763A28F99777606FB39BB /* FileTreeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06AB4CD4F3393CF04D83F18D /* FileTreeView.swift */; };
+		74DC3A2BCFC8B3586B2FD67F /* ProblemsPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E9D17952CCC93C366C6283C /* ProblemsPanelView.swift */; };
+		77D8D2235FA1927595446691 /* ProjectViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C13B8E092507E3C5394A265A /* ProjectViewModel.swift */; };
+		78DAFEB301A8914CC166DF4A /* FoldingParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65343F46122A84D1C89ED7F4 /* FoldingParserTests.swift */; };
+		7DFF10A38333E0B347CE46F5 /* LSPService.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAB3960457650957CDA2756A /* LSPService.swift */; };
+		8008F88E4596F53955AB90E3 /* ProjectViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B25072856E4F991EB7945C59 /* ProjectViewModelTests.swift */; };
+		825AE30C50954DD5F2B30ABC /* HighlightServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5851770351162D5C956BA51 /* HighlightServiceTests.swift */; };
+		82B4F113F5D757CAAD65DB07 /* ConfigurationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58BD898A73291023D816C6BB /* ConfigurationService.swift */; };
+		8308368653036389E01C0F94 /* BreakpointStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 516B62751331D34E26650B25 /* BreakpointStoreTests.swift */; };
+		8520791F684F7167D7181B49 /* DAPClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B17DCB9145E3044B18854525 /* DAPClientTests.swift */; };
+		86293A3DE1D7982E81817C90 /* ConfigurationServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8400FDA8A7E11C0A42969CC2 /* ConfigurationServiceTests.swift */; };
+		8B2B47B4C4EB39B53F6E91FB /* LSPServerRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 253B4BEEF73180E690C2D802 /* LSPServerRegistry.swift */; };
+		8CA3CBA297EF77941D39CC05 /* LineInfoTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26DDA9A72A145730AEAE7902 /* LineInfoTests.swift */; };
+		956F70F5FF443EB7D9C016A5 /* ThemeDefinition.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FF92CEE09E9F42EFF5DE2AF /* ThemeDefinition.swift */; };
+		980205B90CD3FD88943FD364 /* HoverPopupController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3E1EF1E30E9F8E096AF6A23 /* HoverPopupController.swift */; };
+		9969D70855ECB7521007FAC6 /* LSPServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE3A94EA6E52B4F5DCDA61D9 /* LSPServiceTests.swift */; };
+		A3962A4AA149165629B39F82 /* DebugPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19F68E2145D1FED1C2E575FB /* DebugPanelView.swift */; };
+		A4D4EBDFCB8EC27461A0695C /* DebugConfigurationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FF2D149968814C732EEB3B2 /* DebugConfigurationService.swift */; };
+		AD399A9E01237DF536ABA9E1 /* Highlightr in Frameworks */ = {isa = PBXBuildFile; productRef = 3BD40304AB552634B7A54678 /* Highlightr */; };
+		AD9A5ECFD97E129D1B420EB7 /* FileService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36B03AD333CAF8A328EBA0D9 /* FileService.swift */; };
+		B4260D5AE6159EE2EF1F10DF /* StatusBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9444052C41407B1D68830B43 /* StatusBarView.swift */; };
+		B4650BD7AB695139CAF6C0AA /* EditorRenderStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4446E1EFAACFE22DBF67A2E2 /* EditorRenderStateTests.swift */; };
+		B6ED4246A35FD9E2F840E488 /* Breakpoint.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7C13A68496AA01FCF301579 /* Breakpoint.swift */; };
+		B9B38A133021B4DBB479512B /* RosewoodUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C28B64F31E1AD6F08FE90687 /* RosewoodUITests.swift */; };
+		C39EC76A7FC0D7ACEFB1BAAF /* DAPTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A07AE57F8ECFE229E3D8BE8 /* DAPTypes.swift */; };
+		C637F591DA37B9F4755D7DF8 /* FileWatcherService.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD402AEA93E8E4D803CEC473 /* FileWatcherService.swift */; };
+		CAA33DC41B515E71702F2B6D /* LSPPositionConverter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D967306FE62CF65BA60E427 /* LSPPositionConverter.swift */; };
+		D14646A03E7163FBE3E70027 /* AppSettingsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E905DBFB3AE0F2DF20B7941E /* AppSettingsTests.swift */; };
+		D46B27CC374CB78F1DF087B9 /* EditorTextView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E73822DD260043A47559D124 /* EditorTextView.swift */; };
+		D64F7B24D26CBD7AD0356934 /* RosewoodApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8474C926A543B4B2C342521D /* RosewoodApp.swift */; };
+		DE1021E7F6B0E4E318BA699C /* EditorSupportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E02FD8EDAEF7187FA4699C70 /* EditorSupportTests.swift */; };
+		E0EFD4D09E8A9E284883EC2A /* HoverPopupTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37D7CE593BD507240717F39A /* HoverPopupTests.swift */; };
+		E48768CE55CA20050D30DB84 /* JSONRPCTransportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F3BF018CB408D39FC453E9F /* JSONRPCTransportTests.swift */; };
+		E49B4715E0DDE263904EFE9F /* TOMLKit in Frameworks */ = {isa = PBXBuildFile; productRef = E3FD244975375396A6E134B9 /* TOMLKit */; };
+		F4EC8CC9EBEFA2151DF53945 /* EditorContextMenuState.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC8518D9D749767E192C8D2E /* EditorContextMenuState.swift */; };
+		F4F27AF31CE1671DB2477D89 /* LSPTypesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 814BFAA85C5BB7B5B8496A70 /* LSPTypesTests.swift */; };
+		F52C1D320B539EE20C41815F /* ToolbarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FCC88D5A166D26F7690BF9F /* ToolbarView.swift */; };
+		FD64595931B4C938DEAFF3F4 /* DebugConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 507610D847C4D76CBDDEDE84 /* DebugConfiguration.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		6A0B7FC7E5CDF2A87E68C523 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A0CA286946C5A1E822A2B6C2 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = DBA90624833E06C29D3DDAA9;
+			remoteInfo = Rosewood;
+		};
+		9628FB139920D2E40474183C /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A0CA286946C5A1E822A2B6C2 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = DBA90624833E06C29D3DDAA9;
+			remoteInfo = Rosewood;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		06AB4CD4F3393CF04D83F18D /* FileTreeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileTreeView.swift; sourceTree = "<group>"; };
+		0D208E8EA661925BAEC0BF80 /* Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Extensions.swift; sourceTree = "<group>"; };
+		0F3DAC70B0F9689F9ACE9882 /* DebugSessionState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugSessionState.swift; sourceTree = "<group>"; };
+		17556CB8AA236346DFD52D65 /* LSPPositionConverterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LSPPositionConverterTests.swift; sourceTree = "<group>"; };
+		19F68E2145D1FED1C2E575FB /* DebugPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugPanelView.swift; sourceTree = "<group>"; };
+		1C7D89825108BD018C5AA03B /* RosewoodUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RosewoodUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		253B4BEEF73180E690C2D802 /* LSPServerRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LSPServerRegistry.swift; sourceTree = "<group>"; };
+		26DDA9A72A145730AEAE7902 /* LineInfoTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LineInfoTests.swift; sourceTree = "<group>"; };
+		2DF1DCB788593285D11AFA32 /* EditorTabLSPTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorTabLSPTests.swift; sourceTree = "<group>"; };
+		2E9D17952CCC93C366C6283C /* ProblemsPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProblemsPanelView.swift; sourceTree = "<group>"; };
+		2F6CAA0F623BE0FD5FB8EA42 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
+		36B03AD333CAF8A328EBA0D9 /* FileService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileService.swift; sourceTree = "<group>"; };
+		37D7CE593BD507240717F39A /* HoverPopupTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HoverPopupTests.swift; sourceTree = "<group>"; };
+		3C1ED559A640C0B57B9C65C5 /* DebugSessionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugSessionService.swift; sourceTree = "<group>"; };
+		429E745BD3928BEF840632A6 /* JSONValueCodec.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JSONValueCodec.swift; sourceTree = "<group>"; };
+		4446E1EFAACFE22DBF67A2E2 /* EditorRenderStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorRenderStateTests.swift; sourceTree = "<group>"; };
+		472BA953100F865352D3BA38 /* FileItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileItem.swift; sourceTree = "<group>"; };
+		4E5BD33FB585F36C04ED2489 /* EditorTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorTab.swift; sourceTree = "<group>"; };
+		507610D847C4D76CBDDEDE84 /* DebugConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugConfiguration.swift; sourceTree = "<group>"; };
+		516B62751331D34E26650B25 /* BreakpointStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BreakpointStoreTests.swift; sourceTree = "<group>"; };
+		58BD898A73291023D816C6BB /* ConfigurationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigurationService.swift; sourceTree = "<group>"; };
+		5D967306FE62CF65BA60E427 /* LSPPositionConverter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LSPPositionConverter.swift; sourceTree = "<group>"; };
+		64C610EC296FC028C3645A41 /* LSPTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LSPTypes.swift; sourceTree = "<group>"; };
+		65343F46122A84D1C89ED7F4 /* FoldingParserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FoldingParserTests.swift; sourceTree = "<group>"; };
+		68A5335869847ADA25622DA9 /* CompletionPopupTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompletionPopupTests.swift; sourceTree = "<group>"; };
+		69E1334AC3C780DBDDCAD61E /* DebugSidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugSidebarView.swift; sourceTree = "<group>"; };
+		6A07AE57F8ECFE229E3D8BE8 /* DAPTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DAPTypes.swift; sourceTree = "<group>"; };
+		6F1BB1AF8037DFEEC1B4E515 /* SessionStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionStateTests.swift; sourceTree = "<group>"; };
+		6FF2D149968814C732EEB3B2 /* DebugConfigurationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugConfigurationService.swift; sourceTree = "<group>"; };
+		6FF92CEE09E9F42EFF5DE2AF /* ThemeDefinition.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemeDefinition.swift; sourceTree = "<group>"; };
+		7DB9D55197C7DE1B9B57F7EA /* JSONRPCTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JSONRPCTransport.swift; sourceTree = "<group>"; };
+		7E1B11BE228F78309D859B13 /* EditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorView.swift; sourceTree = "<group>"; };
+		7FCC88D5A166D26F7690BF9F /* ToolbarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolbarView.swift; sourceTree = "<group>"; };
+		814BFAA85C5BB7B5B8496A70 /* LSPTypesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LSPTypesTests.swift; sourceTree = "<group>"; };
+		83CA571E1FE285D163FE12F8 /* DebugConfigurationServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugConfigurationServiceTests.swift; sourceTree = "<group>"; };
+		8400FDA8A7E11C0A42969CC2 /* ConfigurationServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigurationServiceTests.swift; sourceTree = "<group>"; };
+		8474C926A543B4B2C342521D /* RosewoodApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RosewoodApp.swift; sourceTree = "<group>"; };
+		8A2EA394D9F69A6C4020607E /* LSPClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LSPClient.swift; sourceTree = "<group>"; };
+		8F3BF018CB408D39FC453E9F /* JSONRPCTransportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JSONRPCTransportTests.swift; sourceTree = "<group>"; };
+		9444052C41407B1D68830B43 /* StatusBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusBarView.swift; sourceTree = "<group>"; };
+		99605CE3D48406BAA5A539F0 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		9C854D8DE762DA72DCFDA643 /* HighlightService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HighlightService.swift; sourceTree = "<group>"; };
+		9D3315E13F7E364C3F5CD623 /* AppDelegateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegateTests.swift; sourceTree = "<group>"; };
+		A165B3CE2826AE1A763168AD /* LSPServerRegistryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LSPServerRegistryTests.swift; sourceTree = "<group>"; };
+		A5851770351162D5C956BA51 /* HighlightServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HighlightServiceTests.swift; sourceTree = "<group>"; };
+		A7416394F3D6ADF193A83EF3 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		A7C13A68496AA01FCF301579 /* Breakpoint.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Breakpoint.swift; sourceTree = "<group>"; };
+		B17DCB9145E3044B18854525 /* DAPClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DAPClientTests.swift; sourceTree = "<group>"; };
+		B25072856E4F991EB7945C59 /* ProjectViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectViewModelTests.swift; sourceTree = "<group>"; };
+		B8C3C5BC3586B4EE563DE1EA /* AppSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettings.swift; sourceTree = "<group>"; };
+		BE59BAFA59ADCE94A4A55ACF /* Rosewood.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Rosewood.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		BEF7C942E735DEBCD2A5BFD7 /* CompletionPopupController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompletionPopupController.swift; sourceTree = "<group>"; };
+		C03E37445832BA5ECDF32F6E /* CommandPaletteView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandPaletteView.swift; sourceTree = "<group>"; };
+		C13B8E092507E3C5394A265A /* ProjectViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectViewModel.swift; sourceTree = "<group>"; };
+		C28B64F31E1AD6F08FE90687 /* RosewoodUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RosewoodUITests.swift; sourceTree = "<group>"; };
+		C3D25452665CFFDCE71BF732 /* ReferencesPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReferencesPanelView.swift; sourceTree = "<group>"; };
+		C934F12EA29C0BB1468C6713 /* TabBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabBarView.swift; sourceTree = "<group>"; };
+		CD402AEA93E8E4D803CEC473 /* FileWatcherService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileWatcherService.swift; sourceTree = "<group>"; };
+		D3E1EF1E30E9F8E096AF6A23 /* HoverPopupController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HoverPopupController.swift; sourceTree = "<group>"; };
+		D3ED1D114A15A9352FF4B576 /* FileItemTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileItemTests.swift; sourceTree = "<group>"; };
+		D71D91F39C0E3AB7765908AE /* LSPClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LSPClientTests.swift; sourceTree = "<group>"; };
+		DAB3960457650957CDA2756A /* LSPService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LSPService.swift; sourceTree = "<group>"; };
+		DDA507BAC460EDB6D13B45FE /* BreakpointStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BreakpointStore.swift; sourceTree = "<group>"; };
+		DE3A94EA6E52B4F5DCDA61D9 /* LSPServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LSPServiceTests.swift; sourceTree = "<group>"; };
+		DF1AFA39C70E01EFC16F2A59 /* DAPClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DAPClient.swift; sourceTree = "<group>"; };
+		E02FD8EDAEF7187FA4699C70 /* EditorSupportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorSupportTests.swift; sourceTree = "<group>"; };
+		E1A6C869FE137B135BD494BD /* FileServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileServiceTests.swift; sourceTree = "<group>"; };
+		E2EF18AD55ED010DE1F26525 /* RosewoodTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RosewoodTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		E73822DD260043A47559D124 /* EditorTextView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorTextView.swift; sourceTree = "<group>"; };
+		E905DBFB3AE0F2DF20B7941E /* AppSettingsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettingsTests.swift; sourceTree = "<group>"; };
+		EC8518D9D749767E192C8D2E /* EditorContextMenuState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorContextMenuState.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		386945DD91D5B318AE4D4C98 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AD399A9E01237DF536ABA9E1 /* Highlightr in Frameworks */,
+				E49B4715E0DDE263904EFE9F /* TOMLKit in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		090C266B702425CD50490273 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				C03E37445832BA5ECDF32F6E /* CommandPaletteView.swift */,
+				A7416394F3D6ADF193A83EF3 /* ContentView.swift */,
+				19F68E2145D1FED1C2E575FB /* DebugPanelView.swift */,
+				69E1334AC3C780DBDDCAD61E /* DebugSidebarView.swift */,
+				EC8518D9D749767E192C8D2E /* EditorContextMenuState.swift */,
+				E73822DD260043A47559D124 /* EditorTextView.swift */,
+				7E1B11BE228F78309D859B13 /* EditorView.swift */,
+				06AB4CD4F3393CF04D83F18D /* FileTreeView.swift */,
+				2E9D17952CCC93C366C6283C /* ProblemsPanelView.swift */,
+				C3D25452665CFFDCE71BF732 /* ReferencesPanelView.swift */,
+				99605CE3D48406BAA5A539F0 /* SettingsView.swift */,
+				9444052C41407B1D68830B43 /* StatusBarView.swift */,
+				C934F12EA29C0BB1468C6713 /* TabBarView.swift */,
+				7FCC88D5A166D26F7690BF9F /* ToolbarView.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		0E1C0FF567EF68227CF5CC77 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				2F6CAA0F623BE0FD5FB8EA42 /* main.swift */,
+				8474C926A543B4B2C342521D /* RosewoodApp.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		103401289C30CFA1598BDB57 /* Utilities */ = {
+			isa = PBXGroup;
+			children = (
+				0D208E8EA661925BAEC0BF80 /* Extensions.swift */,
+				429E745BD3928BEF840632A6 /* JSONValueCodec.swift */,
+			);
+			path = Utilities;
+			sourceTree = "<group>";
+		};
+		1BDD8068B4452F5273C276CF /* UITests */ = {
+			isa = PBXGroup;
+			children = (
+				C28B64F31E1AD6F08FE90687 /* RosewoodUITests.swift */,
+			);
+			path = UITests;
+			sourceTree = "<group>";
+		};
+		4BBF85DA1E2613E606FBFC85 = {
+			isa = PBXGroup;
+			children = (
+				75BC6A7E833D215773885E59 /* Sources */,
+				E3A369AC2A0CDF319E569A10 /* Tests */,
+				1BDD8068B4452F5273C276CF /* UITests */,
+				5C028B38A8A6D08179D6E58B /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		54075041419F0BEB23E7F248 /* LSP */ = {
+			isa = PBXGroup;
+			children = (
+				BEF7C942E735DEBCD2A5BFD7 /* CompletionPopupController.swift */,
+				D3E1EF1E30E9F8E096AF6A23 /* HoverPopupController.swift */,
+				7DB9D55197C7DE1B9B57F7EA /* JSONRPCTransport.swift */,
+				8A2EA394D9F69A6C4020607E /* LSPClient.swift */,
+				5D967306FE62CF65BA60E427 /* LSPPositionConverter.swift */,
+				253B4BEEF73180E690C2D802 /* LSPServerRegistry.swift */,
+				64C610EC296FC028C3645A41 /* LSPTypes.swift */,
+			);
+			path = LSP;
+			sourceTree = "<group>";
+		};
+		5C028B38A8A6D08179D6E58B /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				BE59BAFA59ADCE94A4A55ACF /* Rosewood.app */,
+				E2EF18AD55ED010DE1F26525 /* RosewoodTests.xctest */,
+				1C7D89825108BD018C5AA03B /* RosewoodUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		5CC1AC0052042DA9E7799210 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				DDA507BAC460EDB6D13B45FE /* BreakpointStore.swift */,
+				58BD898A73291023D816C6BB /* ConfigurationService.swift */,
+				DF1AFA39C70E01EFC16F2A59 /* DAPClient.swift */,
+				6FF2D149968814C732EEB3B2 /* DebugConfigurationService.swift */,
+				3C1ED559A640C0B57B9C65C5 /* DebugSessionService.swift */,
+				36B03AD333CAF8A328EBA0D9 /* FileService.swift */,
+				CD402AEA93E8E4D803CEC473 /* FileWatcherService.swift */,
+				9C854D8DE762DA72DCFDA643 /* HighlightService.swift */,
+				DAB3960457650957CDA2756A /* LSPService.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		75BC6A7E833D215773885E59 /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				0E1C0FF567EF68227CF5CC77 /* App */,
+				54075041419F0BEB23E7F248 /* LSP */,
+				BE4C0A8FB8510162C37A94CF /* Models */,
+				5CC1AC0052042DA9E7799210 /* Services */,
+				103401289C30CFA1598BDB57 /* Utilities */,
+				E595444FBD49F2559E6D5AB3 /* ViewModels */,
+				090C266B702425CD50490273 /* Views */,
+			);
+			path = Sources;
+			sourceTree = "<group>";
+		};
+		BE4C0A8FB8510162C37A94CF /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				B8C3C5BC3586B4EE563DE1EA /* AppSettings.swift */,
+				A7C13A68496AA01FCF301579 /* Breakpoint.swift */,
+				6A07AE57F8ECFE229E3D8BE8 /* DAPTypes.swift */,
+				507610D847C4D76CBDDEDE84 /* DebugConfiguration.swift */,
+				0F3DAC70B0F9689F9ACE9882 /* DebugSessionState.swift */,
+				4E5BD33FB585F36C04ED2489 /* EditorTab.swift */,
+				472BA953100F865352D3BA38 /* FileItem.swift */,
+				6FF92CEE09E9F42EFF5DE2AF /* ThemeDefinition.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		E3A369AC2A0CDF319E569A10 /* Tests */ = {
+			isa = PBXGroup;
+			children = (
+				9D3315E13F7E364C3F5CD623 /* AppDelegateTests.swift */,
+				E905DBFB3AE0F2DF20B7941E /* AppSettingsTests.swift */,
+				516B62751331D34E26650B25 /* BreakpointStoreTests.swift */,
+				68A5335869847ADA25622DA9 /* CompletionPopupTests.swift */,
+				8400FDA8A7E11C0A42969CC2 /* ConfigurationServiceTests.swift */,
+				B17DCB9145E3044B18854525 /* DAPClientTests.swift */,
+				83CA571E1FE285D163FE12F8 /* DebugConfigurationServiceTests.swift */,
+				4446E1EFAACFE22DBF67A2E2 /* EditorRenderStateTests.swift */,
+				E02FD8EDAEF7187FA4699C70 /* EditorSupportTests.swift */,
+				2DF1DCB788593285D11AFA32 /* EditorTabLSPTests.swift */,
+				D3ED1D114A15A9352FF4B576 /* FileItemTests.swift */,
+				E1A6C869FE137B135BD494BD /* FileServiceTests.swift */,
+				65343F46122A84D1C89ED7F4 /* FoldingParserTests.swift */,
+				A5851770351162D5C956BA51 /* HighlightServiceTests.swift */,
+				37D7CE593BD507240717F39A /* HoverPopupTests.swift */,
+				8F3BF018CB408D39FC453E9F /* JSONRPCTransportTests.swift */,
+				26DDA9A72A145730AEAE7902 /* LineInfoTests.swift */,
+				D71D91F39C0E3AB7765908AE /* LSPClientTests.swift */,
+				17556CB8AA236346DFD52D65 /* LSPPositionConverterTests.swift */,
+				A165B3CE2826AE1A763168AD /* LSPServerRegistryTests.swift */,
+				DE3A94EA6E52B4F5DCDA61D9 /* LSPServiceTests.swift */,
+				814BFAA85C5BB7B5B8496A70 /* LSPTypesTests.swift */,
+				B25072856E4F991EB7945C59 /* ProjectViewModelTests.swift */,
+				6F1BB1AF8037DFEEC1B4E515 /* SessionStateTests.swift */,
+			);
+			path = Tests;
+			sourceTree = "<group>";
+		};
+		E595444FBD49F2559E6D5AB3 /* ViewModels */ = {
+			isa = PBXGroup;
+			children = (
+				C13B8E092507E3C5394A265A /* ProjectViewModel.swift */,
+			);
+			path = ViewModels;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		1CC482A5D066EA9A18EE838C /* RosewoodUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 79C5C2113F71A3887DB72C33 /* Build configuration list for PBXNativeTarget "RosewoodUITests" */;
+			buildPhases = (
+				BE2A6C3946442463A03B3515 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				8F500E995B74255F9E2B76E3 /* PBXTargetDependency */,
+			);
+			name = RosewoodUITests;
+			packageProductDependencies = (
+			);
+			productName = RosewoodUITests;
+			productReference = 1C7D89825108BD018C5AA03B /* RosewoodUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+		47BC22205165AEB346635520 /* RosewoodTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = BB9CB843A33F07069C01ADFE /* Build configuration list for PBXNativeTarget "RosewoodTests" */;
+			buildPhases = (
+				F411C1D265A4BAE50185F675 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				3027E42503BC7322450E5446 /* PBXTargetDependency */,
+			);
+			name = RosewoodTests;
+			packageProductDependencies = (
+			);
+			productName = RosewoodTests;
+			productReference = E2EF18AD55ED010DE1F26525 /* RosewoodTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		DBA90624833E06C29D3DDAA9 /* Rosewood */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B9746FE39D460F21311D8911 /* Build configuration list for PBXNativeTarget "Rosewood" */;
+			buildPhases = (
+				B2F6F631704096A6CCBAE67F /* Sources */,
+				386945DD91D5B318AE4D4C98 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Rosewood;
+			packageProductDependencies = (
+				3BD40304AB552634B7A54678 /* Highlightr */,
+				E3FD244975375396A6E134B9 /* TOMLKit */,
+			);
+			productName = Rosewood;
+			productReference = BE59BAFA59ADCE94A4A55ACF /* Rosewood.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		A0CA286946C5A1E822A2B6C2 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1500;
+				TargetAttributes = {
+					1CC482A5D066EA9A18EE838C = {
+						TestTargetID = DBA90624833E06C29D3DDAA9;
+					};
+				};
+			};
+			buildConfigurationList = 5B5B82B1CE7A9FF9B4CD7C2E /* Build configuration list for PBXProject "Rosewood" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 4BBF85DA1E2613E606FBFC85;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				F2DD06CE21F9586859BA24A3 /* XCRemoteSwiftPackageReference "Highlightr" */,
+				D5878146279AFB4B48F746E8 /* XCRemoteSwiftPackageReference "TOMLKit" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 5C028B38A8A6D08179D6E58B /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				DBA90624833E06C29D3DDAA9 /* Rosewood */,
+				47BC22205165AEB346635520 /* RosewoodTests */,
+				1CC482A5D066EA9A18EE838C /* RosewoodUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+		B2F6F631704096A6CCBAE67F /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				28AEE726216E009197959513 /* AppSettings.swift in Sources */,
+				B6ED4246A35FD9E2F840E488 /* Breakpoint.swift in Sources */,
+				3B7D987B3BD5A5904794DC80 /* BreakpointStore.swift in Sources */,
+				26660D492C69C1692CFF20FB /* CommandPaletteView.swift in Sources */,
+				19C3DC274B0D61EF93A4AFD9 /* CompletionPopupController.swift in Sources */,
+				82B4F113F5D757CAAD65DB07 /* ConfigurationService.swift in Sources */,
+				0DDC1ADBC5DBEC2E6238C089 /* ContentView.swift in Sources */,
+				5C3B2AF5814EF86FA142A974 /* DAPClient.swift in Sources */,
+				C39EC76A7FC0D7ACEFB1BAAF /* DAPTypes.swift in Sources */,
+				FD64595931B4C938DEAFF3F4 /* DebugConfiguration.swift in Sources */,
+				A4D4EBDFCB8EC27461A0695C /* DebugConfigurationService.swift in Sources */,
+				A3962A4AA149165629B39F82 /* DebugPanelView.swift in Sources */,
+				1D2B8256911EB8AA1206816E /* DebugSessionService.swift in Sources */,
+				3CFD5E5F6816ED232309692F /* DebugSessionState.swift in Sources */,
+				5072678B390CF1DE51450DB2 /* DebugSidebarView.swift in Sources */,
+				F4EC8CC9EBEFA2151DF53945 /* EditorContextMenuState.swift in Sources */,
+				230A1D1EAAC33A7CBDD1014B /* EditorTab.swift in Sources */,
+				D46B27CC374CB78F1DF087B9 /* EditorTextView.swift in Sources */,
+				495860AFDF9552AB8015932A /* EditorView.swift in Sources */,
+				065DDB5B564397C71FFCD975 /* Extensions.swift in Sources */,
+				20C8B6E00F38E7E614EFDFDA /* FileItem.swift in Sources */,
+				AD9A5ECFD97E129D1B420EB7 /* FileService.swift in Sources */,
+				607763A28F99777606FB39BB /* FileTreeView.swift in Sources */,
+				C637F591DA37B9F4755D7DF8 /* FileWatcherService.swift in Sources */,
+				4D8971723FBCEFECF0CCBDF0 /* HighlightService.swift in Sources */,
+				980205B90CD3FD88943FD364 /* HoverPopupController.swift in Sources */,
+				55048687A0790B89F7E04EFC /* JSONRPCTransport.swift in Sources */,
+				1ECA6EB0D383DA94BCFAD3E0 /* JSONValueCodec.swift in Sources */,
+				2C1CD9C052981FD0CA9DBDD6 /* LSPClient.swift in Sources */,
+				CAA33DC41B515E71702F2B6D /* LSPPositionConverter.swift in Sources */,
+				8B2B47B4C4EB39B53F6E91FB /* LSPServerRegistry.swift in Sources */,
+				7DFF10A38333E0B347CE46F5 /* LSPService.swift in Sources */,
+				39C47DA5161EEE62000A75EA /* LSPTypes.swift in Sources */,
+				74DC3A2BCFC8B3586B2FD67F /* ProblemsPanelView.swift in Sources */,
+				77D8D2235FA1927595446691 /* ProjectViewModel.swift in Sources */,
+				548A3646426FD824BF0A6CE9 /* ReferencesPanelView.swift in Sources */,
+				D64F7B24D26CBD7AD0356934 /* RosewoodApp.swift in Sources */,
+				09C219A8F94BCA39D4F5E541 /* SettingsView.swift in Sources */,
+				B4260D5AE6159EE2EF1F10DF /* StatusBarView.swift in Sources */,
+				221959B628D173C5782C920B /* TabBarView.swift in Sources */,
+				956F70F5FF443EB7D9C016A5 /* ThemeDefinition.swift in Sources */,
+				F52C1D320B539EE20C41815F /* ToolbarView.swift in Sources */,
+				3FAA497515F78B17F548A225 /* main.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		BE2A6C3946442463A03B3515 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B9B38A133021B4DBB479512B /* RosewoodUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F411C1D265A4BAE50185F675 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				4F0B7DAC9142C66FB2CB15F8 /* AppDelegateTests.swift in Sources */,
+				D14646A03E7163FBE3E70027 /* AppSettingsTests.swift in Sources */,
+				8308368653036389E01C0F94 /* BreakpointStoreTests.swift in Sources */,
+				2E73A871CFB1DC00E6BBABD8 /* CompletionPopupTests.swift in Sources */,
+				86293A3DE1D7982E81817C90 /* ConfigurationServiceTests.swift in Sources */,
+				8520791F684F7167D7181B49 /* DAPClientTests.swift in Sources */,
+				398396F46497BCE2ECA34452 /* DebugConfigurationServiceTests.swift in Sources */,
+				B4650BD7AB695139CAF6C0AA /* EditorRenderStateTests.swift in Sources */,
+				DE1021E7F6B0E4E318BA699C /* EditorSupportTests.swift in Sources */,
+				2896EF33CC92D274DF2D7E4C /* EditorTabLSPTests.swift in Sources */,
+				039A973A787C334B32C884AC /* FileItemTests.swift in Sources */,
+				41FA3A9E08C57A4384962E3A /* FileServiceTests.swift in Sources */,
+				78DAFEB301A8914CC166DF4A /* FoldingParserTests.swift in Sources */,
+				825AE30C50954DD5F2B30ABC /* HighlightServiceTests.swift in Sources */,
+				E0EFD4D09E8A9E284883EC2A /* HoverPopupTests.swift in Sources */,
+				E48768CE55CA20050D30DB84 /* JSONRPCTransportTests.swift in Sources */,
+				419E60BC8631DAD5165EB6EA /* LSPClientTests.swift in Sources */,
+				446A8A413857138BAB626068 /* LSPPositionConverterTests.swift in Sources */,
+				4A379E53F553E14727CD7AEE /* LSPServerRegistryTests.swift in Sources */,
+				9969D70855ECB7521007FAC6 /* LSPServiceTests.swift in Sources */,
+				F4F27AF31CE1671DB2477D89 /* LSPTypesTests.swift in Sources */,
+				8CA3CBA297EF77941D39CC05 /* LineInfoTests.swift in Sources */,
+				8008F88E4596F53955AB90E3 /* ProjectViewModelTests.swift in Sources */,
+				1EE229C88C2D31571E7BEE1F /* SessionStateTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		3027E42503BC7322450E5446 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = DBA90624833E06C29D3DDAA9 /* Rosewood */;
+			targetProxy = 6A0B7FC7E5CDF2A87E68C523 /* PBXContainerItemProxy */;
+		};
+		8F500E995B74255F9E2B76E3 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = DBA90624833E06C29D3DDAA9 /* Rosewood */;
+			targetProxy = 9628FB139920D2E40474183C /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		364CC959266B01187CDC8876 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.rosewood.RosewoodTests;
+				PRODUCT_NAME = RosewoodTests;
+				SDKROOT = macosx;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Rosewood.app/Contents/MacOS/Rosewood";
+			};
+			name = Release;
+		};
+		3CD6BAF65497300E363C7577 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.rosewood.RosewoodUITests;
+				PRODUCT_NAME = RosewoodUITests;
+				SDKROOT = macosx;
+				TEST_TARGET_NAME = Rosewood;
+			};
+			name = Release;
+		};
+		849A78A2C7AA243BCDF5F696 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.rosewood.RosewoodTests;
+				PRODUCT_NAME = RosewoodTests;
+				SDKROOT = macosx;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Rosewood.app/Contents/MacOS/Rosewood";
+			};
+			name = Debug;
+		};
+		9BB7E82FE0145712D8924D27 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Resources/Rosewood.entitlements;
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_GENERATION_MODE = GeneratedFile;
+				INFOPLIST_KEY_CFBundleDisplayName = Rosewood;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2024 Rosewood. All rights reserved.";
+				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.rosewood.Rosewood;
+				SDKROOT = macosx;
+			};
+			name = Release;
+		};
+		9E96474AEB035D139790701B /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGNING_REQUIRED = NO;
+				CODE_SIGN_ENTITLEMENTS = "";
+				CODE_SIGN_IDENTITY = "-";
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 0.1.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = Rosewood;
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.9;
+			};
+			name = Debug;
+		};
+		AFE44D1C69BD61671327EE70 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGNING_REQUIRED = NO;
+				CODE_SIGN_ENTITLEMENTS = "";
+				CODE_SIGN_IDENTITY = "-";
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 0.1.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = Rosewood;
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.9;
+			};
+			name = Release;
+		};
+		BC8A6086ED12C384999BE342 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Resources/Rosewood.entitlements;
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_GENERATION_MODE = GeneratedFile;
+				INFOPLIST_KEY_CFBundleDisplayName = Rosewood;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2024 Rosewood. All rights reserved.";
+				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.rosewood.Rosewood;
+				SDKROOT = macosx;
+			};
+			name = Debug;
+		};
+		D125ACF81637A2C72F8EC44E /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.rosewood.RosewoodUITests;
+				PRODUCT_NAME = RosewoodUITests;
+				SDKROOT = macosx;
+				TEST_TARGET_NAME = Rosewood;
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		5B5B82B1CE7A9FF9B4CD7C2E /* Build configuration list for PBXProject "Rosewood" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				9E96474AEB035D139790701B /* Debug */,
+				AFE44D1C69BD61671327EE70 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		79C5C2113F71A3887DB72C33 /* Build configuration list for PBXNativeTarget "RosewoodUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D125ACF81637A2C72F8EC44E /* Debug */,
+				3CD6BAF65497300E363C7577 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		B9746FE39D460F21311D8911 /* Build configuration list for PBXNativeTarget "Rosewood" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				BC8A6086ED12C384999BE342 /* Debug */,
+				9BB7E82FE0145712D8924D27 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		BB9CB843A33F07069C01ADFE /* Build configuration list for PBXNativeTarget "RosewoodTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				849A78A2C7AA243BCDF5F696 /* Debug */,
+				364CC959266B01187CDC8876 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		D5878146279AFB4B48F746E8 /* XCRemoteSwiftPackageReference "TOMLKit" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/LebJe/TOMLKit";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.6.0;
+			};
+		};
+		F2DD06CE21F9586859BA24A3 /* XCRemoteSwiftPackageReference "Highlightr" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/raspu/Highlightr";
+			requirement = {
+				kind = exactVersion;
+				version = 2.2.1;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		3BD40304AB552634B7A54678 /* Highlightr */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F2DD06CE21F9586859BA24A3 /* XCRemoteSwiftPackageReference "Highlightr" */;
+			productName = Highlightr;
+		};
+		E3FD244975375396A6E134B9 /* TOMLKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D5878146279AFB4B48F746E8 /* XCRemoteSwiftPackageReference "TOMLKit" */;
+			productName = TOMLKit;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = A0CA286946C5A1E822A2B6C2 /* Project object */;
+}
