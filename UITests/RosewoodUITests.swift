@@ -158,6 +158,76 @@ final class RosewoodUITests: XCTestCase {
         XCTAssertNotEqual(updatedRange, initialRange)
     }
 
+    @MainActor
+    func testGitFixtureShowsSourceControlSidebarAndDiffPanel() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["ROSEWOOD_UI_TEST_RESET_SESSION"] = "1"
+        app.launchEnvironment["ROSEWOOD_UI_TEST_GIT_FIXTURE"] = "1"
+        app.launch()
+
+        let sidebar = app.descendants(matching: .any).matching(identifier: "source-control-sidebar").firstMatch
+        let branch = app.descendants(matching: .any).matching(identifier: "git-branch-label").firstMatch
+        let branchText = app.staticTexts["main"].firstMatch
+        let summary = app.descendants(matching: .any).matching(identifier: "git-change-summary").firstMatch
+        let changesSection = app.descendants(matching: .any).matching(identifier: "git-section-changes").firstMatch
+        let changedFile = app.descendants(matching: .any).matching(identifier: "git-change-row-0").firstMatch
+
+        XCTAssertTrue(sidebar.waitForExistence(timeout: 5))
+        XCTAssertTrue(branch.waitForExistence(timeout: 5))
+        XCTAssertTrue(branchText.exists)
+        XCTAssertTrue(summary.exists)
+        XCTAssertTrue(changesSection.exists)
+        XCTAssertTrue(changedFile.exists)
+
+        changedFile.click()
+
+        let diffWorkspace = app.descendants(matching: .any).matching(identifier: "git-diff-workspace").firstMatch
+        let splitView = app.descendants(matching: .any).matching(identifier: "git-diff-split-view").firstMatch
+        let beforeColumn = app.descendants(matching: .any).matching(identifier: "git-diff-column-before").firstMatch
+        let afterColumn = app.descendants(matching: .any).matching(identifier: "git-diff-column-after").firstMatch
+        let stageButton = app.descendants(matching: .any).matching(identifier: "git-diff-stage").firstMatch
+        let discardButton = app.descendants(matching: .any).matching(identifier: "git-diff-discard").firstMatch
+        let revealButton = app.descendants(matching: .any).matching(identifier: "git-diff-reveal-explorer").firstMatch
+        let editorButton = app.descendants(matching: .any).matching(identifier: "git-diff-open-editor").firstMatch
+        let hunkLabel = app.descendants(matching: .any).matching(identifier: "git-diff-hunk-label").firstMatch
+        let reviewLabel = app.descendants(matching: .any).matching(identifier: "statusbar-git-review").firstMatch
+        XCTAssertTrue(diffWorkspace.waitForExistence(timeout: 5))
+        XCTAssertTrue(splitView.waitForExistence(timeout: 5))
+        XCTAssertTrue(beforeColumn.exists)
+        XCTAssertTrue(afterColumn.exists)
+        XCTAssertTrue(stageButton.exists)
+        XCTAssertTrue(discardButton.exists)
+        XCTAssertTrue(revealButton.exists)
+        XCTAssertTrue(editorButton.exists)
+        XCTAssertTrue(hunkLabel.exists)
+        XCTAssertTrue(reviewLabel.exists)
+
+        revealButton.click()
+
+        let trackedRow = app.descendants(matching: .any).matching(identifier: "file-tree-row-Tracked.swift").firstMatch
+        XCTAssertTrue(trackedRow.waitForExistence(timeout: 5))
+
+        editorButton.click()
+        XCTAssertFalse(diffWorkspace.waitForExistence(timeout: 1))
+    }
+
+    @MainActor
+    func testGitFixtureExplorerShowsChangedAndIgnoredStates() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["ROSEWOOD_UI_TEST_RESET_SESSION"] = "1"
+        app.launchEnvironment["ROSEWOOD_UI_TEST_GIT_FIXTURE"] = "1"
+        app.launchEnvironment["ROSEWOOD_UI_TEST_GIT_EXPLORER"] = "1"
+        app.launch()
+
+        let trackedRow = app.descendants(matching: .any).matching(identifier: "file-tree-row-Tracked.swift").firstMatch
+        let ignoredRow = app.descendants(matching: .any).matching(identifier: "file-tree-row-Ignored.log").firstMatch
+
+        XCTAssertTrue(trackedRow.waitForExistence(timeout: 5))
+        XCTAssertTrue(ignoredRow.waitForExistence(timeout: 5))
+        XCTAssertEqual(trackedRow.value as? String, "Modified")
+        XCTAssertEqual(ignoredRow.value as? String, "Ignored")
+    }
+
     private func currentEditorText(in textView: XCUIElement) -> String {
         textView.value as? String ?? ""
     }

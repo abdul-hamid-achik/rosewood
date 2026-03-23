@@ -48,6 +48,11 @@ struct StatusBarView: View {
         }
     }
 
+    private var gitBlameText: String? {
+        guard let blame = projectViewModel.currentLineBlame else { return nil }
+        return "\(blame.shortCommitHash) \(blame.author): \(blame.summary)"
+    }
+
     var body: some View {
         HStack {
             if let tab = projectViewModel.selectedTab {
@@ -67,6 +72,30 @@ struct StatusBarView: View {
                 Text(tab.language.capitalized)
                     .font(.system(size: 11))
                     .foregroundColor(themeColors.subduedText)
+
+                if let branchName = projectViewModel.gitRepositoryStatus.branchName {
+                    Divider()
+                        .frame(height: 12)
+
+                    Label(branchName, systemImage: "arrow.triangle.branch")
+                        .font(.system(size: 11))
+                        .foregroundColor(themeColors.subduedText)
+                        .labelStyle(.titleAndIcon)
+                        .accessibilityLabel(branchName)
+                        .accessibilityIdentifier("statusbar-git-branch")
+                }
+
+                if let reviewLabel = projectViewModel.selectedGitChangeReviewLabel {
+                    Divider()
+                        .frame(height: 12)
+
+                    Label(reviewLabel, systemImage: "square.split.2x1")
+                        .font(.system(size: 11))
+                        .foregroundColor(themeColors.accent)
+                        .labelStyle(.titleAndIcon)
+                        .lineLimit(1)
+                        .accessibilityIdentifier("statusbar-git-review")
+                }
 
                 if let lspStatusText {
                     Divider()
@@ -113,7 +142,7 @@ struct StatusBarView: View {
                                     Text("\(diagCount.warnings)")
                                         .font(.system(size: 11))
                                 }
-                                .foregroundColor(themeColors.warning)
+                        .foregroundColor(themeColors.warning)
                             }
                         }
                         .frame(minWidth: 44, minHeight: 18)
@@ -131,6 +160,18 @@ struct StatusBarView: View {
                     .accessibilityLabel("Problems")
                     .accessibilityValue("\(diagCount.errors) errors, \(diagCount.warnings) warnings")
                     .accessibilityIdentifier("statusbar-diagnostics-toggle")
+                }
+
+                if let gitBlameText, !tab.isDirty {
+                    Divider()
+                        .frame(height: 12)
+
+                    Text(gitBlameText)
+                        .font(.system(size: 11))
+                        .foregroundColor(themeColors.mutedText)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .accessibilityIdentifier("statusbar-git-blame")
                 }
 
                 if projectViewModel.sidebarMode == .search, !projectViewModel.projectSearchQuery.isEmpty {
@@ -157,7 +198,33 @@ struct StatusBarView: View {
                         .frame(height: 12)
                 }
 
+                if let branchName = projectViewModel.gitRepositoryStatus.branchName {
+                    Label(branchName, systemImage: "arrow.triangle.branch")
+                        .font(.system(size: 11))
+                        .foregroundColor(themeColors.subduedText)
+                        .labelStyle(.titleAndIcon)
+                        .accessibilityLabel(branchName)
+                        .accessibilityIdentifier("statusbar-git-branch")
+                }
+
+                if let reviewLabel = projectViewModel.selectedGitChangeReviewLabel {
+                    Divider()
+                        .frame(height: 12)
+
+                    Label(reviewLabel, systemImage: "square.split.2x1")
+                        .font(.system(size: 11))
+                        .foregroundColor(themeColors.accent)
+                        .labelStyle(.titleAndIcon)
+                        .lineLimit(1)
+                        .accessibilityIdentifier("statusbar-git-review")
+                }
+
                 if projectViewModel.sidebarMode == .search, !projectViewModel.projectSearchQuery.isEmpty {
+                    if projectViewModel.gitRepositoryStatus.branchName != nil || projectViewModel.selectedGitChangeReviewLabel != nil {
+                        Divider()
+                            .frame(height: 12)
+                    }
+
                     Text("\(projectViewModel.projectSearchResults.count) Results")
                         .font(.system(size: 11))
                         .foregroundColor(themeColors.subduedText)

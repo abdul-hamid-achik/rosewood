@@ -18,7 +18,7 @@ struct TabBarView: View {
                         tab: tab,
                         isSelected: index == projectViewModel.selectedTabIndex,
                         onSelect: {
-                            projectViewModel.selectedTabIndex = index
+                            projectViewModel.selectTab(at: index)
                         },
                         onClose: {
                             projectViewModel.closeTab(at: index)

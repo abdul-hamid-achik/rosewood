@@ -1,0 +1,15 @@
+#!/bin/sh
+
+APP="$HOME/Applications/Rosewood.app"
+
+if [ ! -d "$APP" ]; then
+  echo "Rosewood is not installed at $APP" >&2
+  echo "Run: task install" >&2
+  exit 1
+fi
+
+if [ "$#" -gt 0 ]; then
+  open -a "$APP" "$@"
+else
+  open -a "$APP"
+fi

@@ -39,6 +39,18 @@ private struct FileTreeRow: View {
         projectViewModel.selectedTab?.filePath?.standardizedFileURL.path == item.path.standardizedFileURL.path
     }
 
+    private var gitChange: GitChangedFile? {
+        projectViewModel.gitChange(for: item)
+    }
+
+    private var changedDescendantCount: Int {
+        projectViewModel.gitChangedDescendantCount(for: item)
+    }
+
+    private var isIgnored: Bool {
+        projectViewModel.isGitIgnored(item)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             rowContent
@@ -70,15 +82,38 @@ private struct FileTreeRow: View {
 
             Text(item.name)
                 .font(.system(size: 13))
-                .foregroundColor(item.isDirectory ? themeColors.foreground : themeColors.subduedText)
+                .foregroundColor(primaryTextColor)
                 .lineLimit(1)
 
             Spacer(minLength: 0)
+
+            if let gitChange {
+                Text(gitChange.kind.explorerLabel)
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .foregroundColor(gitBadgeColor(for: gitChange.kind))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(
+                        Capsule()
+                            .fill(gitBadgeColor(for: gitChange.kind).opacity(isSelected ? 0.28 : 0.16))
+                    )
+            } else if item.isDirectory && changedDescendantCount > 0 {
+                Text("\(changedDescendantCount)")
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .foregroundColor(themeColors.accent)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(
+                        Capsule()
+                            .fill(themeColors.accent.opacity(isSelected ? 0.24 : 0.14))
+                    )
+            }
         }
         .padding(.leading, CGFloat(depth) * 14 + 10)
         .padding(.trailing, 10)
         .frame(height: 22)
         .background(rowBackground)
+        .opacity(isIgnored && !isSelected ? 0.58 : 1)
         .contentShape(Rectangle())
         .onTapGesture {
             if item.isDirectory {
@@ -90,6 +125,9 @@ private struct FileTreeRow: View {
         .onHover { hovering in
             isHovering = hovering
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("file-tree-row-\(item.name)")
+        .accessibilityValue(accessibilityValue)
         .contextMenu {
             if item.isDirectory {
                 Button("New File") {
@@ -118,6 +156,39 @@ private struct FileTreeRow: View {
             Button("Delete") {
                 projectViewModel.deleteItem(item)
             }
+        }
+    }
+
+    private var primaryTextColor: Color {
+        if isIgnored {
+            return themeColors.mutedText
+        }
+        return item.isDirectory ? themeColors.foreground : themeColors.subduedText
+    }
+
+    private var accessibilityValue: String {
+        if isIgnored {
+            return "Ignored"
+        }
+        if let gitChange {
+            return gitChange.kind.displayName
+        }
+        if item.isDirectory && changedDescendantCount > 0 {
+            return "\(changedDescendantCount) changed descendants"
+        }
+        return "Clean"
+    }
+
+    private func gitBadgeColor(for kind: GitChangeKind) -> Color {
+        switch kind {
+        case .modified:
+            return themeColors.warning
+        case .added, .copied, .untracked:
+            return themeColors.success
+        case .deleted, .conflicted:
+            return themeColors.danger
+        case .renamed:
+            return themeColors.accent
         }
     }
 

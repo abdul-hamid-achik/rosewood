@@ -5,6 +5,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItem
     var window: NSWindow!
     private var projectViewModel: ProjectViewModel!
     private let notificationCenter: NotificationCenter
+    private var pendingOpenURLs: [URL] = []
 
     override init() {
         self.notificationCenter = .default
@@ -17,10 +18,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItem
         super.init()
     }
 
+    @MainActor
     func applicationDidFinishLaunching(_ notification: Notification) {
         ConfigurationService.shared.load()
 
-        projectViewModel = ProjectViewModel()
+        if projectViewModel == nil {
+            projectViewModel = ProjectViewModel()
+        }
 
         let contentView = ContentView()
             .environmentObject(projectViewModel)
@@ -45,6 +49,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItem
         setupMainMenu()
 
         NSApp.activate(ignoringOtherApps: true)
+        flushPendingOpenURLs()
+    }
+
+    @MainActor
+    func application(_ application: NSApplication, open urls: [URL]) {
+        handleOpenRequests(urls)
+    }
+
+    @MainActor
+    func application(_ sender: NSApplication, openFiles filenames: [String]) {
+        handleOpenRequests(filenames.map { URL(fileURLWithPath: $0) })
+        sender.reply(toOpenOrPrint: .success)
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -233,6 +249,27 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItem
 
     @objc func handleFindReferences() {
         notificationCenter.post(name: .handleFindReferences, object: nil)
+    }
+
+    @MainActor
+    private func handleOpenRequests(_ urls: [URL]) {
+        let fileURLs = urls.filter(\.isFileURL)
+        guard !fileURLs.isEmpty else { return }
+
+        guard let projectViewModel else {
+            pendingOpenURLs.append(contentsOf: fileURLs)
+            return
+        }
+
+        projectViewModel.openExternalItems(fileURLs)
+    }
+
+    @MainActor
+    private func flushPendingOpenURLs() {
+        guard !pendingOpenURLs.isEmpty else { return }
+        let urls = pendingOpenURLs
+        pendingOpenURLs.removeAll()
+        projectViewModel.openExternalItems(urls)
     }
 }
 

@@ -1,0 +1,82 @@
+version: "3"
+
+tasks:
+  gen:
+    desc: Generate the Xcode project
+    cmds:
+      - xcodegen generate
+
+  open:
+    desc: Open the project in Xcode
+    cmds:
+      - open "{{.PROJECT}}"
+
+  build:
+    desc: Build the debug app
+    cmds:
+      - xcodebuild build -project "{{.PROJECT}}" -scheme "{{.APP}}" -configuration Debug -derivedDataPath "{{.DATA}}" -destination "{{.DEST}}"
+
+  run:
+    desc: Build and launch the debug app
+    deps: [build]
+    cmds:
+      - open "{{.DATA}}/Build/Products/Debug/{{.APP}}.app"
+
+  path:
+    desc: Print the debug app path
+    cmds:
+      - echo "{{.DATA}}/Build/Products/Debug/{{.APP}}.app"
+
+  where:
+    desc: Print the global install paths
+    cmds:
+      - echo "$HOME/Applications/{{.APP}}.app"
+      - echo "$HOME/.local/bin/{{.CLI}}"
+
+  test:
+    desc: Run the unit test suite
+    cmds:
+      - xcodebuild test -project "{{.PROJECT}}" -scheme "{{.UNIT}}" -derivedDataPath "{{.DATA}}" -destination "{{.DEST}}"
+
+  unit:
+    desc: Run the unit test suite
+    deps: [test]
+
+  ui:
+    desc: Run the UI test suite
+    cmds:
+      - xcodebuild test -project "{{.PROJECT}}" -scheme "{{.UI}}" -derivedDataPath "{{.DATA}}" -destination "{{.DEST}}"
+
+  all:
+    desc: Run unit and UI tests
+    cmds:
+      - task test
+      - task ui
+
+  release:
+    desc: Build the release app
+    cmds:
+      - xcodebuild build -project "{{.PROJECT}}" -scheme "{{.APP}}" -configuration Release -derivedDataPath "{{.DATA}}" -destination "{{.DEST}}"
+
+  install:
+    desc: Install the app and CLI launcher for the current user
+    deps: [build]
+    cmds:
+      - mkdir -p "$HOME/Applications" "$HOME/.local/bin"
+      - rm -rf "$HOME/Applications/{{.APP}}.app"
+      - cp -R "{{.DATA}}/Build/Products/Debug/{{.APP}}.app" "$HOME/Applications/{{.APP}}.app"
+      - cp Resources/cli/{{.CLI}} "$HOME/.local/bin/{{.CLI}}"
+      - chmod +x "$HOME/.local/bin/{{.CLI}}"
+      - echo "Installed $HOME/Applications/{{.APP}}.app"
+      - echo "Installed $HOME/.local/bin/{{.CLI}}"
+
+  remove:
+    desc: Remove the user-level app and CLI launcher
+    cmds:
+      - rm -rf "$HOME/Applications/{{.APP}}.app"
+      - rm -f "$HOME/.local/bin/{{.CLI}}"
+
+  clean:
+    desc: Remove local build artifacts
+    cmds:
+      - rm -rf "{{.DATA}}"

@@ -88,6 +88,8 @@ struct ContentView: View {
 
             if projectViewModel.sidebarMode == .search {
                 SearchSidebarView()
+            } else if projectViewModel.sidebarMode == .sourceControl {
+                SourceControlSidebarView()
             } else if projectViewModel.sidebarMode == .debug {
                 DebugSidebarView()
             } else if projectViewModel.fileTree.isEmpty {
@@ -104,6 +106,7 @@ struct ContentView: View {
             Picker("Sidebar", selection: $projectViewModel.sidebarMode) {
                 Text("Explorer").tag(ProjectViewModel.SidebarMode.explorer)
                 Text("Search").tag(ProjectViewModel.SidebarMode.search)
+                Text("Git").tag(ProjectViewModel.SidebarMode.sourceControl)
                 Text("Debug").tag(ProjectViewModel.SidebarMode.debug)
             }
             .pickerStyle(.segmented)
@@ -159,7 +162,9 @@ struct ContentView: View {
                     .overlay(themeColors.border)
             }
 
-            if let tab = projectViewModel.selectedTab {
+            if projectViewModel.isGitDiffWorkspaceVisible {
+                GitDiffPanelView(layoutStyle: .workspace)
+            } else if let tab = projectViewModel.selectedTab {
                 EditorView(tab: tab)
             } else {
                 emptyEditorView
@@ -195,6 +200,8 @@ struct ContentView: View {
             ProblemsPanelView()
         case .references:
             ReferencesPanelView()
+        case .gitDiff:
+            GitDiffPanelView()
         }
     }
 }

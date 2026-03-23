@@ -28,6 +28,7 @@ final class ProjectViewModel: ObservableObject {
     enum SidebarMode {
         case explorer
         case search
+        case sourceControl
         case debug
     }
 
@@ -35,12 +36,17 @@ final class ProjectViewModel: ObservableObject {
         case debugConsole
         case diagnostics
         case references
+        case gitDiff
     }
 
     @Published var rootDirectory: URL?
     @Published var fileTree: [FileItem] = []
     @Published var openTabs: [EditorTab] = []
-    @Published var selectedTabIndex: Int? = nil
+    @Published var selectedTabIndex: Int? = nil {
+        didSet {
+            refreshCurrentLineBlame()
+        }
+    }
     @Published var showCommandPalette: Bool = false
     @Published var showNewFileSheet: Bool = false
     @Published var showNewFolderSheet: Bool = false
@@ -65,6 +71,13 @@ final class ProjectViewModel: ObservableObject {
     @Published private(set) var debugStoppedFilePath: String?
     @Published private(set) var debugStoppedLine: Int?
     @Published private(set) var referenceResults: [ReferenceResult] = []
+    @Published private(set) var gitRepositoryStatus: GitRepositoryStatus = .empty
+    @Published private(set) var selectedGitDiff: GitDiffResult?
+    @Published private(set) var selectedGitDiffPath: String?
+    @Published private(set) var isGitDiffWorkspaceVisible: Bool = false
+    @Published private(set) var currentLineBlame: GitBlameInfo?
+    @Published private(set) var isRefreshingGitStatus: Bool = false
+    @Published private(set) var isLoadingGitDiff: Bool = false
 
     var currentTabDiagnostics: [LSPDiagnostic] {
         guard let uri = selectedTab?.documentURI else { return [] }
@@ -110,6 +123,48 @@ final class ProjectViewModel: ObservableObject {
         bottomPanel == .references
     }
 
+    var isGitDiffPanelVisible: Bool {
+        bottomPanel == .gitDiff
+    }
+
+    var isGitDiffVisible: Bool {
+        isGitDiffWorkspaceVisible || isGitDiffPanelVisible
+    }
+
+    var selectedGitChangedFile: GitChangedFile? {
+        guard let selectedGitDiffPath else { return nil }
+        return gitRepositoryStatus.changedFiles.first { $0.path == selectedGitDiffPath }
+    }
+
+    var selectedGitChangeIndex: Int? {
+        guard let selectedGitChangedFile else { return nil }
+        return gitRepositoryStatus.changedFiles.firstIndex(of: selectedGitChangedFile)
+    }
+
+    var selectedGitChangePositionText: String? {
+        guard let selectedGitChangeIndex else { return nil }
+        return "Change \(selectedGitChangeIndex + 1) of \(gitRepositoryStatus.changedFiles.count)"
+    }
+
+    var canShowPreviousGitChange: Bool {
+        guard let selectedGitChangeIndex else { return false }
+        return selectedGitChangeIndex > 0
+    }
+
+    var canShowNextGitChange: Bool {
+        guard let selectedGitChangeIndex else { return false }
+        return selectedGitChangeIndex < gitRepositoryStatus.changedFiles.count - 1
+    }
+
+    var selectedGitChangeReviewLabel: String? {
+        guard isGitDiffWorkspaceVisible,
+              let changedFile = selectedGitChangedFile,
+              let selectedGitChangeIndex else {
+            return nil
+        }
+        return "Reviewing \(changedFile.kind.displayName) \(selectedGitChangeIndex + 1)/\(gitRepositoryStatus.changedFiles.count)"
+    }
+
     var canFindReferences: Bool {
         guard let selectedTab,
               selectedTab.documentURI != nil,
@@ -150,6 +205,42 @@ final class ProjectViewModel: ObservableObject {
         configService.hasProjectConfig()
     }
 
+    func gitChange(for item: FileItem) -> GitChangedFile? {
+        guard !item.isDirectory,
+              let relativePath = gitRelativePath(for: item.path) else {
+            return nil
+        }
+        return gitRepositoryStatus.changedFiles.first { $0.path == relativePath }
+    }
+
+    func gitChangedDescendantCount(for item: FileItem) -> Int {
+        guard item.isDirectory,
+              let relativePath = gitRelativePath(for: item.path) else {
+            return gitChange(for: item) == nil ? 0 : 1
+        }
+
+        let prefix = relativePath + "/"
+        return gitRepositoryStatus.changedFiles.reduce(into: 0) { count, changedFile in
+            if changedFile.path.hasPrefix(prefix) {
+                count += 1
+            }
+        }
+    }
+
+    func isGitIgnored(_ item: FileItem) -> Bool {
+        guard let relativePath = gitRelativePath(for: item.path) else {
+            return false
+        }
+
+        for ignoredPath in normalizedIgnoredGitPaths {
+            if relativePath == ignoredPath || relativePath.hasPrefix(ignoredPath + "/") {
+                return true
+            }
+        }
+
+        return false
+    }
+
     private let fileService: FileService
     private let sessionStore: UserDefaults
     private let sessionKey: String
@@ -169,10 +260,17 @@ final class ProjectViewModel: ObservableObject {
     private let breakpointStore: BreakpointStore
     private let debugConfigurationService: DebugConfigurationService
     private let debugSessionService: DebugSessionServiceProtocol
+    private let gitService: GitServiceProtocol
     private var settingsObserver: NSObjectProtocol?
     private var fileTreeLoadToken = UUID()
     private var projectSearchToken = UUID()
     private var replaceInProjectToken = UUID()
+    private var gitStatusTask: Task<Void, Never>?
+    private var gitDiffTask: Task<Void, Never>?
+    private var gitBlameTask: Task<Void, Never>?
+    private var gitStatusToken = UUID()
+    private var gitDiffToken = UUID()
+    private var gitBlameToken = UUID()
 
     convenience init() {
         self.init(
@@ -186,7 +284,8 @@ final class ProjectViewModel: ObservableObject {
             lspService: LSPService.shared,
             breakpointStore: BreakpointStore(),
             debugConfigurationService: DebugConfigurationService(),
-            debugSessionService: DebugSessionService.shared
+            debugSessionService: DebugSessionService.shared,
+            gitService: GitService.shared
         )
     }
 
@@ -201,7 +300,8 @@ final class ProjectViewModel: ObservableObject {
         lspService: LSPServiceProtocol? = nil,
         breakpointStore: BreakpointStore = BreakpointStore(),
         debugConfigurationService: DebugConfigurationService = DebugConfigurationService(),
-        debugSessionService: DebugSessionServiceProtocol? = nil
+        debugSessionService: DebugSessionServiceProtocol? = nil,
+        gitService: GitServiceProtocol = GitService.shared
     ) {
         self.fileService = fileService
         self.sessionStore = sessionStore
@@ -217,6 +317,7 @@ final class ProjectViewModel: ObservableObject {
         self.breakpointStore = breakpointStore
         self.debugConfigurationService = debugConfigurationService
         self.debugSessionService = debugSessionService ?? DebugSessionService.shared
+        self.gitService = gitService
         self.debugSessionService.setEventHandler { [weak self] event in
             Task { @MainActor [weak self] in
                 self?.handleDebugSessionEvent(event)
@@ -234,6 +335,7 @@ final class ProjectViewModel: ObservableObject {
         restoreSession()
         reloadDebuggerState(resetConsole: false)
         installUITestEditorFixturesIfNeeded()
+        refreshGitState()
 
         if ProcessInfo.processInfo.environment["ROSEWOOD_UI_TEST_DEBUG_SIDEBAR"] == "1" {
             sidebarMode = .debug
@@ -245,6 +347,9 @@ final class ProjectViewModel: ObservableObject {
         reloadFileTreeTask?.cancel()
         projectSearchTask?.cancel()
         replaceInProjectTask?.cancel()
+        gitStatusTask?.cancel()
+        gitDiffTask?.cancel()
+        gitBlameTask?.cancel()
         if let settingsObserver {
             notificationCenter.removeObserver(settingsObserver)
         }
@@ -279,16 +384,25 @@ final class ProjectViewModel: ObservableObject {
         let shouldOpenReferencesPanel = environment["ROSEWOOD_UI_TEST_OPEN_REFERENCES_PANEL"] == "1"
         let shouldInstallFoldingFixture = environment["ROSEWOOD_UI_TEST_FOLDING_FIXTURE"] == "1"
         let shouldInstallMinimapFixture = environment["ROSEWOOD_UI_TEST_MINIMAP_FIXTURE"] == "1"
+        let shouldInstallGitFixture = environment["ROSEWOOD_UI_TEST_GIT_FIXTURE"] == "1"
         guard shouldInstallContextMenuFixture
             || shouldInstallDiagnosticsFixture
             || shouldInstallReferencesFixture
             || shouldInstallFoldingFixture
-            || shouldInstallMinimapFixture else {
+            || shouldInstallMinimapFixture
+            || shouldInstallGitFixture else {
             return
         }
 
         let fileManager = FileManager.default
-        let fixtureFileName = shouldInstallDiagnosticsFixture ? "Alpha.txt" : "Alpha.swift"
+        let fixtureFileName: String
+        if shouldInstallDiagnosticsFixture {
+            fixtureFileName = "Alpha.txt"
+        } else if shouldInstallGitFixture {
+            fixtureFileName = "Tracked.swift"
+        } else {
+            fixtureFileName = "Alpha.swift"
+        }
         let rootURL = fileManager.temporaryDirectory.appendingPathComponent(
             "rosewood-ui-context-menu-\(UUID().uuidString)",
             isDirectory: true
@@ -316,10 +430,15 @@ final class ProjectViewModel: ObservableObject {
                         return "let minimapLine\(line) = \(line)"
                     }
                     .joined(separator: "\n")
+            } else if shouldInstallGitFixture {
+                alphaContents = "let tracked = 1\n"
             } else {
                 alphaContents = "let alpha = 1\n"
             }
             try alphaContents.write(to: alphaURL, atomically: true, encoding: .utf8)
+            if shouldInstallGitFixture {
+                try installGitFixture(at: rootURL, trackedFileURL: alphaURL)
+            }
         } catch {
             return
         }
@@ -413,7 +532,12 @@ final class ProjectViewModel: ObservableObject {
             }
         }
 
+        if shouldInstallGitFixture {
+            sidebarMode = environment["ROSEWOOD_UI_TEST_GIT_EXPLORER"] == "1" ? .explorer : .sourceControl
+        }
+
         persistSession()
+        refreshGitState()
     }
 
     var selectedTab: EditorTab? {
@@ -472,6 +596,32 @@ final class ProjectViewModel: ObservableObject {
             )
         }
 
+        if rootDirectory != nil {
+            actions.append(
+                CommandPaletteAction(
+                    id: "showSourceControl",
+                    title: "Show Source Control",
+                    shortcut: "",
+                    category: "View"
+                ) {
+                    self.showSourceControlSidebar()
+                }
+            )
+        }
+
+        if gitRepositoryStatus.isRepository {
+            actions.append(
+                CommandPaletteAction(
+                    id: "refreshGitStatus",
+                    title: "Refresh Git Status",
+                    shortcut: "",
+                    category: "Git"
+                ) {
+                    self.refreshGitState()
+                }
+            )
+        }
+
         return actions.filter { action in
             commandPaletteQuery.isEmpty || action.title.localizedCaseInsensitiveContains(commandPaletteQuery)
         }
@@ -494,7 +644,42 @@ final class ProjectViewModel: ObservableObject {
         }
 
         guard let url = ui.openPanel(true, false, false) else { return }
+        openFolder(at: url)
+    }
 
+    func openExternalItems(_ urls: [URL]) {
+        let existingURLs = urls
+            .map(\.standardizedFileURL)
+            .filter { FileManager.default.fileExists(atPath: $0.path) }
+
+        guard !existingURLs.isEmpty else { return }
+        guard prepareForSessionTransition(title: "Open", message: "Do you want to save changes before opening this item?") else {
+            return
+        }
+
+        let directoryURLs = existingURLs.filter(isDirectory)
+        if let directoryURL = directoryURLs.first {
+            openFolder(at: directoryURL)
+
+            let normalizedRootPath = normalizedPath(for: directoryURL)
+            for fileURL in existingURLs where !isDirectory(fileURL) {
+                let normalizedFilePath = normalizedPath(for: fileURL)
+                guard normalizedFilePath.hasPrefix(normalizedRootPath + "/") else { continue }
+                openFile(at: fileURL)
+            }
+            return
+        }
+
+        let fileURLs = existingURLs.filter { !isDirectory($0) }
+        guard let firstFileURL = fileURLs.first else { return }
+
+        openFolder(at: firstFileURL.deletingLastPathComponent())
+        for fileURL in fileURLs {
+            openFile(at: fileURL)
+        }
+    }
+
+    private func openFolder(at url: URL) {
         fileWatcher.unwatchAll()
         rootDirectory = url
         expandedDirectoryPaths = []
@@ -522,6 +707,7 @@ final class ProjectViewModel: ObservableObject {
         }
 
         reloadFileTree()
+        refreshGitState()
         persistSession()
     }
 
@@ -583,6 +769,7 @@ final class ProjectViewModel: ObservableObject {
             pendingNewItemDirectory = nil
             reloadFileTree()
             openFile(at: fileURL)
+            refreshGitState()
         } catch {
             ui.alert("Error", "Could not create file: \(error.localizedDescription)", .warning)
         }
@@ -611,12 +798,17 @@ final class ProjectViewModel: ObservableObject {
         do {
             try configService.createDefaultProjectConfig()
             reloadDebugConfigurations()
+            refreshGitState()
         } catch {
             ui.alert("Error", "Could not create project config: \(error.localizedDescription)", .warning)
         }
     }
 
-    func openFile(at url: URL) {
+    func openFile(at url: URL, preservingGitDiffWorkspace: Bool = false) {
+        if !preservingGitDiffWorkspace {
+            dismissGitDiffWorkspace()
+        }
+
         if let existingIndex = openTabs.firstIndex(where: { tab in
             guard let filePath = tab.filePath else { return false }
             return normalizedPath(for: filePath) == normalizedPath(for: url)
@@ -651,9 +843,17 @@ final class ProjectViewModel: ObservableObject {
         }
     }
 
+    func selectTab(at index: Int) {
+        guard openTabs.indices.contains(index) else { return }
+        dismissGitDiffWorkspace()
+        selectedTabIndex = index
+        persistSession()
+    }
+
     @discardableResult
     func closeTab(at index: Int, confirmUnsavedChanges: Bool = true) -> Bool {
         guard openTabs.indices.contains(index) else { return false }
+        let shouldCloseGitDiff = isGitDiffWorkspaceVisible && selectedTabIndex == index
 
         if confirmUnsavedChanges && openTabs[index].isDirty {
             let response = ui.confirm(
@@ -671,6 +871,10 @@ final class ProjectViewModel: ObservableObject {
             default:
                 return false
             }
+        }
+
+        if shouldCloseGitDiff {
+            closeGitDiffPanel()
         }
 
         if let url = openTabs[index].filePath {
@@ -736,7 +940,11 @@ final class ProjectViewModel: ObservableObject {
 
     func updateCursorPosition(line: Int, column: Int) {
         guard let selectedTabIndex, openTabs.indices.contains(selectedTabIndex) else { return }
+        let previousLine = openTabs[selectedTabIndex].cursorPosition.line
         openTabs[selectedTabIndex].cursorPosition = CursorPosition(line: line, column: column)
+        if previousLine != line {
+            refreshCurrentLineBlame()
+        }
     }
 
     func toggleCommandPalette() {
@@ -759,6 +967,11 @@ final class ProjectViewModel: ObservableObject {
         if !projectSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             performProjectSearch()
         }
+    }
+
+    func showSourceControlSidebar() {
+        sidebarMode = .sourceControl
+        refreshGitState()
     }
 
     func showDebugSidebar() {
@@ -795,6 +1008,95 @@ final class ProjectViewModel: ObservableObject {
     func closeReferencesPanel() {
         referenceResults = []
         if isReferencesPanelVisible {
+            bottomPanel = nil
+        }
+    }
+
+    func openGitChangedFile(_ changedFile: GitChangedFile) {
+        if let repositoryRoot = gitRepositoryStatus.repositoryRoot {
+            let fileURL = repositoryRoot.appendingPathComponent(changedFile.path)
+            if FileManager.default.fileExists(atPath: fileURL.path) {
+                openFile(at: fileURL, preservingGitDiffWorkspace: true)
+            }
+        }
+        sidebarMode = .sourceControl
+        isGitDiffWorkspaceVisible = true
+        bottomPanel = nil
+        loadGitDiff(for: changedFile)
+    }
+
+    func showPreviousGitChange() {
+        guard let selectedGitChangeIndex, selectedGitChangeIndex > 0 else { return }
+        openGitChangedFile(gitRepositoryStatus.changedFiles[selectedGitChangeIndex - 1])
+    }
+
+    func showNextGitChange() {
+        guard let selectedGitChangeIndex, selectedGitChangeIndex < gitRepositoryStatus.changedFiles.count - 1 else { return }
+        openGitChangedFile(gitRepositoryStatus.changedFiles[selectedGitChangeIndex + 1])
+    }
+
+    func openSelectedGitChangeInEditor() {
+        guard let selectedTabIndex else { return }
+        selectTab(at: selectedTabIndex)
+    }
+
+    func revealSelectedGitChangeInExplorer() {
+        guard selectedGitChangedFile != nil else { return }
+        sidebarMode = .explorer
+    }
+
+    func stageSelectedGitChange() {
+        guard let changedFile = selectedGitChangedFile else { return }
+        runGitMutation(
+            task: { [gitService, rootDirectory] in
+                await gitService.stage(changedFile: changedFile, projectRoot: rootDirectory)
+            }
+        )
+    }
+
+    func unstageSelectedGitChange() {
+        guard let changedFile = selectedGitChangedFile else { return }
+        runGitMutation(
+            task: { [gitService, rootDirectory] in
+                await gitService.unstage(changedFile: changedFile, projectRoot: rootDirectory)
+            }
+        )
+    }
+
+    func discardSelectedGitChange() {
+        guard let changedFile = selectedGitChangedFile else { return }
+
+        let title = changedFile.kind == .untracked ? "Discard New File?" : "Discard Working Tree Changes?"
+        let message = changedFile.kind == .untracked
+            ? "This will permanently delete \(changedFile.path)."
+            : "This will restore \(changedFile.path) to the last committed version."
+        let response = ui.confirm(title, message, .warning, ["Discard", "Cancel"])
+        guard response == .alertFirstButtonReturn else { return }
+
+        runGitMutation(
+            task: { [gitService, rootDirectory] in
+                await gitService.discard(changedFile: changedFile, projectRoot: rootDirectory)
+            },
+            onSuccess: { [weak self] in
+                guard let self else { return }
+                if changedFile.kind == .untracked,
+                   let selectedTabIndex = self.selectedTabIndex,
+                   self.openTabs.indices.contains(selectedTabIndex),
+                   let filePath = self.openTabs[selectedTabIndex].filePath,
+                   let repositoryRoot = self.gitRepositoryStatus.repositoryRoot,
+                   self.normalizedPath(for: filePath) == self.normalizedPath(for: repositoryRoot.appendingPathComponent(changedFile.path)) {
+                    _ = self.closeTab(at: selectedTabIndex, confirmUnsavedChanges: false)
+                }
+            }
+        )
+    }
+
+    func closeGitDiffPanel() {
+        dismissGitDiffWorkspace()
+        selectedGitDiff = nil
+        selectedGitDiffPath = nil
+        isLoadingGitDiff = false
+        if isGitDiffPanelVisible {
             bottomPanel = nil
         }
     }
@@ -981,6 +1283,7 @@ final class ProjectViewModel: ObservableObject {
                 self.syncOpenTabs(with: summary.modifiedFiles)
                 self.isReplacingInProject = false
                 self.performProjectSearch()
+                self.refreshGitState()
                 if summary.replacementCount > 0 {
                     self.ui.alert(
                         "Replace Complete",
@@ -1050,6 +1353,8 @@ final class ProjectViewModel: ObservableObject {
             openTabs[index].originalContent = content
             openTabs[index].isDirty = false
             persistSession()
+            refreshGitState()
+            refreshCurrentLineBlame()
         } catch {
             ui.alert("Error", "Could not reload file: \(error.localizedDescription)", .warning)
         }
@@ -1076,6 +1381,7 @@ final class ProjectViewModel: ObservableObject {
             syncActiveDebugBreakpoints()
             closeTabs(at: affectedIndices, confirmUnsavedChanges: false)
             reloadFileTree()
+            refreshGitState()
             persistSession()
         } catch {
             ui.alert("Error", "Could not delete: \(error.localizedDescription)", .warning)
@@ -1095,6 +1401,7 @@ final class ProjectViewModel: ObservableObject {
             )
             syncActiveDebugBreakpoints()
             reloadFileTree()
+            refreshGitState()
             persistSession()
         } catch {
             ui.alert("Error", "Could not rename: \(error.localizedDescription)", .warning)
@@ -1106,6 +1413,7 @@ final class ProjectViewModel: ObservableObject {
             let newURL = try fileService.duplicate(at: item.path)
             reloadFileTree()
             openFile(at: newURL)
+            refreshGitState()
         } catch {
             ui.alert("Error", "Could not duplicate: \(error.localizedDescription)", .warning)
         }
@@ -1173,6 +1481,8 @@ final class ProjectViewModel: ObservableObject {
             }
 
             persistSession()
+            refreshGitState()
+            refreshCurrentLineBlame()
             return true
         } catch {
             ui.alert("Error", "Could not save file: \(error.localizedDescription)", .warning)
@@ -1450,6 +1760,8 @@ final class ProjectViewModel: ObservableObject {
         } else {
             selectedTabIndex = openTabs.isEmpty ? nil : 0
         }
+
+        refreshGitState()
     }
 
     private func reloadDebuggerState(resetConsole: Bool) {
@@ -1537,8 +1849,195 @@ final class ProjectViewModel: ObservableObject {
         }
     }
 
+    private func installGitFixture(at rootURL: URL, trackedFileURL: URL) throws {
+        let gitignoreURL = rootURL.appendingPathComponent(".gitignore")
+        let ignoredFileURL = rootURL.appendingPathComponent("Ignored.log")
+        try "Ignored.log\nIgnoredDir/\n".write(to: gitignoreURL, atomically: true, encoding: .utf8)
+
+        func run(_ arguments: [String]) throws {
+            let process = Process()
+            let stderrPipe = Pipe()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+            process.arguments = ["git"] + arguments
+            process.currentDirectoryURL = rootURL
+            process.standardError = stderrPipe
+            try process.run()
+            process.waitUntilExit()
+
+            if process.terminationStatus != 0 {
+                let stderr = String(
+                    data: stderrPipe.fileHandleForReading.readDataToEndOfFile(),
+                    encoding: .utf8
+                ) ?? ""
+                throw GitServiceError.commandFailed(stderr.trimmingCharacters(in: .whitespacesAndNewlines))
+            }
+        }
+
+        try run(["init", "--initial-branch=main"])
+        try run(["config", "user.name", "Rosewood UITests"])
+        try run(["config", "user.email", "rosewood-ui@example.com"])
+        try run(["add", trackedFileURL.lastPathComponent, gitignoreURL.lastPathComponent])
+        try run(["commit", "-m", "Initial commit"])
+        try "let tracked = 2\n".write(to: trackedFileURL, atomically: true, encoding: .utf8)
+        try "ignore me\n".write(to: ignoredFileURL, atomically: true, encoding: .utf8)
+    }
+
+    func refreshGitState() {
+        gitStatusTask?.cancel()
+        gitStatusToken = UUID()
+        let token = gitStatusToken
+
+        guard let rootDirectory else {
+            resetGitState()
+            return
+        }
+
+        let normalizedRootPath = normalizedPath(for: rootDirectory)
+        isRefreshingGitStatus = true
+
+        gitStatusTask = Task { [weak self] in
+            guard let self else { return }
+            let status = await self.gitService.repositoryStatus(for: rootDirectory)
+            guard !Task.isCancelled,
+                  self.gitStatusToken == token,
+                  self.rootDirectory.map(self.normalizedPath(for:)) == normalizedRootPath else {
+                return
+            }
+
+            self.gitRepositoryStatus = status
+            self.isRefreshingGitStatus = false
+            self.refreshSelectedGitDiffIfNeeded()
+            self.refreshCurrentLineBlame()
+        }
+    }
+
+    private func loadGitDiff(for changedFile: GitChangedFile) {
+        gitDiffTask?.cancel()
+        gitDiffToken = UUID()
+        let token = gitDiffToken
+        selectedGitDiffPath = changedFile.path
+        selectedGitDiff = nil
+        isLoadingGitDiff = true
+
+        let normalizedRootPath = rootDirectory.map(normalizedPath(for:))
+        gitDiffTask = Task { [weak self] in
+            guard let self else { return }
+            let diff = await self.gitService.diff(for: changedFile, projectRoot: self.rootDirectory)
+            guard !Task.isCancelled,
+                  self.gitDiffToken == token,
+                  self.selectedGitDiffPath == changedFile.path,
+                  self.rootDirectory.map(self.normalizedPath(for:)) == normalizedRootPath else {
+                return
+            }
+
+            self.selectedGitDiff = diff
+            self.isLoadingGitDiff = false
+        }
+    }
+
+    private func refreshSelectedGitDiffIfNeeded() {
+        guard let selectedGitDiffPath else {
+            selectedGitDiff = nil
+            isLoadingGitDiff = false
+            return
+        }
+
+        guard let changedFile = gitRepositoryStatus.changedFiles.first(where: { $0.path == selectedGitDiffPath }) else {
+            closeGitDiffPanel()
+            return
+        }
+
+        if isGitDiffVisible {
+            loadGitDiff(for: changedFile)
+        }
+    }
+
+    private func refreshCurrentLineBlame() {
+        gitBlameTask?.cancel()
+        gitBlameToken = UUID()
+        let token = gitBlameToken
+
+        guard let selectedTab, let fileURL = selectedTab.filePath, !selectedTab.isDirty else {
+            currentLineBlame = nil
+            return
+        }
+
+        currentLineBlame = nil
+        let selectedPath = normalizedPath(for: fileURL)
+        let selectedLine = selectedTab.cursorPosition.line
+        let normalizedRootPath = rootDirectory.map(normalizedPath(for:))
+
+        gitBlameTask = Task { [weak self] in
+            guard let self else { return }
+            let blame = await self.gitService.blame(
+                for: fileURL,
+                line: selectedLine,
+                projectRoot: self.rootDirectory
+            )
+            guard !Task.isCancelled,
+                  self.gitBlameToken == token,
+                  self.selectedTab?.filePath.map(self.normalizedPath(for:)) == selectedPath,
+                  self.selectedTab?.cursorPosition.line == selectedLine,
+                  self.rootDirectory.map(self.normalizedPath(for:)) == normalizedRootPath else {
+                return
+            }
+
+            self.currentLineBlame = blame
+        }
+    }
+
+    private func runGitMutation(
+        task: @escaping @Sendable () async -> GitOperationResult,
+        onSuccess: (() -> Void)? = nil
+    ) {
+        Task { [weak self] in
+            guard let self else { return }
+            let result = await task()
+            guard !Task.isCancelled else { return }
+
+            if result.isSuccess {
+                onSuccess?()
+                self.refreshGitState()
+            } else {
+                self.ui.alert("Git Action Failed", result.message ?? "Git action failed.", .warning)
+            }
+        }
+    }
+
+    private func resetGitState() {
+        gitRepositoryStatus = .empty
+        selectedGitDiff = nil
+        selectedGitDiffPath = nil
+        currentLineBlame = nil
+        isRefreshingGitStatus = false
+        isLoadingGitDiff = false
+        if isGitDiffPanelVisible {
+            bottomPanel = nil
+        }
+    }
+
+    private var normalizedIgnoredGitPaths: [String] {
+        gitRepositoryStatus.ignoredPaths.map { ignoredPath in
+            ignoredPath.hasSuffix("/") ? String(ignoredPath.dropLast()) : ignoredPath
+        }
+    }
+
+    private func gitRelativePath(for fileURL: URL) -> String? {
+        guard let repositoryRoot = gitRepositoryStatus.repositoryRoot else { return nil }
+        let filePath = normalizedPath(for: fileURL)
+        let rootPath = normalizedPath(for: repositoryRoot)
+        guard filePath.hasPrefix(rootPath + "/") else { return nil }
+        return String(filePath.dropFirst(rootPath.count + 1))
+    }
+
     private func normalizedPath(for url: URL) -> String {
         url.standardizedFileURL.path
+    }
+
+    private func isDirectory(_ url: URL) -> Bool {
+        var isDirectory = ObjCBool(false)
+        FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory)
+        return isDirectory.boolValue
     }
 
     private func shouldPromptToCreateProjectConfig(for url: URL) -> Bool {
@@ -1566,6 +2065,10 @@ final class ProjectViewModel: ObservableObject {
         var selections = sessionStore.dictionary(forKey: debugSelectedConfigurationsKey) as? [String: String] ?? [:]
         selections[normalizedPath(for: rootDirectory)] = selectedDebugConfigurationName
         sessionStore.set(selections, forKey: debugSelectedConfigurationsKey)
+    }
+
+    private func dismissGitDiffWorkspace() {
+        isGitDiffWorkspaceVisible = false
     }
 
     private var projectConfigPromptedRoots: Set<String> {

@@ -1,0 +1,28 @@
+version: "3"
+
+vars:
+  PROJECT: Rosewood.xcodeproj
+  APP: Rosewood
+  CLI: rosewood
+  UNIT: RosewoodTests
+  UI: RosewoodUITests
+  DEST: platform=macOS
+  DATA: .derived
+
+includes:
+  xcode:
+    taskfile: ./taskfiles/xcode/Taskfile.yml
+    flatten: true
+
+tasks:
+  default:
+    desc: Show available tasks
+    silent: true
+    cmds:
+      - task --list
+
+  help:
+    desc: Show available tasks
+    silent: true
+    cmds:
+      - task --list

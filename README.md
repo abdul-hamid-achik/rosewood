@@ -25,6 +25,7 @@ A lightweight, native macOS code editor built with Swift and SwiftUI/AppKit.
 - **Session persistence** across app restarts
 - **Line numbers** with gutter divider, breakpoints, and fold controls
 - **Status bar** showing cursor position, encoding, language, LSP state, and diagnostics
+- **Git integration** with branch status, working tree changes, unified diff preview, and line blame
 
 ## Quick Start
 
@@ -47,10 +48,63 @@ xcodebuild build -scheme Rosewood -configuration Debug -destination 'platform=ma
 open Rosewood.xcodeproj
 ```
 
+### Taskfile
+
+```bash
+# Show available tasks
+task
+
+# Generate the Xcode project
+task gen
+
+# Build the local debug app into .derived/
+task build
+
+# Launch the local debug app
+task run
+
+# Print the local app path
+task path
+
+# Install Rosewood globally for your user
+task install
+
+# Print the global install paths
+task where
+
+# Run unit tests
+task test
+
+# Run UI tests
+task ui
+
+# Build a release app
+task release
+```
+
 ### Run Tests
 
 ```bash
 xcodebuild test -scheme RosewoodTests -destination 'platform=macOS'
+```
+
+Local Taskfile builds are written to:
+
+```text
+.derived/Build/Products/Debug/Rosewood.app
+```
+
+User-level installs are written to:
+
+```text
+~/Applications/Rosewood.app
+~/.local/bin/rosewood
+```
+
+If `rosewood` is not found in your shell, add this to `~/.zshrc`:
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
 ```
 
 ## Keyboard Shortcuts
@@ -127,13 +181,13 @@ UITests/                XCTest UI tests
 - [x] File watcher for external changes
 - [x] LSP integration — autocomplete, diagnostics, go-to-definition, hover info, references
 - [x] Debugger foundations — breakpoints, launch/reset, debug console, project debug configs
+- [x] Git integration — branch, diff, blame
 
 ### Planned
 
 - [ ] AI agent panel — inline code assistance, chat, code generation
 - [ ] AI code autocomplete — ghost text suggestions, tab-to-accept, context-aware completions
 - [ ] ACP (Agent Communication Protocol) support — interop with external AI agents and tools
-- [ ] Git integration (branch, diff, blame)
 - [ ] Terminal panel
 - [ ] Split editor panes
 - [ ] Extension / plugin system
@@ -144,8 +198,10 @@ UITests/                XCTest UI tests
 1. Fork the repository
 2. Create a feature branch
 3. Run `xcodegen generate` after adding new source files
-4. Ensure tests pass: `xcodebuild test -scheme RosewoodTests -destination 'platform=macOS'`
-5. Submit a pull request
+4. You can use `task gen`, `task build`, `task install`, `task test`, and `task ui` for local workflows
+5. The shared commands live in `taskfiles/xcode/Taskfile.yml`, which can be copied into other Xcode repos or included from a central Taskfile repo
+6. Ensure tests pass: `xcodebuild test -scheme RosewoodTests -destination 'platform=macOS'`
+7. Submit a pull request
 
 ## License
 

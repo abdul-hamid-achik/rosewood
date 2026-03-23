@@ -128,6 +128,33 @@ struct AppDelegateTests {
 
         #expect(delegate.validateMenuItem(item) == true)
     }
+
+    @Test
+    func openFilesForwardsDirectoriesToProjectViewModel() throws {
+        let rootURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let configURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("toml")
+        defer { try? FileManager.default.removeItem(at: configURL) }
+
+        let viewModel = ProjectViewModel(
+            fileService: FileService(),
+            sessionStore: makeDefaults(),
+            sessionKey: "app-delegate-open-files",
+            configService: ConfigurationService(userConfigURL: configURL),
+            fileWatcher: FileWatcherService(),
+            notificationCenter: NotificationCenter(),
+            ui: .test
+        )
+
+        let delegate = AppDelegate(notificationCenter: NotificationCenter(), projectViewModel: viewModel)
+        delegate.application(NSApp, openFiles: [rootURL.path])
+
+        #expect(viewModel.rootDirectory?.standardizedFileURL.path == rootURL.standardizedFileURL.path)
+    }
 }
 
 @MainActor

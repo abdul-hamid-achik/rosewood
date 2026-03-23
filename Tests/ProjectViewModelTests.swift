@@ -405,6 +405,452 @@ struct ProjectViewModelTests {
     }
 
     @Test
+    func refreshGitStatePublishesBranchAndChangedFiles() async throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let configURL = tempConfigURL()
+        defer { try? FileManager.default.removeItem(at: configURL) }
+
+        let gitService = MockGitService()
+        gitService.repositoryStatusResult = GitRepositoryStatus(
+            repositoryRoot: rootURL,
+            branchName: "main",
+            changedFiles: [
+                GitChangedFile(
+                    path: "Tracked.swift",
+                    previousPath: nil,
+                    kind: .modified,
+                    indexStatus: " ",
+                    workingTreeStatus: "M"
+                )
+            ],
+            ignoredPaths: []
+        )
+
+        let viewModel = makeViewModel(
+            sessionStore: makeDefaults(),
+            sessionKey: "git-state-test",
+            configService: ConfigurationService(userConfigURL: configURL),
+            fileWatcher: FileWatcherService(),
+            ui: TestProjectUI(),
+            gitService: gitService
+        )
+
+        viewModel.rootDirectory = rootURL
+        viewModel.refreshGitState()
+
+        try await waitUntil {
+            viewModel.gitRepositoryStatus.branchName == "main" &&
+                viewModel.gitRepositoryStatus.changedFiles.count == 1
+        }
+
+        #expect(viewModel.gitRepositoryStatus.branchName == "main")
+        #expect(viewModel.gitRepositoryStatus.changedFiles.map(\.path) == ["Tracked.swift"])
+        #expect(gitService.repositoryStatusCalls.map(\.standardizedFileURL.path).contains(rootURL.standardizedFileURL.path))
+    }
+
+    @Test
+    func openGitChangedFileLoadsDiffAndShowsWorkspaceDiff() async throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let fileURL = rootURL.appendingPathComponent("Tracked.swift")
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        try "let tracked = 1\n".write(to: fileURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let configURL = tempConfigURL()
+        defer { try? FileManager.default.removeItem(at: configURL) }
+
+        let changedFile = GitChangedFile(
+            path: "Tracked.swift",
+            previousPath: nil,
+            kind: .modified,
+            indexStatus: " ",
+            workingTreeStatus: "M"
+        )
+
+        let gitService = MockGitService()
+        gitService.repositoryStatusResult = GitRepositoryStatus(
+            repositoryRoot: rootURL,
+            branchName: "main",
+            changedFiles: [changedFile],
+            ignoredPaths: []
+        )
+        gitService.diffResults[changedFile.path] = GitDiffResult(
+            path: changedFile.path,
+            text: "@@ -1 +1 @@\n-let tracked = 0\n+let tracked = 1"
+        )
+
+        let viewModel = makeViewModel(
+            sessionStore: makeDefaults(),
+            sessionKey: "git-diff-test",
+            configService: ConfigurationService(userConfigURL: configURL),
+            fileWatcher: FileWatcherService(),
+            ui: TestProjectUI(),
+            gitService: gitService
+        )
+
+        viewModel.rootDirectory = rootURL
+        viewModel.refreshGitState()
+        try await waitUntil {
+            viewModel.gitRepositoryStatus.changedFiles.count == 1
+        }
+
+        viewModel.openGitChangedFile(changedFile)
+
+        try await waitUntil {
+            viewModel.selectedGitDiff?.path == changedFile.path &&
+                viewModel.isGitDiffWorkspaceVisible
+        }
+
+        #expect(viewModel.selectedTab?.filePath?.standardizedFileURL.path == fileURL.standardizedFileURL.path)
+        #expect(viewModel.selectedGitDiff?.text.contains("+let tracked = 1") == true)
+        #expect(viewModel.selectedGitDiff?.hasStructuredChanges == true)
+        #expect(viewModel.selectedGitDiff?.hunks.first?.rows.first?.rightText == "let tracked = 1")
+    }
+
+    @Test
+    func gitWorkspaceNavigationMovesBetweenChangedFiles() async throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let firstURL = rootURL.appendingPathComponent("First.swift")
+        let secondURL = rootURL.appendingPathComponent("Second.swift")
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        try "let first = 1\n".write(to: firstURL, atomically: true, encoding: .utf8)
+        try "let second = 1\n".write(to: secondURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let configURL = tempConfigURL()
+        defer { try? FileManager.default.removeItem(at: configURL) }
+
+        let firstChange = GitChangedFile(
+            path: "First.swift",
+            previousPath: nil,
+            kind: .modified,
+            indexStatus: " ",
+            workingTreeStatus: "M"
+        )
+        let secondChange = GitChangedFile(
+            path: "Second.swift",
+            previousPath: nil,
+            kind: .modified,
+            indexStatus: " ",
+            workingTreeStatus: "M"
+        )
+
+        let gitService = MockGitService()
+        gitService.repositoryStatusResult = GitRepositoryStatus(
+            repositoryRoot: rootURL,
+            branchName: "main",
+            changedFiles: [firstChange, secondChange],
+            ignoredPaths: []
+        )
+        gitService.diffResults[firstChange.path] = GitDiffResult(path: firstChange.path, text: "@@ -1 +1 @@\n-let first = 0\n+let first = 1")
+        gitService.diffResults[secondChange.path] = GitDiffResult(path: secondChange.path, text: "@@ -1 +1 @@\n-let second = 0\n+let second = 1")
+
+        let viewModel = makeViewModel(
+            sessionStore: makeDefaults(),
+            sessionKey: "git-workspace-nav-test",
+            configService: ConfigurationService(userConfigURL: configURL),
+            fileWatcher: FileWatcherService(),
+            ui: TestProjectUI(),
+            gitService: gitService
+        )
+
+        viewModel.rootDirectory = rootURL
+        viewModel.refreshGitState()
+        try await waitUntil {
+            viewModel.gitRepositoryStatus.changedFiles.count == 2
+        }
+
+        viewModel.openGitChangedFile(firstChange)
+        try await waitUntil {
+            viewModel.selectedGitDiffPath == firstChange.path
+        }
+
+        #expect(viewModel.selectedGitChangePositionText == "Change 1 of 2")
+        #expect(viewModel.canShowPreviousGitChange == false)
+        #expect(viewModel.canShowNextGitChange)
+
+        viewModel.showNextGitChange()
+        try await waitUntil {
+            viewModel.selectedGitDiffPath == secondChange.path
+        }
+
+        #expect(viewModel.selectedGitChangePositionText == "Change 2 of 2")
+        #expect(viewModel.canShowPreviousGitChange)
+        #expect(viewModel.canShowNextGitChange == false)
+
+        viewModel.showPreviousGitChange()
+        try await waitUntil {
+            viewModel.selectedGitDiffPath == firstChange.path
+        }
+    }
+
+    @Test
+    func gitRepositoryStatusGroupsChangesForSourceControlSections() {
+        let status = GitRepositoryStatus(
+            repositoryRoot: URL(fileURLWithPath: "/tmp/repo"),
+            branchName: "main",
+            changedFiles: [
+                GitChangedFile(path: "Conflict.swift", previousPath: nil, kind: .conflicted, indexStatus: "U", workingTreeStatus: "U"),
+                GitChangedFile(path: "Staged.swift", previousPath: nil, kind: .modified, indexStatus: "M", workingTreeStatus: " "),
+                GitChangedFile(path: "Mixed.swift", previousPath: nil, kind: .modified, indexStatus: "M", workingTreeStatus: "M"),
+                GitChangedFile(path: "Notes.md", previousPath: nil, kind: .untracked, indexStatus: "?", workingTreeStatus: "?")
+            ],
+            ignoredPaths: []
+        )
+
+        #expect(status.conflictedCount == 1)
+        #expect(status.stagedCount == 2)
+        #expect(status.unstagedCount == 1)
+        #expect(status.untrackedCount == 1)
+        #expect(status.changeSections.map(\.section) == [.conflicted, .staged, .changes, .untracked])
+        #expect(status.changeSections.first?.files.map(\.path) == ["Conflict.swift"])
+        #expect(status.changeSections[1].files.map(\.path) == ["Staged.swift"])
+        #expect(status.changeSections[2].files.map(\.path) == ["Mixed.swift"])
+        #expect(status.changeSections[3].files.map(\.path) == ["Notes.md"])
+    }
+
+    @Test
+    func gitWorkspaceViewActionsUpdateEditorAndSidebarState() async throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let fileURL = rootURL.appendingPathComponent("Tracked.swift")
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        try "let tracked = 1\n".write(to: fileURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let configURL = tempConfigURL()
+        defer { try? FileManager.default.removeItem(at: configURL) }
+
+        let changedFile = GitChangedFile(
+            path: "Tracked.swift",
+            previousPath: nil,
+            kind: .modified,
+            indexStatus: " ",
+            workingTreeStatus: "M"
+        )
+
+        let gitService = MockGitService()
+        gitService.repositoryStatusResult = GitRepositoryStatus(
+            repositoryRoot: rootURL,
+            branchName: "main",
+            changedFiles: [changedFile],
+            ignoredPaths: []
+        )
+        gitService.diffResults[changedFile.path] = GitDiffResult(path: changedFile.path, text: "@@ -1 +1 @@\n-let tracked = 0\n+let tracked = 1")
+
+        let viewModel = makeViewModel(
+            sessionStore: makeDefaults(),
+            sessionKey: "git-workspace-view-actions-test",
+            configService: ConfigurationService(userConfigURL: configURL),
+            fileWatcher: FileWatcherService(),
+            ui: TestProjectUI(),
+            gitService: gitService
+        )
+
+        viewModel.rootDirectory = rootURL
+        viewModel.refreshGitState()
+        try await waitUntil {
+            viewModel.gitRepositoryStatus.changedFiles.count == 1
+        }
+
+        viewModel.openGitChangedFile(changedFile)
+        try await waitUntil {
+            viewModel.selectedGitDiffPath == changedFile.path &&
+                viewModel.isGitDiffWorkspaceVisible
+        }
+
+        #expect(viewModel.selectedGitChangeReviewLabel == "Reviewing Modified 1/1")
+
+        viewModel.revealSelectedGitChangeInExplorer()
+        #expect(viewModel.sidebarMode == .explorer)
+        #expect(viewModel.isGitDiffWorkspaceVisible)
+
+        viewModel.openSelectedGitChangeInEditor()
+        #expect(viewModel.isGitDiffWorkspaceVisible == false)
+        #expect(viewModel.selectedTab?.filePath?.standardizedFileURL.path == fileURL.standardizedFileURL.path)
+    }
+
+    @Test
+    func gitWorkspaceActionsDispatchToGitService() async throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let fileURL = rootURL.appendingPathComponent("Tracked.swift")
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        try "let tracked = 1\n".write(to: fileURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let configURL = tempConfigURL()
+        defer { try? FileManager.default.removeItem(at: configURL) }
+
+        let changedFile = GitChangedFile(
+            path: "Tracked.swift",
+            previousPath: nil,
+            kind: .modified,
+            indexStatus: "M",
+            workingTreeStatus: "M"
+        )
+
+        let gitService = MockGitService()
+        gitService.repositoryStatusResult = GitRepositoryStatus(
+            repositoryRoot: rootURL,
+            branchName: "main",
+            changedFiles: [changedFile],
+            ignoredPaths: []
+        )
+        gitService.diffResults[changedFile.path] = GitDiffResult(path: changedFile.path, text: "@@ -1 +1 @@\n-let tracked = 0\n+let tracked = 1")
+
+        let ui = TestProjectUI(confirmResponses: [.alertFirstButtonReturn])
+        let viewModel = makeViewModel(
+            sessionStore: makeDefaults(),
+            sessionKey: "git-workspace-action-test",
+            configService: ConfigurationService(userConfigURL: configURL),
+            fileWatcher: FileWatcherService(),
+            ui: ui,
+            gitService: gitService
+        )
+
+        viewModel.rootDirectory = rootURL
+        viewModel.refreshGitState()
+        try await waitUntil {
+            viewModel.gitRepositoryStatus.changedFiles.count == 1
+        }
+
+        viewModel.openGitChangedFile(changedFile)
+        try await waitUntil {
+            viewModel.selectedGitDiffPath == changedFile.path
+        }
+
+        viewModel.stageSelectedGitChange()
+        viewModel.unstageSelectedGitChange()
+        viewModel.discardSelectedGitChange()
+
+        try await waitUntil {
+            gitService.stageCalls.count == 1 &&
+                gitService.unstageCalls.count == 1 &&
+                gitService.discardCalls.count == 1
+        }
+
+        #expect(gitService.stageCalls == ["Tracked.swift"])
+        #expect(gitService.unstageCalls == ["Tracked.swift"])
+        #expect(gitService.discardCalls == ["Tracked.swift"])
+        #expect(ui.confirms.last?.title == "Discard Working Tree Changes?")
+    }
+
+    @Test
+    func updateCursorPositionRefreshesGitBlame() async throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let fileURL = rootURL.appendingPathComponent("Tracked.swift")
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        try "line one\nline two\n".write(to: fileURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let configURL = tempConfigURL()
+        defer { try? FileManager.default.removeItem(at: configURL) }
+
+        let gitService = MockGitService()
+        gitService.blameResults["\(fileURL.standardizedFileURL.path):2"] = GitBlameInfo(
+            commitHash: "1234567890abcdef",
+            shortCommitHash: "12345678",
+            author: "Rosewood Tests",
+            summary: "Refine greeting",
+            authoredDate: nil
+        )
+
+        let viewModel = makeViewModel(
+            sessionStore: makeDefaults(),
+            sessionKey: "git-blame-test",
+            configService: ConfigurationService(userConfigURL: configURL),
+            fileWatcher: FileWatcherService(),
+            ui: TestProjectUI(),
+            gitService: gitService
+        )
+
+        viewModel.rootDirectory = rootURL
+        viewModel.openFile(at: fileURL)
+        viewModel.updateCursorPosition(line: 2, column: 1)
+
+        try await waitUntil {
+            viewModel.currentLineBlame?.summary == "Refine greeting"
+        }
+
+        #expect(viewModel.currentLineBlame?.author == "Rosewood Tests")
+        #expect(gitService.blameCalls.contains { $0.fileURL.standardizedFileURL.path == fileURL.standardizedFileURL.path && $0.line == 2 })
+    }
+
+    @Test
+    func explorerGitHelpersReportChangedAndIgnoredItems() async throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let trackedURL = rootURL.appendingPathComponent("Tracked.swift")
+        let ignoredURL = rootURL.appendingPathComponent("Ignored.log")
+        let srcURL = rootURL.appendingPathComponent("Sources", isDirectory: true)
+        let nestedURL = srcURL.appendingPathComponent("Nested.swift")
+
+        try FileManager.default.createDirectory(at: srcURL, withIntermediateDirectories: true)
+        try "let tracked = 1\n".write(to: trackedURL, atomically: true, encoding: .utf8)
+        try "ignore me\n".write(to: ignoredURL, atomically: true, encoding: .utf8)
+        try "let nested = true\n".write(to: nestedURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let configURL = tempConfigURL()
+        defer { try? FileManager.default.removeItem(at: configURL) }
+
+        let gitService = MockGitService()
+        gitService.repositoryStatusResult = GitRepositoryStatus(
+            repositoryRoot: rootURL,
+            branchName: "main",
+            changedFiles: [
+                GitChangedFile(
+                    path: "Tracked.swift",
+                    previousPath: nil,
+                    kind: .modified,
+                    indexStatus: " ",
+                    workingTreeStatus: "M"
+                ),
+                GitChangedFile(
+                    path: "Sources/Nested.swift",
+                    previousPath: nil,
+                    kind: .added,
+                    indexStatus: "A",
+                    workingTreeStatus: " "
+                )
+            ],
+            ignoredPaths: ["Ignored.log"]
+        )
+
+        let viewModel = makeViewModel(
+            sessionStore: makeDefaults(),
+            sessionKey: "git-explorer-helper-test",
+            configService: ConfigurationService(userConfigURL: configURL),
+            fileWatcher: FileWatcherService(),
+            ui: TestProjectUI(),
+            gitService: gitService
+        )
+
+        viewModel.rootDirectory = rootURL
+        viewModel.refreshGitState()
+
+        try await waitUntil {
+            viewModel.gitRepositoryStatus.branchName == "main"
+        }
+
+        let trackedItem = FileItem(name: "Tracked.swift", path: trackedURL, isDirectory: false)
+        let ignoredItem = FileItem(name: "Ignored.log", path: ignoredURL, isDirectory: false)
+        let sourcesItem = FileItem(name: "Sources", path: srcURL, isDirectory: true)
+
+        #expect(viewModel.gitChange(for: trackedItem)?.kind == .modified)
+        #expect(viewModel.isGitIgnored(ignoredItem))
+        #expect(viewModel.gitChangedDescendantCount(for: sourcesItem) == 1)
+    }
+
+    @Test
     func commandPaletteShowsFindReferencesOnlyWhenLSPIsReady() throws {
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -679,6 +1125,102 @@ struct ProjectViewModelTests {
         }
 
         #expect(ui.confirms.filter { $0.title == "Create Project Config?" }.count == 1)
+    }
+
+    @Test
+    func openExternalDirectoryClearsStateAndLoadsNewRoot() async throws {
+        let firstRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let secondRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let firstFile = firstRoot.appendingPathComponent("One.swift")
+        let secondFile = secondRoot.appendingPathComponent("Two.swift")
+
+        try FileManager.default.createDirectory(at: firstRoot, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: secondRoot, withIntermediateDirectories: true)
+        try "print(\"one\")".write(to: firstFile, atomically: true, encoding: .utf8)
+        try "print(\"two\")".write(to: secondFile, atomically: true, encoding: .utf8)
+        defer {
+            try? FileManager.default.removeItem(at: firstRoot)
+            try? FileManager.default.removeItem(at: secondRoot)
+        }
+
+        let configURL = tempConfigURL()
+        defer { try? FileManager.default.removeItem(at: configURL) }
+
+        let fileWatcher = FileWatcherService()
+        let ui = TestProjectUI(confirmResponses: [.alertSecondButtonReturn, .alertSecondButtonReturn])
+        let viewModel = makeViewModel(
+            sessionStore: makeDefaults(),
+            sessionKey: "open-external-directory-test",
+            configService: ConfigurationService(userConfigURL: configURL),
+            fileWatcher: fileWatcher,
+            ui: ui
+        )
+
+        viewModel.openExternalItems([firstRoot])
+        try await waitUntil {
+            viewModel.rootDirectory?.standardizedFileURL.path == firstRoot.standardizedFileURL.path &&
+                viewModel.fileTree.map(\.name) == ["One.swift"] &&
+                !viewModel.isLoadingFileTree
+        }
+
+        viewModel.openFile(at: firstFile)
+        viewModel.showReferences([
+            LSPLocation(
+                uri: firstFile.absoluteString,
+                range: LSPRange(
+                    start: LSPPosition(line: 0, character: 6),
+                    end: LSPPosition(line: 0, character: 9)
+                )
+            )
+        ])
+
+        viewModel.openExternalItems([secondRoot])
+        try await waitUntil {
+            viewModel.rootDirectory?.standardizedFileURL.path == secondRoot.standardizedFileURL.path &&
+                viewModel.fileTree.map(\.name) == ["Two.swift"] &&
+                viewModel.openTabs.isEmpty &&
+                !viewModel.isLoadingFileTree
+        }
+
+        #expect(fileWatcher.watchedURLs.isEmpty)
+        #expect(viewModel.referenceResults.isEmpty)
+        #expect(viewModel.isReferencesPanelVisible == false)
+    }
+
+    @Test
+    func openExternalFileOpensParentFolderAndSelectsFile() async throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let fileURL = rootURL.appendingPathComponent("Alpha.swift")
+
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        try "let alpha = 1\n".write(to: fileURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let configURL = tempConfigURL()
+        defer { try? FileManager.default.removeItem(at: configURL) }
+
+        let fileWatcher = FileWatcherService()
+        let viewModel = makeViewModel(
+            sessionStore: makeDefaults(),
+            sessionKey: "open-external-file-test",
+            configService: ConfigurationService(userConfigURL: configURL),
+            fileWatcher: fileWatcher,
+            ui: TestProjectUI()
+        )
+
+        viewModel.openExternalItems([fileURL])
+
+        try await waitUntil {
+            viewModel.rootDirectory?.standardizedFileURL.path == rootURL.standardizedFileURL.path &&
+                viewModel.selectedTab?.filePath?.standardizedFileURL.path == fileURL.standardizedFileURL.path &&
+                !viewModel.isLoadingFileTree
+        }
+
+        #expect(viewModel.openTabs.count == 1)
+        #expect(fileWatcher.watchedURLs == Set([fileURL]))
     }
 
     @Test
@@ -1732,7 +2274,8 @@ private func makeViewModel(
     fileWatcher: FileWatcherService,
     ui: TestProjectUI,
     lspService: LSPServiceProtocol? = nil,
-    debugSessionService: DebugSessionServiceProtocol? = nil
+    debugSessionService: DebugSessionServiceProtocol? = nil,
+    gitService: GitServiceProtocol = MockGitService()
 ) -> ProjectViewModel {
     ProjectViewModel(
         fileService: fileService,
@@ -1743,7 +2286,8 @@ private func makeViewModel(
         notificationCenter: NotificationCenter(),
         ui: ui.handlers,
         lspService: lspService ?? MockLSPService(),
-        debugSessionService: debugSessionService
+        debugSessionService: debugSessionService,
+        gitService: gitService
     )
 }
 
@@ -1791,4 +2335,75 @@ private func waitUntil(
     }
 
     Issue.record("Timed out waiting for condition")
+}
+
+private final class MockGitService: GitServiceProtocol {
+    var repositoryStatusResult: GitRepositoryStatus = .empty
+    var diffResults: [String: GitDiffResult] = [:]
+    var blameResults: [String: GitBlameInfo] = [:]
+    var stageResult: GitOperationResult = .success
+    var unstageResult: GitOperationResult = .success
+    var discardResult: GitOperationResult = .success
+
+    private let lock = NSLock()
+
+    private(set) var repositoryStatusCalls: [URL] = []
+    private(set) var diffCalls: [String] = []
+    private(set) var blameCalls: [(fileURL: URL, line: Int)] = []
+    private(set) var stageCalls: [String] = []
+    private(set) var unstageCalls: [String] = []
+    private(set) var discardCalls: [String] = []
+
+    func repositoryStatus(for projectRoot: URL?) async -> GitRepositoryStatus {
+        if let projectRoot {
+            lock.lock()
+            repositoryStatusCalls.append(projectRoot)
+            lock.unlock()
+        }
+        lock.lock()
+        let result = repositoryStatusResult
+        lock.unlock()
+        return result
+    }
+
+    func diff(for changedFile: GitChangedFile, projectRoot: URL?) async -> GitDiffResult? {
+        lock.lock()
+        diffCalls.append(changedFile.path)
+        let result = diffResults[changedFile.path]
+        lock.unlock()
+        return result
+    }
+
+    func blame(for fileURL: URL?, line: Int, projectRoot: URL?) async -> GitBlameInfo? {
+        guard let fileURL else { return nil }
+        lock.lock()
+        blameCalls.append((fileURL, line))
+        let result = blameResults["\(fileURL.standardizedFileURL.path):\(line)"]
+        lock.unlock()
+        return result
+    }
+
+    func stage(changedFile: GitChangedFile, projectRoot: URL?) async -> GitOperationResult {
+        lock.lock()
+        stageCalls.append(changedFile.path)
+        let result = stageResult
+        lock.unlock()
+        return result
+    }
+
+    func unstage(changedFile: GitChangedFile, projectRoot: URL?) async -> GitOperationResult {
+        lock.lock()
+        unstageCalls.append(changedFile.path)
+        let result = unstageResult
+        lock.unlock()
+        return result
+    }
+
+    func discard(changedFile: GitChangedFile, projectRoot: URL?) async -> GitOperationResult {
+        lock.lock()
+        discardCalls.append(changedFile.path)
+        let result = discardResult
+        lock.unlock()
+        return result
+    }
 }

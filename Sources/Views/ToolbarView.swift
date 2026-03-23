@@ -60,6 +60,22 @@ struct ToolbarView: View {
             .help("Search in Project")
             .disabled(!canSearchProject)
 
+            let canShowSourceControl = projectViewModel.rootDirectory != nil
+            Button {
+                projectViewModel.showSourceControlSidebar()
+            } label: {
+                toolbarIcon(
+                    systemName: "arrow.triangle.branch",
+                    size: 14,
+                    color: themeColors.accent,
+                    isEnabled: canShowSourceControl
+                )
+            }
+            .buttonStyle(.borderless)
+            .help("Source Control")
+            .disabled(!canShowSourceControl)
+            .accessibilityIdentifier("toolbar-source-control")
+
             let canShowDebugSidebar = projectViewModel.canAccessDebugControls
             Button {
                 projectViewModel.showDebugSidebar()
