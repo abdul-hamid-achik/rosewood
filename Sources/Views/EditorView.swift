@@ -50,6 +50,7 @@ struct EditorView: View {
             executionLine: projectViewModel.currentExecutionLine,
             fileURL: projectViewModel.selectedTab?.filePath ?? tab.filePath,
             projectRootDirectory: projectViewModel.rootDirectory,
+            prefersProjectSearchNavigation: projectViewModel.canNavigateProjectSearchResults,
             isLanguageServerAvailable: lspService.serverAvailable(for: tab.language),
             documentURI: projectViewModel.selectedTab?.documentURI,
             lspService: lspService,
@@ -105,6 +106,7 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
     let executionLine: Int?
     let fileURL: URL?
     let projectRootDirectory: URL?
+    let prefersProjectSearchNavigation: Bool
     let isLanguageServerAvailable: Bool
     let documentURI: String?
     let lspService: LSPServiceProtocol?
@@ -607,6 +609,7 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
                 object: nil,
                 queue: .main
             ) { [weak self] _ in
+                guard self?.parent.prefersProjectSearchNavigation != true else { return }
                 self?.performTextFinderAction(.nextMatch)
             }
 
@@ -615,6 +618,7 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
                 object: nil,
                 queue: .main
             ) { [weak self] _ in
+                guard self?.parent.prefersProjectSearchNavigation != true else { return }
                 self?.performTextFinderAction(.previousMatch)
             }
 

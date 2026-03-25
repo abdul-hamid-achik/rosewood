@@ -1,6 +1,25 @@
 import XCTest
 
 final class RosewoodUITests: XCTestCase {
+    private func hasAccessibilityIdentifier(_ app: XCUIApplication, _ identifier: String) -> Bool {
+        app.descendants(matching: .any).matching(identifier: identifier).firstMatch.exists
+    }
+
+    private func waitForElementCount(
+        _ query: XCUIElementQuery,
+        count expectedCount: Int,
+        timeout: TimeInterval
+    ) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if query.count == expectedCount {
+                return true
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
+        return query.count == expectedCount
+    }
+
     override func setUpWithError() throws {
         continueAfterFailure = false
     }
@@ -20,7 +39,382 @@ final class RosewoodUITests: XCTestCase {
         XCTAssertTrue(app.textFields["Search in project"].waitForExistence(timeout: 2))
         XCTAssertTrue(app.textFields["Replace with"].exists)
         XCTAssertTrue(app.buttons["Find"].exists)
-        XCTAssertTrue(app.buttons["Replace All"].exists)
+        XCTAssertTrue(hasAccessibilityIdentifier(app, "project-search-replace-all"))
+        XCTAssertTrue(hasAccessibilityIdentifier(app, "project-search-case-sensitive"))
+        XCTAssertTrue(hasAccessibilityIdentifier(app, "project-search-whole-word"))
+        XCTAssertTrue(hasAccessibilityIdentifier(app, "project-search-regex"))
+        XCTAssertTrue(hasAccessibilityIdentifier(app, "project-search-include-glob"))
+        XCTAssertTrue(hasAccessibilityIdentifier(app, "project-search-exclude-glob"))
+    }
+
+    @MainActor
+    func testLaunchSupportsQuickOpenAndCommandPaletteShortcuts() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["ROSEWOOD_UI_TEST_RESET_SESSION"] = "1"
+        app.launch()
+
+        app.typeKey("p", modifierFlags: [.command])
+        XCTAssertTrue(app.textFields["Search files, :line, #symbol..."].waitForExistence(timeout: 2))
+
+        app.typeKey("p", modifierFlags: [.command, .shift])
+        XCTAssertTrue(app.textFields["Type a command..."].waitForExistence(timeout: 2))
+    }
+
+    @MainActor
+    func testCommandPaletteAliasSearchCanOpenWorkspaceSymbolMode() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["ROSEWOOD_UI_TEST_RESET_SESSION"] = "1"
+        app.launchEnvironment["ROSEWOOD_UI_TEST_NAVIGATION_FIXTURE"] = "1"
+        app.launch()
+        app.activate()
+
+        app.typeKey("p", modifierFlags: [.command, .shift])
+
+        let commandField = app.textFields["Type a command..."]
+        XCTAssertTrue(commandField.waitForExistence(timeout: 2))
+
+        commandField.click()
+        commandField.typeText("workspace symbol")
+
+        let symbolAction = app.buttons["command-palette-action-goToSymbol"]
+        XCTAssertTrue(symbolAction.waitForExistence(timeout: 2))
+        app.typeKey(XCUIKeyboardKey.return.rawValue, modifierFlags: [])
+
+        let quickOpenField = app.textFields["quick-open-input"]
+        XCTAssertTrue(quickOpenField.waitForExistence(timeout: 2))
+
+        quickOpenField.click()
+        quickOpenField.typeText("alphahelper")
+        XCTAssertTrue(app.buttons["quick-open-symbol-0"].waitForExistence(timeout: 2))
+    }
+
+    @MainActor
+    func testCommandPaletteShowsRecentSectionAfterRunningCommand() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["ROSEWOOD_UI_TEST_RESET_SESSION"] = "1"
+        app.launchEnvironment["ROSEWOOD_UI_TEST_NAVIGATION_FIXTURE"] = "1"
+        app.launch()
+        app.activate()
+
+        app.typeKey("p", modifierFlags: [.command, .shift])
+
+        let commandField = app.textFields["Type a command..."]
+        XCTAssertTrue(commandField.waitForExistence(timeout: 2))
+
+        commandField.click()
+        commandField.typeText("workspace symbol")
+        XCTAssertTrue(app.buttons["command-palette-action-goToSymbol"].waitForExistence(timeout: 2))
+        app.typeKey(XCUIKeyboardKey.return.rawValue, modifierFlags: [])
+
+        let quickOpenField = app.textFields["Search files, :line, #symbol..."]
+        XCTAssertTrue(quickOpenField.waitForExistence(timeout: 2))
+        app.typeKey(XCUIKeyboardKey.escape.rawValue, modifierFlags: [])
+
+        app.typeKey("p", modifierFlags: [.command, .shift])
+        XCTAssertTrue(commandField.waitForExistence(timeout: 2))
+        XCTAssertTrue(app.staticTexts["Recent"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.buttons["command-palette-action-goToSymbol"].waitForExistence(timeout: 2))
+    }
+
+    @MainActor
+    func testCommandPaletteScopeChipsCanNarrowCommandCategories() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["ROSEWOOD_UI_TEST_RESET_SESSION"] = "1"
+        app.launchEnvironment["ROSEWOOD_UI_TEST_NAVIGATION_FIXTURE"] = "1"
+        app.launch()
+        app.activate()
+
+        app.typeKey("p", modifierFlags: [.command, .shift])
+
+        let commandField = app.textFields["Type a command..."]
+        XCTAssertTrue(commandField.waitForExistence(timeout: 2))
+        let helpText = app.descendants(matching: .any).matching(identifier: "command-palette-help-text").firstMatch
+        XCTAssertTrue(helpText.waitForExistence(timeout: 2))
+
+        let searchScope = app.buttons["command-palette-scope-search"]
+        XCTAssertTrue(searchScope.waitForExistence(timeout: 2))
+        searchScope.click()
+
+        XCTAssertTrue(app.buttons["command-palette-action-showProjectSearch"].waitForExistence(timeout: 2))
+        XCTAssertFalse(app.buttons["command-palette-action-newFile"].exists)
+    }
+
+    @MainActor
+    func testCommandPaletteCanOpenProblemsPanel() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["ROSEWOOD_UI_TEST_RESET_SESSION"] = "1"
+        app.launchEnvironment["ROSEWOOD_UI_TEST_DIAGNOSTICS_FIXTURE"] = "1"
+        app.launch()
+        app.activate()
+
+        app.typeKey("p", modifierFlags: [.command, .shift])
+
+        let commandField = app.textFields["Type a command..."]
+        XCTAssertTrue(commandField.waitForExistence(timeout: 2))
+
+        commandField.click()
+        commandField.typeText("workspace problems")
+
+        let workspaceProblemsAction = app.buttons["command-palette-action-showWorkspaceProblems"]
+        XCTAssertTrue(workspaceProblemsAction.waitForExistence(timeout: 2))
+        app.typeKey(XCUIKeyboardKey.return.rawValue, modifierFlags: [])
+
+        XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "problems-panel").firstMatch.waitForExistence(timeout: 2))
+    }
+
+    @MainActor
+    func testCommandPaletteCanSwitchFromSourceControlToExplorer() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["ROSEWOOD_UI_TEST_RESET_SESSION"] = "1"
+        app.launchEnvironment["ROSEWOOD_UI_TEST_GIT_FIXTURE"] = "1"
+        app.launch()
+        app.activate()
+
+        let sourceControlSidebar = app.descendants(matching: .any).matching(identifier: "source-control-sidebar").firstMatch
+        XCTAssertTrue(sourceControlSidebar.waitForExistence(timeout: 5))
+
+        app.typeKey("p", modifierFlags: [.command, .shift])
+
+        let commandField = app.textFields["Type a command..."]
+        XCTAssertTrue(commandField.waitForExistence(timeout: 2))
+
+        commandField.click()
+        commandField.typeText("explorer")
+
+        let explorerAction = app.buttons["command-palette-action-showExplorer"]
+        XCTAssertTrue(explorerAction.waitForExistence(timeout: 2))
+        app.typeKey(XCUIKeyboardKey.return.rawValue, modifierFlags: [])
+
+        let trackedRow = app.descendants(matching: .any).matching(identifier: "file-tree-row-Tracked.swift").firstMatch
+        XCTAssertTrue(trackedRow.waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    func testCommandPaletteShowsContextualGitChangeActions() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["ROSEWOOD_UI_TEST_RESET_SESSION"] = "1"
+        app.launchEnvironment["ROSEWOOD_UI_TEST_GIT_FIXTURE"] = "1"
+        app.launch()
+        app.activate()
+
+        let changedFile = app.descendants(matching: .any).matching(identifier: "git-change-row-0").firstMatch
+        XCTAssertTrue(changedFile.waitForExistence(timeout: 5))
+        changedFile.click()
+
+        let diffWorkspace = app.descendants(matching: .any).matching(identifier: "git-diff-workspace").firstMatch
+        XCTAssertTrue(diffWorkspace.waitForExistence(timeout: 5))
+
+        app.typeKey("p", modifierFlags: [.command, .shift])
+
+        let commandField = app.textFields["Type a command..."]
+        XCTAssertTrue(commandField.waitForExistence(timeout: 2))
+
+        commandField.click()
+        commandField.typeText("git:")
+
+        let revealExplorerAction = app.buttons["command-palette-action-revealSelectedGitChangeInExplorer"]
+        XCTAssertTrue(revealExplorerAction.waitForExistence(timeout: 2))
+        XCTAssertTrue(app.buttons["command-palette-action-openSelectedGitChangeInEditor"].exists)
+        XCTAssertTrue(app.buttons["command-palette-action-stageSelectedGitChange"].exists)
+    }
+
+    @MainActor
+    func testQuickOpenSupportsLineAndSymbolNavigation() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["ROSEWOOD_UI_TEST_RESET_SESSION"] = "1"
+        app.launchEnvironment["ROSEWOOD_UI_TEST_NAVIGATION_FIXTURE"] = "1"
+        app.launch()
+        app.activate()
+
+        app.typeKey("p", modifierFlags: [.command])
+
+        let quickOpenField = app.textFields["Search files, :line, #symbol..."]
+        XCTAssertTrue(quickOpenField.waitForExistence(timeout: 2))
+
+        quickOpenField.click()
+        quickOpenField.typeText(":3")
+        XCTAssertTrue(app.staticTexts["quick-open-help-text"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.buttons["quick-open-line-jump-0"].waitForExistence(timeout: 2))
+        app.typeKey(XCUIKeyboardKey.return.rawValue, modifierFlags: [])
+
+        XCTAssertTrue(app.staticTexts["Line 3, Col 1"].waitForExistence(timeout: 2))
+
+        app.typeKey("p", modifierFlags: [.command])
+        XCTAssertTrue(quickOpenField.waitForExistence(timeout: 2))
+
+        quickOpenField.click()
+        quickOpenField.typeText("#alphahelper")
+        XCTAssertTrue(app.staticTexts["quick-open-help-text"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.buttons["quick-open-symbol-0"].waitForExistence(timeout: 2))
+        app.typeKey(XCUIKeyboardKey.return.rawValue, modifierFlags: [])
+
+        XCTAssertTrue(app.staticTexts["Line 2, Col 1"].waitForExistence(timeout: 2))
+    }
+
+    @MainActor
+    func testQuickOpenSymbolSearchShowsCurrentFileAndWorkspaceSections() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["ROSEWOOD_UI_TEST_RESET_SESSION"] = "1"
+        app.launchEnvironment["ROSEWOOD_UI_TEST_NAVIGATION_FIXTURE"] = "1"
+        app.launch()
+        app.activate()
+
+        app.typeKey("p", modifierFlags: [.command])
+
+        let quickOpenField = app.textFields["Search files, :line, #symbol..."]
+        XCTAssertTrue(quickOpenField.waitForExistence(timeout: 2))
+
+        quickOpenField.click()
+        quickOpenField.typeText("#alpha")
+
+        XCTAssertTrue(app.staticTexts["Current File"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.staticTexts["Workspace"].waitForExistence(timeout: 2))
+    }
+
+    @MainActor
+    func testQuickOpenProblemSearchOpensWorkspaceDiagnostic() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["ROSEWOOD_UI_TEST_RESET_SESSION"] = "1"
+        app.launchEnvironment["ROSEWOOD_UI_TEST_DIAGNOSTICS_FIXTURE"] = "1"
+        app.launch()
+        app.activate()
+
+        let diagnosticsToggle = app.buttons["statusbar-diagnostics-toggle"]
+        XCTAssertTrue(diagnosticsToggle.waitForExistence(timeout: 2))
+
+        app.typeKey("p", modifierFlags: [.command, .shift])
+
+        let commandField = app.textFields["command-palette-input"]
+        XCTAssertTrue(commandField.waitForExistence(timeout: 2))
+        commandField.click()
+        commandField.typeText("workspace problem")
+
+        let problemCommand = app.buttons["command-palette-action-goToProblem"]
+        XCTAssertTrue(problemCommand.waitForExistence(timeout: 2))
+        app.typeKey(XCUIKeyboardKey.return.rawValue, modifierFlags: [])
+
+        let quickOpenField = app.textFields["quick-open-input"]
+        XCTAssertTrue(quickOpenField.waitForExistence(timeout: 2))
+        XCTAssertEqual(quickOpenField.value as? String, "!")
+
+        let quickOpenHelp = app.staticTexts["quick-open-help-text"]
+        XCTAssertTrue(quickOpenHelp.waitForExistence(timeout: 2))
+        XCTAssertTrue(app.buttons["quick-open-problem-filter-workspace"].waitForExistence(timeout: 2))
+
+        quickOpenField.click()
+        quickOpenField.typeText("error")
+
+        let problemResult = app.buttons["quick-open-problem-0"]
+        XCTAssertTrue(problemResult.waitForExistence(timeout: 2))
+        problemResult.click()
+
+        let betaTab = app.descendants(matching: .any).matching(identifier: "tab-item-1").firstMatch
+        XCTAssertTrue(betaTab.waitForExistence(timeout: 2))
+        XCTAssertFalse(app.textFields["quick-open-input"].exists)
+    }
+
+    @MainActor
+    func testProjectSearchUpdatesResultsWhileTyping() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["ROSEWOOD_UI_TEST_RESET_SESSION"] = "1"
+        app.launchEnvironment["ROSEWOOD_UI_TEST_CONTEXT_MENU_FIXTURE"] = "1"
+        app.launch()
+        app.activate()
+
+        app.typeKey("f", modifierFlags: [.command, .shift])
+
+        let searchField = app.textFields["Search in project"]
+        XCTAssertTrue(searchField.waitForExistence(timeout: 2))
+
+        searchField.click()
+        searchField.typeText("alpha")
+
+        XCTAssertTrue(app.staticTexts["1 Result"].waitForExistence(timeout: 2))
+        let replaceAllButton = app.buttons["project-search-replace-all"]
+        XCTAssertTrue(replaceAllButton.exists)
+        XCTAssertTrue(replaceAllButton.isEnabled)
+    }
+
+    @MainActor
+    func testProjectSearchKeyboardNavigationOpensActiveResult() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["ROSEWOOD_UI_TEST_RESET_SESSION"] = "1"
+        app.launchEnvironment["ROSEWOOD_UI_TEST_SEARCH_FIXTURE"] = "1"
+        app.launch()
+        app.activate()
+
+        app.typeKey("f", modifierFlags: [.command, .shift])
+
+        let searchField = app.textFields["Search in project"]
+        XCTAssertTrue(searchField.waitForExistence(timeout: 2))
+
+        searchField.click()
+        searchField.typeText("alpha")
+
+        XCTAssertTrue(app.staticTexts["2 Results"].waitForExistence(timeout: 2))
+        app.typeKey(XCUIKeyboardKey.downArrow.rawValue, modifierFlags: [])
+        app.typeKey(XCUIKeyboardKey.return.rawValue, modifierFlags: [])
+        let betaTab = app.descendants(matching: .any).matching(identifier: "tab-item-1").firstMatch
+        XCTAssertTrue(betaTab.waitForExistence(timeout: 2))
+    }
+
+    @MainActor
+    func testProjectSearchFileGroupsCanCollapseAndExpand() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["ROSEWOOD_UI_TEST_RESET_SESSION"] = "1"
+        app.launchEnvironment["ROSEWOOD_UI_TEST_SEARCH_FIXTURE"] = "1"
+        app.launch()
+
+        app.typeKey("f", modifierFlags: [.command, .shift])
+
+        let searchField = app.textFields["Search in project"]
+        XCTAssertTrue(searchField.waitForExistence(timeout: 2))
+
+        searchField.click()
+        searchField.typeText("alpha")
+
+        XCTAssertTrue(app.staticTexts["2 Results"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.staticTexts["2 visible results in 2 files"].waitForExistence(timeout: 2))
+
+        let collapseButton = app.buttons["project-search-collapse-all"]
+        XCTAssertTrue(collapseButton.waitForExistence(timeout: 2))
+        collapseButton.click()
+        XCTAssertTrue(app.staticTexts["0 visible results in 0 files"].waitForExistence(timeout: 2))
+
+        let expandButton = app.buttons["project-search-expand-all"]
+        XCTAssertTrue(expandButton.waitForExistence(timeout: 2))
+        expandButton.click()
+        XCTAssertTrue(app.staticTexts["2 visible results in 2 files"].waitForExistence(timeout: 2))
+    }
+
+    @MainActor
+    func testProjectReplaceShowsPreviewBeforeApply() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["ROSEWOOD_UI_TEST_RESET_SESSION"] = "1"
+        app.launchEnvironment["ROSEWOOD_UI_TEST_CONTEXT_MENU_FIXTURE"] = "1"
+        app.launch()
+
+        app.typeKey("f", modifierFlags: [.command, .shift])
+
+        let searchField = app.textFields["Search in project"]
+        let replaceField = app.textFields["Replace with"]
+        XCTAssertTrue(searchField.waitForExistence(timeout: 2))
+        XCTAssertTrue(replaceField.exists)
+
+        searchField.click()
+        searchField.typeText("alpha")
+        XCTAssertTrue(app.staticTexts["1 Result"].waitForExistence(timeout: 2))
+
+        replaceField.click()
+        replaceField.typeText("omega")
+
+        let replaceButton = app.buttons["Replace Selected (1)"]
+        XCTAssertTrue(replaceButton.exists)
+        replaceButton.click()
+
+        XCTAssertTrue(app.staticTexts["Replace Preview"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.buttons["Apply Replace"].exists)
+        XCTAssertTrue(app.buttons["Cancel"].exists)
     }
 
     @MainActor
@@ -31,6 +425,48 @@ final class RosewoodUITests: XCTestCase {
         app.launch()
 
         XCTAssertTrue(app.staticTexts["Open a folder to configure debugging."].waitForExistence(timeout: 2))
+    }
+
+    @MainActor
+    func testCommandPaletteDebugScopeShowsSessionAndConfigurationActions() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["ROSEWOOD_UI_TEST_RESET_SESSION"] = "1"
+        app.launchEnvironment["ROSEWOOD_UI_TEST_DEBUG_COMMANDS_FIXTURE"] = "1"
+        app.launch()
+        app.activate()
+
+        app.typeKey("p", modifierFlags: [.command, .shift])
+
+        let commandField = app.textFields["Type a command..."]
+        XCTAssertTrue(commandField.waitForExistence(timeout: 2))
+
+        commandField.click()
+        commandField.typeText("debug:")
+
+        XCTAssertTrue(app.buttons["command-palette-action-startDebugging"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.buttons["command-palette-action-showDebugConsole"].exists)
+        XCTAssertTrue(app.buttons["command-palette-action-selectDebugConfiguration-tests"].exists)
+    }
+
+    @MainActor
+    func testCommandPaletteGoScopeShowsBreakpointAndStopLocationActions() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["ROSEWOOD_UI_TEST_RESET_SESSION"] = "1"
+        app.launchEnvironment["ROSEWOOD_UI_TEST_GO_COMMANDS_FIXTURE"] = "1"
+        app.launch()
+        app.activate()
+
+        app.typeKey("p", modifierFlags: [.command, .shift])
+
+        let commandField = app.textFields["Type a command..."]
+        XCTAssertTrue(commandField.waitForExistence(timeout: 2))
+
+        commandField.click()
+        commandField.typeText("go:")
+
+        XCTAssertTrue(app.buttons["command-palette-action-nextBreakpoint"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.buttons["command-palette-action-previousBreakpoint"].exists)
+        XCTAssertTrue(app.buttons["command-palette-action-openCurrentDebugStopLocation"].exists)
     }
 
     @MainActor
@@ -91,6 +527,85 @@ final class RosewoodUITests: XCTestCase {
         XCTAssertTrue(firstDiagnostic.exists)
         XCTAssertTrue(secondDiagnostic.exists)
         XCTAssertTrue(closeButton.exists)
+    }
+
+    @MainActor
+    func testWorkspaceProblemsRemainAvailableInStatusBarAfterClosingLastTab() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["ROSEWOOD_UI_TEST_RESET_SESSION"] = "1"
+        app.launchEnvironment["ROSEWOOD_UI_TEST_DIAGNOSTICS_FIXTURE"] = "1"
+        app.launch()
+        app.activate()
+
+        XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "tab-item-0").firstMatch.waitForExistence(timeout: 2))
+        app.typeKey("w", modifierFlags: [.command])
+
+        let toggle = app.buttons["statusbar-diagnostics-toggle"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 2))
+        toggle.click()
+
+        let problemsPanel = app.descendants(matching: .any).matching(identifier: "problems-panel").firstMatch
+        let workspaceScope = app.buttons["problems-scope-workspace"]
+
+        XCTAssertTrue(toggle.waitForExistence(timeout: 2))
+        XCTAssertFalse(problemsPanel.exists)
+        XCTAssertFalse(workspaceScope.exists)
+    }
+
+    @MainActor
+    func testProblemsShortcutOpensPanelWithNavigationControls() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["ROSEWOOD_UI_TEST_RESET_SESSION"] = "1"
+        app.launchEnvironment["ROSEWOOD_UI_TEST_DIAGNOSTICS_FIXTURE"] = "1"
+        app.launch()
+        app.activate()
+
+        app.typeKey("m", modifierFlags: [.command, .shift])
+
+        let problemsPanel = app.descendants(matching: .any).matching(identifier: "problems-panel").firstMatch
+        let summary = app.staticTexts["problems-panel-summary"]
+        let previousButton = app.buttons["problems-panel-previous"]
+        let nextButton = app.buttons["problems-panel-next"]
+
+        XCTAssertTrue(problemsPanel.waitForExistence(timeout: 2))
+        XCTAssertTrue(summary.exists)
+        XCTAssertTrue(previousButton.exists)
+        XCTAssertTrue(nextButton.exists)
+    }
+
+    @MainActor
+    func testProblemsPanelShowsActiveProblemPosition() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["ROSEWOOD_UI_TEST_RESET_SESSION"] = "1"
+        app.launchEnvironment["ROSEWOOD_UI_TEST_DIAGNOSTICS_FIXTURE"] = "1"
+        app.launchEnvironment["ROSEWOOD_UI_TEST_OPEN_DIAGNOSTICS_PANEL"] = "1"
+        app.launch()
+
+        let position = app.staticTexts["problems-panel-position"]
+
+        XCTAssertTrue(position.waitForExistence(timeout: 2))
+        XCTAssertEqual(position.value as? String, "Problem 1 of 2")
+    }
+
+    @MainActor
+    func testProblemsPanelCanSwitchToWorkspaceScope() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["ROSEWOOD_UI_TEST_RESET_SESSION"] = "1"
+        app.launchEnvironment["ROSEWOOD_UI_TEST_DIAGNOSTICS_FIXTURE"] = "1"
+        app.launchEnvironment["ROSEWOOD_UI_TEST_OPEN_DIAGNOSTICS_PANEL"] = "1"
+        app.launch()
+
+        let workspaceScope = app.buttons["problems-scope-workspace"]
+        XCTAssertTrue(workspaceScope.waitForExistence(timeout: 2))
+        workspaceScope.click()
+
+        let scopeSummary = app.staticTexts["problems-panel-scope-summary"]
+        let workspaceRow = app.buttons["workspace-diagnostic-row-0"]
+        let position = app.staticTexts["problems-panel-position"]
+
+        XCTAssertTrue(scopeSummary.waitForExistence(timeout: 2))
+        XCTAssertTrue(workspaceRow.waitForExistence(timeout: 2))
+        XCTAssertTrue(position.waitForExistence(timeout: 2))
     }
 
     @MainActor

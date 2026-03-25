@@ -145,7 +145,7 @@ struct ToolbarView: View {
             Spacer()
 
             Button {
-                projectViewModel.toggleCommandPalette()
+                projectViewModel.toggleQuickOpen()
             } label: {
                 HStack(spacing: 4) {
                     Image(systemName: "command")
@@ -156,7 +156,7 @@ struct ToolbarView: View {
                 .foregroundColor(themeColors.subduedText)
             }
             .buttonStyle(.borderless)
-            .help("Command Palette (⌘⇧P)")
+            .help("Quick Open (⌘P)")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)

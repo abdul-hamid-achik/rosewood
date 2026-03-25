@@ -23,6 +23,118 @@ struct ProjectViewModelUI {
     )
 }
 
+struct ProjectReplacePreviewFile: Identifiable, Hashable {
+    let fileURL: URL
+    let fileName: String
+    let displayPath: String
+    let matchCount: Int
+
+    var id: String {
+        fileURL.standardizedFileURL.path
+    }
+}
+
+struct ProjectReplacePreview: Identifiable, Hashable {
+    let id = UUID()
+    let title: String
+    let summary: String
+    let searchQuery: String
+    let searchOptions: ProjectSearchOptions
+    let replacement: String
+    let results: [ProjectSearchResult]
+    let files: [ProjectReplacePreviewFile]
+
+    var matchCount: Int {
+        results.reduce(0) { partialResult, result in
+            partialResult + result.matchCount
+        }
+    }
+
+    var affectedFileURLs: [URL] {
+        files.map(\.fileURL)
+    }
+}
+
+struct ProjectReplaceFileSnapshot: Hashable {
+    let fileURL: URL
+    let originalContent: String
+}
+
+struct ProjectReplaceTransaction: Identifiable, Hashable {
+    let id = UUID()
+    let summary: String
+    let searchQuery: String
+    let replacement: String
+    let replacementCount: Int
+    let fileSnapshots: [ProjectReplaceFileSnapshot]
+
+    var fileCount: Int {
+        fileSnapshots.count
+    }
+
+    var affectedFileURLs: [URL] {
+        fileSnapshots.map(\.fileURL)
+    }
+}
+
+struct WorkspaceDiagnosticItem: Identifiable, Hashable {
+    let fileURL: URL
+    let displayPath: String
+    let lineText: String
+    let diagnostic: LSPDiagnostic
+
+    var id: String {
+        "\(fileURL.standardizedFileURL.path)|\(diagnostic.id)"
+    }
+
+    var lineNumber: Int {
+        diagnostic.range.start.line + 1
+    }
+
+    var columnNumber: Int {
+        diagnostic.range.start.character + 1
+    }
+
+    static func == (lhs: WorkspaceDiagnosticItem, rhs: WorkspaceDiagnosticItem) -> Bool {
+        lhs.id == rhs.id
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+    }
+}
+
+private struct WorkspaceSymbolExtractorPattern {
+    let regularExpression: NSRegularExpression
+    let indexedExtensions: Set<String>?
+    let kindGroup: Int?
+    let nameGroup: Int
+    let fixedKind: String?
+
+    init(
+        pattern: String,
+        indexedExtensions: Set<String>? = nil,
+        kindGroup: Int? = 1,
+        nameGroup: Int = 2,
+        fixedKind: String? = nil
+    ) {
+        self.regularExpression = try! NSRegularExpression(pattern: pattern, options: [])
+        self.indexedExtensions = indexedExtensions
+        self.kindGroup = kindGroup
+        self.nameGroup = nameGroup
+        self.fixedKind = fixedKind
+    }
+
+    func matches(fileExtension: String) -> Bool {
+        indexedExtensions?.contains(fileExtension) ?? true
+    }
+}
+
+private enum NavigableProblem {
+    case current(LSPDiagnostic)
+    case workspace(WorkspaceDiagnosticItem)
+}
+
 @MainActor
 final class ProjectViewModel: ObservableObject {
     enum SidebarMode {
@@ -32,11 +144,21 @@ final class ProjectViewModel: ObservableObject {
         case debug
     }
 
+    enum PaletteMode {
+        case quickOpen
+        case commandPalette
+    }
+
     enum BottomPanelKind {
         case debugConsole
         case diagnostics
         case references
         case gitDiff
+    }
+
+    enum DiagnosticsPanelScope {
+        case currentFile
+        case workspace
     }
 
     @Published var rootDirectory: URL?
@@ -45,18 +167,62 @@ final class ProjectViewModel: ObservableObject {
     @Published var selectedTabIndex: Int? = nil {
         didSet {
             refreshCurrentLineBlame()
+            synchronizeActiveDiagnosticSelection()
         }
     }
-    @Published var showCommandPalette: Bool = false
+    @Published private(set) var activePalette: PaletteMode?
     @Published var showNewFileSheet: Bool = false
     @Published var showNewFolderSheet: Bool = false
     @Published var renameItem: FileItem? = nil
     @Published var commandPaletteQuery: String = ""
+    @Published var quickOpenQuery: String = ""
     @Published var pendingNewItemDirectory: URL? = nil
-    @Published var sidebarMode: SidebarMode = .explorer
-    @Published var projectSearchQuery: String = ""
-    @Published var projectReplaceQuery: String = ""
+    @Published var sidebarMode: SidebarMode = .explorer {
+        didSet {
+            handleSidebarModeChange(from: oldValue)
+        }
+    }
+    @Published var projectSearchQuery: String = "" {
+        didSet {
+            handleProjectSearchQueryChange(from: oldValue)
+        }
+    }
+    @Published var projectReplaceQuery: String = "" {
+        didSet {
+            handleProjectReplaceQueryChange(from: oldValue)
+        }
+    }
+    @Published var projectSearchCaseSensitive: Bool = false {
+        didSet {
+            handleProjectSearchOptionsChange(from: oldValue, to: projectSearchCaseSensitive)
+        }
+    }
+    @Published var projectSearchWholeWord: Bool = false {
+        didSet {
+            handleProjectSearchOptionsChange(from: oldValue, to: projectSearchWholeWord)
+        }
+    }
+    @Published var projectSearchUseRegex: Bool = false {
+        didSet {
+            handleProjectSearchOptionsChange(from: oldValue, to: projectSearchUseRegex)
+        }
+    }
+    @Published var projectSearchIncludeGlob: String = "" {
+        didSet {
+            handleProjectSearchFilterChange(from: oldValue, to: projectSearchIncludeGlob)
+        }
+    }
+    @Published var projectSearchExcludeGlob: String = "" {
+        didSet {
+            handleProjectSearchFilterChange(from: oldValue, to: projectSearchExcludeGlob)
+        }
+    }
     @Published var projectSearchResults: [ProjectSearchResult] = []
+    @Published private(set) var activeProjectSearchResultID: String?
+    @Published private(set) var collapsedProjectSearchGroupIDs: Set<String> = []
+    @Published private(set) var selectedProjectSearchResultIDs: Set<String> = []
+    @Published private(set) var projectReplacePreview: ProjectReplacePreview?
+    @Published private(set) var lastProjectReplaceTransaction: ProjectReplaceTransaction?
     @Published var showSettings: Bool = false
     @Published var debugConfigurations: [DebugConfiguration] = []
     @Published var selectedDebugConfigurationName: String?
@@ -78,6 +244,10 @@ final class ProjectViewModel: ObservableObject {
     @Published private(set) var currentLineBlame: GitBlameInfo?
     @Published private(set) var isRefreshingGitStatus: Bool = false
     @Published private(set) var isLoadingGitDiff: Bool = false
+    @Published private(set) var activeCurrentDiagnosticID: String?
+    @Published private(set) var activeWorkspaceDiagnosticID: String?
+    @Published private(set) var diagnosticsPanelScope: DiagnosticsPanelScope = .currentFile
+    private var recentCommandPaletteActionIDs: [String] = []
 
     var currentTabDiagnostics: [LSPDiagnostic] {
         guard let uri = selectedTab?.documentURI else { return [] }
@@ -87,6 +257,121 @@ final class ProjectViewModel: ObservableObject {
     var currentTabDiagnosticCount: (errors: Int, warnings: Int) {
         guard let uri = selectedTab?.documentURI else { return (0, 0) }
         return lspService.diagnosticCount(for: uri)
+    }
+
+    var orderedCurrentTabDiagnostics: [LSPDiagnostic] {
+        sortedCurrentDiagnostics()
+    }
+
+    var activeCurrentDiagnostic: LSPDiagnostic? {
+        let diagnostics = orderedCurrentTabDiagnostics
+        guard !diagnostics.isEmpty else { return nil }
+
+        if let activeCurrentDiagnosticID,
+           let diagnostic = diagnostics.first(where: { $0.id == activeCurrentDiagnosticID }) {
+            return diagnostic
+        }
+
+        return inferredCurrentDiagnostic(in: diagnostics)
+    }
+
+    var activeCurrentDiagnosticIndex: Int? {
+        guard let activeCurrentDiagnostic else { return nil }
+        return orderedCurrentTabDiagnostics.firstIndex(of: activeCurrentDiagnostic)
+    }
+
+    var currentProblemPositionText: String? {
+        switch diagnosticsPanelScope {
+        case .currentFile:
+            guard let activeCurrentDiagnosticIndex else { return nil }
+            let total = orderedCurrentTabDiagnostics.count
+            return "Problem \(activeCurrentDiagnosticIndex + 1) of \(total)"
+        case .workspace:
+            guard let activeWorkspaceDiagnosticIndex else { return nil }
+            let total = orderedWorkspaceDiagnostics.count
+            return "Problem \(activeWorkspaceDiagnosticIndex + 1) of \(total)"
+        }
+    }
+
+    var workspaceDiagnosticCount: (errors: Int, warnings: Int) {
+        orderedWorkspaceDiagnostics.reduce(into: (errors: 0, warnings: 0)) { partialResult, item in
+            switch item.diagnostic.severity {
+            case .error:
+                partialResult.errors += 1
+            case .warning:
+                partialResult.warnings += 1
+            default:
+                break
+            }
+        }
+    }
+
+    var workspaceDiagnosticFileCount: Int {
+        Set(orderedWorkspaceDiagnostics.map { normalizedPath(for: $0.fileURL) }).count
+    }
+
+    var canNavigateCurrentProblems: Bool {
+        !currentTabDiagnostics.isEmpty
+    }
+
+    var hasWorkspaceDiagnostics: Bool {
+        !orderedWorkspaceDiagnostics.isEmpty
+    }
+
+    var canNavigateProblems: Bool {
+        switch diagnosticsPanelScope {
+        case .currentFile:
+            return canNavigateCurrentProblems
+        case .workspace:
+            return hasWorkspaceDiagnostics
+        }
+    }
+
+    var canShowProblemsPanel: Bool {
+        hasOpenFile || hasWorkspaceDiagnostics
+    }
+
+    var orderedWorkspaceDiagnostics: [WorkspaceDiagnosticItem] {
+        lspService.diagnosticsByURI
+            .compactMap { uri, diagnostics -> [WorkspaceDiagnosticItem]? in
+                guard let fileURL = URL(string: uri), fileURL.isFileURL else { return nil }
+                return diagnostics.map { diagnostic in
+                    WorkspaceDiagnosticItem(
+                        fileURL: fileURL,
+                        displayPath: relativeDisplayPath(for: fileURL),
+                        lineText: lineText(for: fileURL, lineNumber: diagnostic.range.start.line + 1),
+                        diagnostic: diagnostic
+                    )
+                }
+            }
+            .flatMap { $0 }
+            .sorted(by: compareWorkspaceDiagnostics)
+    }
+
+    var activeWorkspaceDiagnostic: WorkspaceDiagnosticItem? {
+        let diagnostics = orderedWorkspaceDiagnostics
+        guard !diagnostics.isEmpty else { return nil }
+
+        if let activeWorkspaceDiagnosticID,
+           let diagnostic = diagnostics.first(where: { $0.id == activeWorkspaceDiagnosticID }) {
+            return diagnostic
+        }
+
+        return inferredWorkspaceDiagnostic(in: diagnostics)
+    }
+
+    var activeWorkspaceDiagnosticIndex: Int? {
+        guard let activeWorkspaceDiagnostic else { return nil }
+        return orderedWorkspaceDiagnostics.firstIndex(of: activeWorkspaceDiagnostic)
+    }
+
+    var activeProblemScrollID: String? {
+        switch diagnosticsPanelScope {
+        case .currentFile:
+            return activeCurrentDiagnostic?.id
+        case .workspace:
+            return activeWorkspaceDiagnostic?.id
+        }
     }
 
     var selectedDebugConfiguration: DebugConfiguration? {
@@ -109,6 +394,14 @@ final class ProjectViewModel: ObservableObject {
             return nil
         }
         return debugStoppedLine
+    }
+
+    var canNavigateBreakpoints: Bool {
+        !breakpoints.isEmpty
+    }
+
+    var hasCurrentDebugStopLocation: Bool {
+        debugStoppedFilePath != nil && debugStoppedLine != nil
     }
 
     var isDebugPanelVisible: Bool {
@@ -251,6 +544,7 @@ final class ProjectViewModel: ObservableObject {
     private var autoSaveTask: Task<Void, Never>?
     private var reloadFileTreeTask: Task<Void, Never>?
     private var projectSearchTask: Task<Void, Never>?
+    private var projectSearchDebounceTask: Task<Void, Never>?
     private var replaceInProjectTask: Task<Void, Never>?
     private let configService: ConfigurationService
     private let fileWatcher: FileWatcherService
@@ -265,12 +559,73 @@ final class ProjectViewModel: ObservableObject {
     private var fileTreeLoadToken = UUID()
     private var projectSearchToken = UUID()
     private var replaceInProjectToken = UUID()
+    private var projectSearchResultsQuery = ""
+    private var projectSearchResultsOptions = ProjectSearchOptions()
     private var gitStatusTask: Task<Void, Never>?
     private var gitDiffTask: Task<Void, Never>?
     private var gitBlameTask: Task<Void, Never>?
     private var gitStatusToken = UUID()
     private var gitDiffToken = UUID()
     private var gitBlameToken = UUID()
+    private let projectSearchDebounceNanoseconds: UInt64
+    private var quickOpenAccessSequence = 0
+    private var quickOpenRecentAccessByPath: [String: Int] = [:]
+    private var cachedWorkspaceSymbols: [WorkspaceSymbolMatch]?
+    private var cachedWorkspaceSymbolRootPath: String?
+    private static let workspaceSymbolPatterns: [WorkspaceSymbolExtractorPattern] = [
+        WorkspaceSymbolExtractorPattern(
+            pattern: #"^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*(?::[^=]+)?=\s*(?:async\s*)?(?:\([^)]*\)|[A-Za-z_$][A-Za-z0-9_$]*)\s*=>"#,
+            indexedExtensions: ["js", "jsx", "ts", "tsx"],
+            kindGroup: nil,
+            nameGroup: 1,
+            fixedKind: "function"
+        ),
+        WorkspaceSymbolExtractorPattern(
+            pattern: #"^\s*func\s*\([^)]*\)\s+([A-Za-z_][A-Za-z0-9_]*)\s*\("#,
+            indexedExtensions: ["go"],
+            kindGroup: nil,
+            nameGroup: 1,
+            fixedKind: "func"
+        ),
+        WorkspaceSymbolExtractorPattern(
+            pattern: #"^\s*(?:@\w+(?:\([^)]*\))?\s+)*(?:(?:public|private|internal|fileprivate|open|final|indirect|async|static|class|override|mutating|nonmutating|required|convenience|prefix|postfix|infix)\s+)*(class|struct|enum|protocol|actor|extension|func|typealias|macro)\s+([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)"#,
+            indexedExtensions: ["swift"]
+        ),
+        WorkspaceSymbolExtractorPattern(
+            pattern: #"^\s*(?:@\w+(?:\([^)]*\))?\s+)*(?:(?:public|private|internal|fileprivate|open|final|indirect|async|static|class|override|mutating|nonmutating|required|convenience)\s+)*(var|let)\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?::[^=]+)?=\s*(?:\{|\([^)]*\)\s*(?:async\s*)?(?:throws\s*)?->)"#,
+            indexedExtensions: ["swift"]
+        ),
+        WorkspaceSymbolExtractorPattern(
+            pattern: #"^\s*(?:export\s+)?(?:default\s+)?(?:abstract\s+)?(class|interface|enum|type)\s+([A-Za-z_$][A-Za-z0-9_$]*)"#,
+            indexedExtensions: ["js", "jsx", "ts", "tsx"]
+        ),
+        WorkspaceSymbolExtractorPattern(
+            pattern: #"^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?(function)\s+([A-Za-z_$][A-Za-z0-9_$]*)"#,
+            indexedExtensions: ["js", "jsx", "ts", "tsx"]
+        ),
+        WorkspaceSymbolExtractorPattern(
+            pattern: #"^\s*(?:async\s+)?(def|class)\s+([A-Za-z_][A-Za-z0-9_]*)"#,
+            indexedExtensions: ["py"]
+        ),
+        WorkspaceSymbolExtractorPattern(
+            pattern: #"^\s*(type|const|var)\s+([A-Za-z_][A-Za-z0-9_]*)"#,
+            indexedExtensions: ["go"]
+        ),
+        WorkspaceSymbolExtractorPattern(
+            pattern: #"^\s*(?:(?:pub|pub\(crate\)|crate|unsafe|async|const|default)\s+)*(struct|enum|trait|type|fn|const|static)\s+([A-Za-z_][A-Za-z0-9_]*)"#,
+            indexedExtensions: ["rs"]
+        ),
+        WorkspaceSymbolExtractorPattern(
+            pattern: #"^\s*(?:(?:public|private|protected|internal|open|final|sealed|abstract|data|async|static|const)\s+)*(class|struct|enum|interface|trait|namespace|module|type|func|function|def|fn|let|var|const|object|fun)\s+([A-Za-z_][A-Za-z0-9_]*)"#,
+            indexedExtensions: nil
+        )
+    ]
+    private static let workspaceSymbolIndexedExtensions: Set<String> = [
+        "swift", "m", "mm", "h", "hpp", "hh", "c", "cc", "cpp", "cxx",
+        "go", "rs", "py", "rb", "js", "jsx", "ts", "tsx",
+        "java", "kt", "kts", "scala", "sc", "zig", "lua"
+    ]
+    private static let workspaceSymbolFileSizeLimit = 512_000
 
     convenience init() {
         self.init(
@@ -301,7 +656,8 @@ final class ProjectViewModel: ObservableObject {
         breakpointStore: BreakpointStore = BreakpointStore(),
         debugConfigurationService: DebugConfigurationService = DebugConfigurationService(),
         debugSessionService: DebugSessionServiceProtocol? = nil,
-        gitService: GitServiceProtocol = GitService.shared
+        gitService: GitServiceProtocol = GitService.shared,
+        projectSearchDebounceNanoseconds: UInt64 = 250_000_000
     ) {
         self.fileService = fileService
         self.sessionStore = sessionStore
@@ -318,6 +674,7 @@ final class ProjectViewModel: ObservableObject {
         self.debugConfigurationService = debugConfigurationService
         self.debugSessionService = debugSessionService ?? DebugSessionService.shared
         self.gitService = gitService
+        self.projectSearchDebounceNanoseconds = projectSearchDebounceNanoseconds
         self.debugSessionService.setEventHandler { [weak self] event in
             Task { @MainActor [weak self] in
                 self?.handleDebugSessionEvent(event)
@@ -346,6 +703,7 @@ final class ProjectViewModel: ObservableObject {
         autoSaveTask?.cancel()
         reloadFileTreeTask?.cancel()
         projectSearchTask?.cancel()
+        projectSearchDebounceTask?.cancel()
         replaceInProjectTask?.cancel()
         gitStatusTask?.cancel()
         gitDiffTask?.cancel()
@@ -378,6 +736,7 @@ final class ProjectViewModel: ObservableObject {
     private func installUITestEditorFixturesIfNeeded() {
         let environment = ProcessInfo.processInfo.environment
         let shouldInstallContextMenuFixture = environment["ROSEWOOD_UI_TEST_CONTEXT_MENU_FIXTURE"] == "1"
+        let shouldInstallSearchFixture = environment["ROSEWOOD_UI_TEST_SEARCH_FIXTURE"] == "1"
         let shouldInstallDiagnosticsFixture = environment["ROSEWOOD_UI_TEST_DIAGNOSTICS_FIXTURE"] == "1"
         let shouldOpenDiagnosticsPanel = environment["ROSEWOOD_UI_TEST_OPEN_DIAGNOSTICS_PANEL"] == "1"
         let shouldInstallReferencesFixture = environment["ROSEWOOD_UI_TEST_REFERENCES_FIXTURE"] == "1"
@@ -385,19 +744,26 @@ final class ProjectViewModel: ObservableObject {
         let shouldInstallFoldingFixture = environment["ROSEWOOD_UI_TEST_FOLDING_FIXTURE"] == "1"
         let shouldInstallMinimapFixture = environment["ROSEWOOD_UI_TEST_MINIMAP_FIXTURE"] == "1"
         let shouldInstallGitFixture = environment["ROSEWOOD_UI_TEST_GIT_FIXTURE"] == "1"
+        let shouldInstallNavigationFixture = environment["ROSEWOOD_UI_TEST_NAVIGATION_FIXTURE"] == "1"
+        let shouldInstallDebugCommandsFixture = environment["ROSEWOOD_UI_TEST_DEBUG_COMMANDS_FIXTURE"] == "1"
+        let shouldInstallGoCommandsFixture = environment["ROSEWOOD_UI_TEST_GO_COMMANDS_FIXTURE"] == "1"
         guard shouldInstallContextMenuFixture
+            || shouldInstallSearchFixture
             || shouldInstallDiagnosticsFixture
             || shouldInstallReferencesFixture
             || shouldInstallFoldingFixture
             || shouldInstallMinimapFixture
-            || shouldInstallGitFixture else {
+            || shouldInstallGitFixture
+            || shouldInstallNavigationFixture
+            || shouldInstallDebugCommandsFixture
+            || shouldInstallGoCommandsFixture else {
             return
         }
 
         let fileManager = FileManager.default
         let fixtureFileName: String
         if shouldInstallDiagnosticsFixture {
-            fixtureFileName = "Alpha.txt"
+            fixtureFileName = "Alpha.swift"
         } else if shouldInstallGitFixture {
             fixtureFileName = "Tracked.swift"
         } else {
@@ -408,11 +774,34 @@ final class ProjectViewModel: ObservableObject {
             isDirectory: true
         )
         let alphaURL = rootURL.appendingPathComponent(fixtureFileName)
+        let betaURL = rootURL.appendingPathComponent("Beta.swift")
 
         do {
             try fileManager.createDirectory(at: rootURL, withIntermediateDirectories: true)
             let alphaContents: String
-            if shouldInstallFoldingFixture {
+            if shouldInstallSearchFixture {
+                alphaContents = "let alpha = 1\n"
+            } else if shouldInstallDiagnosticsFixture {
+                alphaContents = """
+                let alpha = 1
+                let beta = alpha + 1
+                let gamma = beta + 1
+                """
+            } else if shouldInstallNavigationFixture {
+                alphaContents = """
+                struct AlphaSymbol {
+                    func alphaHelper() {
+                        let alphaValue = 1
+                    }
+                }
+                """
+            } else if shouldInstallGoCommandsFixture {
+                alphaContents = """
+                let alpha = 1
+                let beta = alpha + 1
+                let gamma = beta + 1
+                """
+            } else if shouldInstallFoldingFixture {
                 alphaContents = """
                 struct Example {
                     func greet() {
@@ -436,8 +825,51 @@ final class ProjectViewModel: ObservableObject {
                 alphaContents = "let alpha = 1\n"
             }
             try alphaContents.write(to: alphaURL, atomically: true, encoding: .utf8)
+
+            if shouldInstallSearchFixture {
+                try "let beta = alpha\n".write(to: betaURL, atomically: true, encoding: .utf8)
+            } else if shouldInstallDiagnosticsFixture {
+                try """
+                struct BetaFixture {
+                    let value = alpha
+                }
+                """.write(to: betaURL, atomically: true, encoding: .utf8)
+            } else if shouldInstallNavigationFixture {
+                try """
+                func betaHelper() {
+                    let betaValue = 2
+                }
+
+                func alphaWorkspaceHelper() {
+                    let alphaCopy = 1
+                }
+                """.write(to: betaURL, atomically: true, encoding: .utf8)
+            }
+
             if shouldInstallGitFixture {
                 try installGitFixture(at: rootURL, trackedFileURL: alphaURL)
+            } else if shouldInstallDebugCommandsFixture {
+                let configURL = rootURL.appendingPathComponent(".rosewood.toml")
+                try """
+                [debug]
+                defaultConfiguration = "App"
+
+                [[debug.configurations]]
+                name = "App"
+                adapter = "lldb"
+                program = ".build/debug/App"
+                cwd = "."
+                args = []
+                stopOnEntry = false
+
+                [[debug.configurations]]
+                name = "Tests"
+                adapter = "lldb"
+                program = ".build/debug/Tests"
+                cwd = "."
+                args = ["--filter", "smoke"]
+                stopOnEntry = false
+                """.write(to: configURL, atomically: true, encoding: .utf8)
             }
         } catch {
             return
@@ -450,7 +882,7 @@ final class ProjectViewModel: ObservableObject {
         selectedTabIndex = nil
         referenceResults = []
         pendingNewItemDirectory = nil
-        projectSearchResults = []
+        clearProjectSearchResults()
 
         configService.setProjectRoot(rootURL)
         lspService.setProjectRoot(rootURL)
@@ -478,8 +910,8 @@ final class ProjectViewModel: ObservableObject {
                     ),
                     LSPDiagnostic(
                         range: LSPRange(
-                            start: LSPPosition(line: 0, character: 0),
-                            end: LSPPosition(line: 0, character: 3)
+                            start: LSPPosition(line: 2, character: 4),
+                            end: LSPPosition(line: 2, character: 9)
                         ),
                         severity: .warning,
                         source: "sourcekit-lsp",
@@ -488,9 +920,56 @@ final class ProjectViewModel: ObservableObject {
                 ]
             )
 
+            lspService.injectDiagnosticsForTesting(
+                uri: betaURL.absoluteString,
+                diagnostics: [
+                    LSPDiagnostic(
+                        range: LSPRange(
+                            start: LSPPosition(line: 1, character: 16),
+                            end: LSPPosition(line: 1, character: 21)
+                        ),
+                        severity: .error,
+                        source: "sourcekit-lsp",
+                        message: "Cannot find 'alpha' in scope"
+                    )
+                ]
+            )
+
             if shouldOpenDiagnosticsPanel {
                 bottomPanel = .diagnostics
             }
+        }
+
+        if shouldInstallGoCommandsFixture, let uri = openTabs.first?.documentURI {
+            lspService.injectDiagnosticsForTesting(
+                uri: uri,
+                diagnostics: [
+                    LSPDiagnostic(
+                        range: LSPRange(
+                            start: LSPPosition(line: 0, character: 4),
+                            end: LSPPosition(line: 0, character: 9)
+                        ),
+                        severity: .error,
+                        source: "sourcekit-lsp",
+                        message: "Cannot find 'alpha' in scope"
+                    ),
+                    LSPDiagnostic(
+                        range: LSPRange(
+                            start: LSPPosition(line: 2, character: 4),
+                            end: LSPPosition(line: 2, character: 9)
+                        ),
+                        severity: .warning,
+                        source: "sourcekit-lsp",
+                        message: "Unused variable declaration"
+                    )
+                ]
+            )
+            breakpoints = [
+                Breakpoint(filePath: normalizedPath(for: alphaURL), line: 1),
+                Breakpoint(filePath: normalizedPath(for: alphaURL), line: 3)
+            ]
+            debugStoppedFilePath = normalizedPath(for: alphaURL)
+            debugStoppedLine = 2
         }
 
         if shouldInstallReferencesFixture {
@@ -549,47 +1028,408 @@ final class ProjectViewModel: ObservableObject {
         openTabs.contains(where: \.isDirty)
     }
 
+    var showCommandPalette: Bool {
+        activePalette == .commandPalette
+    }
+
+    var showQuickOpen: Bool {
+        activePalette == .quickOpen
+    }
+
+    var quickOpenSectionTitle: String {
+        quickOpenSections.first?.title ?? "Files"
+    }
+
+    var quickOpenHelpText: String? {
+        let trimmedQuery = quickOpenQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let request = quickOpenFileLineRequest(from: trimmedQuery) {
+            return "Open the best matching file and jump straight to line \(request.line)."
+        }
+
+        if trimmedQuery.hasPrefix(":") {
+            return hasOpenFile
+                ? "Jump in the current file with :line, like :42."
+                : "Open a file first, then jump with :line, like :42."
+        }
+
+        if trimmedQuery.hasPrefix("#") {
+            let symbolQuery = String(trimmedQuery.dropFirst()).trimmingCharacters(in: .whitespacesAndNewlines)
+            return symbolQuery.isEmpty
+                ? "Search symbols with #name. Current-file matches are ranked first."
+                : "Current-file symbols stay ahead of workspace matches while you type."
+        }
+
+        guard trimmedQuery.hasPrefix("!") else { return nil }
+
+        let problemQuery = quickOpenWorkspaceProblemQuery(from: trimmedQuery)
+        if problemQuery.searchText.isEmpty {
+            return "Use current/workspace and error/warning/info/hint to narrow problems fast."
+        }
+
+        return "Filter workspace problems by scope or severity while you type."
+    }
+
+    var quickOpenProblemFilterHints: [QuickOpenProblemFilterHint] {
+        let trimmedQuery = quickOpenQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmedQuery.hasPrefix("!") else { return [] }
+
+        let problemQuery = quickOpenWorkspaceProblemQuery(from: trimmedQuery)
+
+        return [
+            QuickOpenProblemFilterHint(
+                id: "current",
+                token: "current",
+                title: "Current",
+                isActive: problemQuery.scope == .currentFile,
+                kind: .scope(.currentFile)
+            ),
+            QuickOpenProblemFilterHint(
+                id: "workspace",
+                token: "workspace",
+                title: "Workspace",
+                isActive: problemQuery.scope == .workspace,
+                kind: .scope(.workspace)
+            ),
+            QuickOpenProblemFilterHint(
+                id: "error",
+                token: "error",
+                title: "Error",
+                isActive: problemQuery.severity == .error,
+                kind: .severity(.error)
+            ),
+            QuickOpenProblemFilterHint(
+                id: "warning",
+                token: "warning",
+                title: "Warning",
+                isActive: problemQuery.severity == .warning,
+                kind: .severity(.warning)
+            ),
+            QuickOpenProblemFilterHint(
+                id: "info",
+                token: "info",
+                title: "Info",
+                isActive: problemQuery.severity == .information,
+                kind: .severity(.information)
+            ),
+            QuickOpenProblemFilterHint(
+                id: "hint",
+                token: "hint",
+                title: "Hint",
+                isActive: problemQuery.severity == .hint,
+                kind: .severity(.hint)
+            )
+        ]
+    }
+
+    var quickOpenEmptyStateText: String {
+        let trimmedQuery = quickOpenQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmedQuery.hasPrefix(":") {
+            return hasOpenFile ? "No matching line jump." : "Open a file to jump to a line."
+        }
+        if trimmedQuery.hasPrefix("!") {
+            let problemQuery = quickOpenWorkspaceProblemQuery(from: trimmedQuery)
+            return hasWorkspaceDiagnostics
+                ? quickOpenWorkspaceProblemEmptyStateText(for: problemQuery)
+                : "No workspace problems are available right now."
+        }
+        if trimmedQuery.hasPrefix("#") {
+            return trimmedQuery.count > 1 ? "No matching symbols." : "Type a symbol name after #."
+        }
+        if quickOpenFileLineRequest(from: trimmedQuery) != nil {
+            return "No matching file for that line jump."
+        }
+        return "No matching files."
+    }
+
+    var commandPaletteScopeHints: [CommandPaletteScope] {
+        let preferredOrder = ["File", "Go", "Search", "Edit", "Git"]
+        let scopesByCategory = Dictionary(uniqueKeysWithValues: availableCommandPaletteScopes.map { ($0.category, $0) })
+
+        return preferredOrder.compactMap { scopesByCategory[$0] }
+    }
+
+    var activeCommandPaletteScope: CommandPaletteScope? {
+        commandPaletteQueryContext(for: commandPaletteQuery).scope
+    }
+
+    var commandPaletteHelpText: String {
+        let context = commandPaletteQueryContext(for: commandPaletteQuery)
+
+        if let scope = context.scope {
+            if context.searchText.isEmpty {
+                return "Scoped to \(scope.title) commands. Type to narrow further or remove \(scope.queryToken) to search everything."
+            }
+            return "Scoped to \(scope.title) commands."
+        }
+
+        if context.searchText.isEmpty {
+            return "Use file:, go:, search:, edit:, or git: to narrow instantly."
+        }
+
+        return "Press Return to run the selected command."
+    }
+
+    var commandPaletteEmptyStateText: String {
+        let context = commandPaletteQueryContext(for: commandPaletteQuery)
+
+        if let scope = context.scope {
+            if context.searchText.isEmpty {
+                return "No \(scope.title.lowercased()) commands are available right now."
+            }
+
+            return "No matching \(scope.title.lowercased()) commands. Try removing \(scope.queryToken) or broadening the term."
+        }
+
+        return context.searchText.isEmpty
+            ? "Start typing a command, or narrow with file:, go:, search:, edit:, or git:."
+            : "No matching commands. Try file:, go:, search:, edit:, or git:."
+    }
+
     var commandPaletteActions: [CommandPaletteAction] {
         var actions: [CommandPaletteAction] = [
-            CommandPaletteAction(id: "newFile", title: "New File", shortcut: "⌘N", category: "File") {
+            makeCommandPaletteAction(
+                id: "newFile",
+                title: "New File",
+                shortcut: "⌘N",
+                category: "File",
+                aliases: ["create file", "new document", "touch file"]
+            ) {
                 self.createNewFile()
             },
-            CommandPaletteAction(id: "openFolder", title: "Open Folder", shortcut: "⌘O", category: "File") {
+            makeCommandPaletteAction(
+                id: "openFolder",
+                title: "Open Folder",
+                shortcut: "⌘O",
+                category: "File",
+                aliases: ["open project", "open workspace", "open directory"]
+            ) {
                 self.openFolder()
             },
-            CommandPaletteAction(id: "save", title: "Save", shortcut: "⌘S", category: "File") {
+            makeCommandPaletteAction(
+                id: "save",
+                title: "Save",
+                shortcut: "⌘S",
+                category: "File",
+                aliases: ["save file", "write file", "save document"]
+            ) {
                 self.saveCurrentFile()
             }
         ]
 
         if let selectedTabIndex {
             actions.append(
-                CommandPaletteAction(id: "closeTab", title: "Close Tab", shortcut: "⌘W", category: "File") {
+                makeCommandPaletteAction(
+                    id: "closeTab",
+                    title: "Close Tab",
+                    shortcut: "⌘W",
+                    category: "File",
+                    aliases: ["close file", "close editor"]
+                ) {
                     _ = self.closeTab(at: selectedTabIndex)
+                }
+            )
+
+            if openTabs.count > 1 {
+                actions.append(
+                    makeCommandPaletteAction(
+                        id: "closeOtherTabs",
+                        title: "Close Other Tabs",
+                        shortcut: "",
+                        category: "File",
+                        aliases: ["close others", "keep this tab only", "close other editors"]
+                    ) {
+                        self.closeOtherTabs(except: selectedTabIndex)
+                    }
+                )
+            }
+
+            if selectedTabIndex < openTabs.count - 1 {
+                actions.append(
+                    makeCommandPaletteAction(
+                        id: "closeTabsToTheRight",
+                        title: "Close Tabs to the Right",
+                        shortcut: "",
+                        category: "File",
+                        aliases: ["close tabs right", "close right tabs", "close tabs on the right"]
+                    ) {
+                        self.closeTabsToTheRight(of: selectedTabIndex)
+                    }
+                )
+            }
+        }
+
+        if !openTabs.isEmpty {
+            actions.append(
+                makeCommandPaletteAction(
+                    id: "closeAllTabs",
+                    title: "Close All Tabs",
+                    shortcut: "",
+                    category: "File",
+                    aliases: ["close every tab", "close all editors", "close all files"]
+                ) {
+                    self.closeAllTabs()
                 }
             )
         }
 
+        if let selectedTab {
+            actions.append(
+                makeCommandPaletteAction(
+                    id: "copyCurrentFilePath",
+                    title: "Copy File Path",
+                    shortcut: "",
+                    category: "File",
+                    aliases: ["copy path", "copy absolute path", "yank file path"]
+                ) {
+                    self.copyStringToPasteboard(self.copyFilePath(tab: selectedTab))
+                }
+            )
+
+            if selectedTab.filePath != nil {
+                actions.append(
+                    makeCommandPaletteAction(
+                        id: "revealCurrentFileInFinder",
+                        title: "Reveal in Finder",
+                        shortcut: "",
+                        category: "File",
+                        aliases: ["show in finder", "finder", "reveal file"]
+                    ) {
+                        self.revealInFinder(tab: selectedTab)
+                    }
+                )
+            }
+
+            if relativeFilePath(tab: selectedTab) != nil {
+                actions.append(
+                    makeCommandPaletteAction(
+                        id: "copyCurrentRelativeFilePath",
+                        title: "Copy Relative File Path",
+                        shortcut: "",
+                        category: "File",
+                        aliases: ["copy relative path", "copy project path", "yank relative path"]
+                    ) {
+                        self.copyStringToPasteboard(self.relativeFilePath(tab: selectedTab))
+                    }
+                )
+            }
+        }
+
         if canFindReferences {
             actions.append(
-                CommandPaletteAction(
+                makeCommandPaletteAction(
                     id: "findReferences",
                     title: "Find References",
                     shortcut: "⇧F12",
-                    category: "Go"
+                    category: "Go",
+                    aliases: ["references", "find usages", "show references"]
                 ) {
                     self.notificationCenter.post(name: .handleFindReferences, object: nil)
                 }
             )
         }
 
+        if canNavigateProblems {
+            actions.append(
+                makeCommandPaletteAction(
+                    id: "nextProblem",
+                    title: "Next Problem",
+                    shortcut: "",
+                    category: "Go",
+                    aliases: ["next diagnostic", "next error", "next warning"]
+                ) {
+                    self.openNextProblem()
+                }
+            )
+
+            actions.append(
+                makeCommandPaletteAction(
+                    id: "previousProblem",
+                    title: "Previous Problem",
+                    shortcut: "",
+                    category: "Go",
+                    aliases: ["previous diagnostic", "previous error", "previous warning", "prev problem"]
+                ) {
+                    self.openPreviousProblem()
+                }
+            )
+        }
+
+        if canNavigateBreakpoints {
+            actions.append(
+                makeCommandPaletteAction(
+                    id: "nextBreakpoint",
+                    title: "Next Breakpoint",
+                    shortcut: "",
+                    category: "Go",
+                    aliases: ["next break", "next debug breakpoint"]
+                ) {
+                    self.openNextBreakpoint()
+                }
+            )
+
+            actions.append(
+                makeCommandPaletteAction(
+                    id: "previousBreakpoint",
+                    title: "Previous Breakpoint",
+                    shortcut: "",
+                    category: "Go",
+                    aliases: ["previous break", "prev breakpoint", "previous debug breakpoint"]
+                ) {
+                    self.openPreviousBreakpoint()
+                }
+            )
+        }
+
+        if hasOpenFile {
+            actions.append(
+                makeCommandPaletteAction(
+                    id: "goToLine",
+                    title: "Go to Line",
+                    shortcut: "⌘L",
+                    category: "Go",
+                    aliases: ["line", "jump to line", "goto line"]
+                ) {
+                    self.beginGoToLine()
+                }
+            )
+        }
+
+        if hasWorkspaceDiagnostics {
+            actions.append(
+                makeCommandPaletteAction(
+                    id: "goToProblem",
+                    title: "Go to Problem in Workspace",
+                    shortcut: "!",
+                    category: "Go",
+                    aliases: ["workspace problem", "problem search", "diagnostic search", "go to problem"]
+                ) {
+                    self.beginWorkspaceProblemSearch()
+                }
+            )
+        }
+
+        if rootDirectory != nil {
+            actions.append(
+                makeCommandPaletteAction(
+                    id: "goToSymbol",
+                    title: "Go to Symbol in Workspace",
+                    shortcut: "#",
+                    category: "Go",
+                    aliases: ["workspace symbol", "symbol search", "symbols"]
+                ) {
+                    self.beginWorkspaceSymbolSearch()
+                }
+            )
+        }
+
         if rootDirectory != nil && !configService.hasProjectConfig() {
             actions.append(
-                CommandPaletteAction(
+                makeCommandPaletteAction(
                     id: "createProjectConfig",
                     title: "Create Project Config",
                     shortcut: "",
-                    category: "Project"
+                    category: "Project",
+                    aliases: ["project config", "workspace config", ".rosewood.toml"]
                 ) {
                     self.createProjectConfig()
                 }
@@ -598,44 +1438,1078 @@ final class ProjectViewModel: ObservableObject {
 
         if rootDirectory != nil {
             actions.append(
-                CommandPaletteAction(
+                makeCommandPaletteAction(
                     id: "showSourceControl",
                     title: "Show Source Control",
                     shortcut: "",
-                    category: "View"
+                    category: "View",
+                    aliases: ["git", "scm", "version control", "source control"]
                 ) {
                     self.showSourceControlSidebar()
                 }
             )
         }
 
+        actions.append(
+            makeCommandPaletteAction(
+                id: "showExplorer",
+                title: "Show Explorer",
+                shortcut: "",
+                category: "View",
+                aliases: ["explorer", "files sidebar", "project tree"]
+            ) {
+                self.showExplorerSidebar()
+            }
+        )
+
+        actions.append(
+            makeCommandPaletteAction(
+                id: "showDebugSidebar",
+                title: "Show Debug Sidebar",
+                shortcut: "",
+                category: "View",
+                aliases: ["debug", "debugger", "breakpoints"]
+            ) {
+                self.showDebugSidebar()
+            }
+        )
+
+        if canStartDebugging {
+            actions.append(
+                makeCommandPaletteAction(
+                    id: "startDebugging",
+                    title: "\(debugPrimaryActionTitle) Debugger",
+                    shortcut: "",
+                    category: "Debug",
+                    aliases: ["start debugger", "run debugger", "debug session", "restart debugger"]
+                ) {
+                    self.startDebugging()
+                }
+            )
+        }
+
+        if hasCurrentDebugStopLocation {
+            actions.append(
+                makeCommandPaletteAction(
+                    id: "openCurrentDebugStopLocation",
+                    title: "Open Current Stop Location",
+                    shortcut: "",
+                    category: "Go",
+                    aliases: ["current stop", "stopped location", "debug stop location"]
+                ) {
+                    self.openCurrentDebugStopLocation()
+                }
+            )
+        }
+
+        if canStopDebugging {
+            actions.append(
+                makeCommandPaletteAction(
+                    id: "stopDebugging",
+                    title: "Stop Debugger",
+                    shortcut: "",
+                    category: "Debug",
+                    aliases: ["stop debugger", "end debug session", "reset debugger"]
+                ) {
+                    self.stopDebugging()
+                }
+            )
+        }
+
+        if canAccessDebugControls {
+            actions.append(
+                makeCommandPaletteAction(
+                    id: isDebugPanelVisible ? "hideDebugConsole" : "showDebugConsole",
+                    title: isDebugPanelVisible ? "Hide Debug Console" : "Show Debug Console",
+                    shortcut: "",
+                    category: "Debug",
+                    aliases: ["debug console", "console", "show console", "hide console"]
+                ) {
+                    self.toggleDebugPanel()
+                }
+            )
+        }
+
+        if !debugConsoleEntries.isEmpty {
+            actions.append(
+                makeCommandPaletteAction(
+                    id: "clearDebugConsole",
+                    title: "Clear Debug Console",
+                    shortcut: "",
+                    category: "Debug",
+                    aliases: ["clear console", "clear debugger output", "reset debug console"]
+                ) {
+                    self.clearDebugConsole()
+                }
+            )
+        }
+
+        if debugConfigurations.count > 1 {
+            for configuration in debugConfigurations where configuration.name != selectedDebugConfigurationName {
+                actions.append(
+                    makeCommandPaletteAction(
+                        id: "selectDebugConfiguration-\(commandPaletteIdentifierFragment(configuration.name))",
+                        title: "Select Debug Configuration: \(configuration.name)",
+                        shortcut: "",
+                        category: "Debug",
+                        aliases: [
+                            "debug config \(configuration.name)",
+                            "use debug config \(configuration.name)",
+                            "switch debug configuration \(configuration.name)"
+                        ]
+                    ) {
+                        self.selectDebugConfiguration(named: configuration.name)
+                    }
+                )
+            }
+        }
+
+        if canShowProblemsPanel {
+            actions.append(
+                makeCommandPaletteAction(
+                    id: isDiagnosticsPanelVisible ? "hideProblemsPanel" : "showProblemsPanel",
+                    title: isDiagnosticsPanelVisible ? "Hide Problems" : "Show Problems",
+                    shortcut: "",
+                    category: "View",
+                    aliases: ["diagnostics", "problems", "errors", "warnings"]
+                ) {
+                    self.toggleDiagnosticsPanel()
+                }
+            )
+
+            if hasWorkspaceDiagnostics {
+                actions.append(
+                    makeCommandPaletteAction(
+                        id: "showWorkspaceProblems",
+                        title: "Show Workspace Problems",
+                        shortcut: "",
+                        category: "View",
+                        aliases: ["workspace diagnostics", "workspace errors", "all problems"]
+                    ) {
+                        if !self.isDiagnosticsPanelVisible {
+                            self.toggleDiagnosticsPanel()
+                        }
+                        self.setDiagnosticsPanelScope(.workspace)
+                    }
+                )
+            }
+
+            if hasOpenFile {
+                actions.append(
+                    makeCommandPaletteAction(
+                        id: "showCurrentFileProblems",
+                        title: "Show Current File Problems",
+                        shortcut: "",
+                        category: "View",
+                        aliases: ["file diagnostics", "current problems", "current file errors"]
+                    ) {
+                        if !self.isDiagnosticsPanelVisible {
+                            self.toggleDiagnosticsPanel()
+                        }
+                        self.setDiagnosticsPanelScope(.currentFile)
+                    }
+                )
+            }
+        }
+
+        if !referenceResults.isEmpty {
+            actions.append(
+                makeCommandPaletteAction(
+                    id: isReferencesPanelVisible ? "hideReferencesPanel" : "showReferencesPanel",
+                    title: isReferencesPanelVisible ? "Hide References" : "Show References",
+                    shortcut: "",
+                    category: "View",
+                    aliases: ["references panel", "usage results", "reference results"]
+                ) {
+                    self.toggleReferencesPanel()
+                }
+            )
+        }
+
         if gitRepositoryStatus.isRepository {
             actions.append(
-                CommandPaletteAction(
+                makeCommandPaletteAction(
                     id: "refreshGitStatus",
                     title: "Refresh Git Status",
                     shortcut: "",
-                    category: "Git"
+                    category: "Git",
+                    aliases: ["git refresh", "reload git", "refresh source control"]
                 ) {
                     self.refreshGitState()
                 }
             )
         }
 
-        return actions.filter { action in
-            commandPaletteQuery.isEmpty || action.title.localizedCaseInsensitiveContains(commandPaletteQuery)
+        if let selectedGitChangedFile {
+            if canShowPreviousGitChange {
+                actions.append(
+                    makeCommandPaletteAction(
+                        id: "showPreviousGitChange",
+                        title: "Previous Changed File",
+                        shortcut: "",
+                        category: "Git",
+                        aliases: ["previous change", "previous diff", "prev changed file"]
+                    ) {
+                        self.showPreviousGitChange()
+                    }
+                )
+            }
+
+            if canShowNextGitChange {
+                actions.append(
+                    makeCommandPaletteAction(
+                        id: "showNextGitChange",
+                        title: "Next Changed File",
+                        shortcut: "",
+                        category: "Git",
+                        aliases: ["next change", "next diff", "next changed file"]
+                    ) {
+                        self.showNextGitChange()
+                    }
+                )
+            }
+
+            actions.append(
+                makeCommandPaletteAction(
+                    id: "openSelectedGitChangeInEditor",
+                    title: "Open Selected Change in Editor",
+                    shortcut: "",
+                    category: "Git",
+                    aliases: ["open change", "open diff file", "open selected change"]
+                ) {
+                    self.openSelectedGitChangeInEditor()
+                }
+            )
+
+            actions.append(
+                makeCommandPaletteAction(
+                    id: "revealSelectedGitChangeInExplorer",
+                    title: "Reveal Selected Change in Explorer",
+                    shortcut: "",
+                    category: "Git",
+                    aliases: ["reveal change", "show change in explorer", "focus change in files"]
+                ) {
+                    self.revealSelectedGitChangeInExplorer()
+                }
+            )
+
+            if selectedGitChangedFile.canStage {
+                actions.append(
+                    makeCommandPaletteAction(
+                        id: "stageSelectedGitChange",
+                        title: "Stage Selected Change",
+                        shortcut: "",
+                        category: "Git",
+                        aliases: ["stage change", "git add", "stage file"]
+                    ) {
+                        self.stageSelectedGitChange()
+                    }
+                )
+            }
+
+            if selectedGitChangedFile.canUnstage {
+                actions.append(
+                    makeCommandPaletteAction(
+                        id: "unstageSelectedGitChange",
+                        title: "Unstage Selected Change",
+                        shortcut: "",
+                        category: "Git",
+                        aliases: ["unstage change", "git reset", "remove from staged"]
+                    ) {
+                        self.unstageSelectedGitChange()
+                    }
+                )
+            }
+
+            if selectedGitChangedFile.canDiscard {
+                actions.append(
+                    makeCommandPaletteAction(
+                        id: "discardSelectedGitChange",
+                        title: "Discard Selected Change",
+                        shortcut: "",
+                        category: "Git",
+                        aliases: ["discard change", "revert file", "throw away diff"]
+                    ) {
+                        self.discardSelectedGitChange()
+                    }
+                )
+            }
+        }
+
+        if canUndoLastProjectReplace {
+            actions.append(
+                makeCommandPaletteAction(
+                    id: "undoLastProjectReplace",
+                    title: "Undo Last Project Replace",
+                    shortcut: "",
+                    category: "Edit",
+                    aliases: ["undo replace", "revert replace", "undo project replace"]
+                ) {
+                    self.undoLastProjectReplace()
+                }
+            )
+        }
+
+        if rootDirectory != nil {
+            actions.append(
+                makeCommandPaletteAction(
+                    id: "showProjectSearch",
+                    title: "Find in Project",
+                    shortcut: "⌘⇧F",
+                    category: "Search",
+                    aliases: ["find in files", "search project", "replace in project"]
+                ) {
+                    self.showSearchSidebar()
+                }
+            )
+        }
+
+        if canNavigateProjectSearchResults {
+            actions.append(
+                makeCommandPaletteAction(
+                    id: "nextProjectSearchResult",
+                    title: "Next Search Result",
+                    shortcut: "⌘G",
+                    category: "Search",
+                    aliases: ["next match", "next result"]
+                ) {
+                    self.showNextProjectSearchResult()
+                }
+            )
+
+            actions.append(
+                makeCommandPaletteAction(
+                    id: "previousProjectSearchResult",
+                    title: "Previous Search Result",
+                    shortcut: "⌘⇧G",
+                    category: "Search",
+                    aliases: ["previous match", "previous result", "prev result"]
+                ) {
+                    self.showPreviousProjectSearchResult()
+                }
+            )
+        }
+
+        if canCollapseProjectSearchGroups {
+            actions.append(
+                makeCommandPaletteAction(
+                    id: "collapseSearchResults",
+                    title: "Collapse Search Results",
+                    shortcut: "",
+                    category: "Search",
+                    aliases: ["collapse results", "fold search results"]
+                ) {
+                    self.collapseAllProjectSearchGroups()
+                }
+            )
+        }
+
+        if canExpandProjectSearchGroups {
+            actions.append(
+                makeCommandPaletteAction(
+                    id: "expandSearchResults",
+                    title: "Expand Search Results",
+                    shortcut: "",
+                    category: "Search",
+                    aliases: ["expand results", "unfold search results"]
+                ) {
+                    self.expandAllProjectSearchGroups()
+                }
+            )
+        }
+
+        let queryContext = commandPaletteQueryContext(for: commandPaletteQuery)
+        let scopedActions = scopedCommandPaletteActions(actions, scope: queryContext.scope)
+        return rankedCommandPaletteActions(scopedActions, query: queryContext.searchText)
+    }
+
+    var commandPaletteSections: [CommandPaletteSection] {
+        let actions = commandPaletteActions
+        guard !actions.isEmpty else { return [] }
+
+        let queryContext = self.commandPaletteQueryContext(for: commandPaletteQuery)
+        let normalizedQuery = queryContext.searchText
+        let decorate: (CommandPaletteAction) -> CommandPaletteAction = { action in
+            self.decoratedCommandPaletteAction(action, query: normalizedQuery)
+        }
+
+        if normalizedQuery.isEmpty {
+            let recentActions = actions
+                .filter { self.commandPaletteRecencyBoost(for: $0.id) > 0 }
+                .prefix(5)
+                .map(decorate)
+            let recentIDs = Set(recentActions.map(\.id))
+            let remainingActions = actions.filter { !recentIDs.contains($0.id) }
+            var sections: [CommandPaletteSection] = []
+
+            if !recentActions.isEmpty {
+                sections.append(CommandPaletteSection(title: "Recent", actions: Array(recentActions)))
+            }
+
+            sections.append(contentsOf: self.commandPaletteCategorySections(for: remainingActions, query: normalizedQuery))
+            return sections
+        }
+
+        let shouldGroupByCategory = self.commandPaletteShouldGroupByCategory(actions: actions, normalizedQuery: normalizedQuery)
+        if shouldGroupByCategory {
+            return self.commandPaletteCategorySections(for: actions, query: normalizedQuery)
+        }
+
+        return [
+            CommandPaletteSection(
+                title: queryContext.scope.map { "\($0.title) Commands" } ?? "Commands",
+                actions: actions.map(decorate)
+            )
+        ]
+    }
+
+    var quickOpenSections: [QuickOpenSection] {
+        let trimmedQuery = quickOpenQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if let request = quickOpenFileLineRequest(from: trimmedQuery) {
+            let items = quickOpenFileLineItems(for: request)
+            return items.isEmpty ? [] : [QuickOpenSection(title: "Lines", items: items)]
+        }
+
+        if trimmedQuery.hasPrefix(":") {
+            let items = quickOpenLineJumpItems(for: trimmedQuery)
+            return items.isEmpty ? [] : [QuickOpenSection(title: "Lines", items: items)]
+        }
+
+        if trimmedQuery.hasPrefix("!") {
+            return quickOpenWorkspaceProblemSections(for: trimmedQuery)
+        }
+
+        if trimmedQuery.hasPrefix("#") {
+            return quickOpenWorkspaceSymbolSections(for: trimmedQuery)
+        }
+
+        let fileItems = flatFileList.enumerated().compactMap { index, item in
+            guard !item.isDirectory else { return nil }
+
+            let displayPath = relativeDisplayPath(for: item.path)
+            guard let score = quickOpenMatchScore(for: item, displayPath: displayPath, query: trimmedQuery) else {
+                return nil
+            }
+
+            return QuickOpenItem(
+                kind: .file(item),
+                title: item.name,
+                subtitle: displayPath,
+                detailText: nil,
+                iconName: item.iconName,
+                badge: nil,
+                score: score,
+                originalIndex: index
+            )
+        }
+        .sorted(by: compareQuickOpenItems)
+
+        return fileItems.isEmpty ? [] : [QuickOpenSection(title: "Files", items: fileItems)]
+    }
+
+    var quickOpenItems: [QuickOpenItem] {
+        quickOpenSections.flatMap(\.items)
+    }
+
+    private func makeCommandPaletteAction(
+        id: String,
+        title: String,
+        shortcut: String,
+        category: String,
+        aliases: [String] = [],
+        action: @escaping () -> Void
+    ) -> CommandPaletteAction {
+        CommandPaletteAction(
+            id: id,
+            title: title,
+            shortcut: shortcut,
+            category: category,
+            aliases: aliases,
+            detailText: nil,
+            badge: nil
+        ) {
+            self.recordCommandPaletteActionAccess(id: id)
+            action()
         }
     }
 
-    var filteredFiles: [FileItem] {
-        guard !commandPaletteQuery.isEmpty else { return flatFileList }
-        return flatFileList.filter { item in
-            !item.isDirectory && item.name.localizedCaseInsensitiveContains(commandPaletteQuery)
+    func applyCommandPaletteScope(_ scope: CommandPaletteScope) {
+        let context = commandPaletteQueryContext(for: commandPaletteQuery)
+
+        if context.scope?.id == scope.id {
+            commandPaletteQuery = context.searchText
+            return
         }
+
+        let suffix = context.searchText.isEmpty ? "" : " \(context.searchText)"
+        commandPaletteQuery = "\(scope.queryToken)\(suffix)"
+    }
+
+    func applyQuickOpenProblemFilterHint(_ hint: QuickOpenProblemFilterHint) {
+        let query = quickOpenWorkspaceProblemQuery(from: quickOpenQuery)
+        var severity = query.severity
+        var scope = query.scope
+
+        switch hint.kind {
+        case .scope(let targetScope):
+            scope = scope == targetScope ? nil : targetScope
+        case .severity(let targetSeverity):
+            severity = severity == targetSeverity ? nil : targetSeverity
+        }
+
+        var parts: [String] = ["!"]
+        if let scope {
+            parts.append(scope.queryToken)
+        }
+        if let severity {
+            parts.append(problemFilterToken(for: severity))
+        }
+        if !query.searchText.isEmpty {
+            parts.append(query.searchText)
+        }
+
+        quickOpenQuery = parts.joined(separator: " ")
+    }
+
+    private func rankedCommandPaletteActions(_ actions: [CommandPaletteAction], query: String) -> [CommandPaletteAction] {
+        let normalizedQuery = normalizedCommandPaletteSearchText(query)
+
+        if normalizedQuery.isEmpty {
+            return actions.sorted(by: compareCommandPaletteActions)
+        }
+
+        return actions
+            .compactMap { action -> (action: CommandPaletteAction, score: Int)? in
+                guard let score = commandPaletteMatchScore(for: action, query: normalizedQuery) else {
+                    return nil
+                }
+                return (action, score + commandPaletteRecencyBoost(for: action.id))
+            }
+            .sorted { lhs, rhs in
+                if lhs.score != rhs.score {
+                    return lhs.score > rhs.score
+                }
+                return compareCommandPaletteActions(lhs.action, rhs.action)
+            }
+            .map(\.action)
+    }
+
+    private func scopedCommandPaletteActions(
+        _ actions: [CommandPaletteAction],
+        scope: CommandPaletteScope?
+    ) -> [CommandPaletteAction] {
+        guard let scope else { return actions }
+        let normalizedScopeCategory = normalizedCommandPaletteSearchText(scope.category)
+        return actions.filter { normalizedCommandPaletteSearchText($0.category) == normalizedScopeCategory }
+    }
+
+    private func compareCommandPaletteActions(_ lhs: CommandPaletteAction, _ rhs: CommandPaletteAction) -> Bool {
+        let lhsRecency = commandPaletteRecencyBoost(for: lhs.id)
+        let rhsRecency = commandPaletteRecencyBoost(for: rhs.id)
+
+        if lhsRecency != rhsRecency {
+            return lhsRecency > rhsRecency
+        }
+
+        let categoryComparison = lhs.category.localizedStandardCompare(rhs.category)
+        if categoryComparison != .orderedSame {
+            return categoryComparison == .orderedAscending
+        }
+
+        return lhs.title.localizedStandardCompare(rhs.title) == .orderedAscending
+    }
+
+    private func decoratedCommandPaletteAction(_ action: CommandPaletteAction, query: String) -> CommandPaletteAction {
+        let aliasMatch = commandPaletteMatchingAlias(for: action, query: query)
+        let recentBadge = query.isEmpty && commandPaletteRecencyBoost(for: action.id) > 0 ? "Recent" : nil
+
+        return CommandPaletteAction(
+            id: action.id,
+            title: action.title,
+            shortcut: action.shortcut,
+            category: action.category,
+            aliases: action.aliases,
+            detailText: aliasMatch.map { "Alias: \($0)" },
+            badge: recentBadge,
+            action: action.action
+        )
+    }
+
+    private func commandPaletteCategorySections(for actions: [CommandPaletteAction], query: String) -> [CommandPaletteSection] {
+        let grouped = Dictionary(grouping: actions, by: \.category)
+
+        return grouped.keys
+            .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+            .compactMap { category in
+                guard let categoryActions = grouped[category], !categoryActions.isEmpty else { return nil }
+                return CommandPaletteSection(
+                    title: category,
+                    actions: categoryActions.map { decoratedCommandPaletteAction($0, query: query) }
+                )
+            }
+    }
+
+    private func commandPaletteShouldGroupByCategory(actions: [CommandPaletteAction], normalizedQuery: String) -> Bool {
+        guard actions.count > 4 else { return false }
+        let categories = Set(actions.map(\.category))
+        guard categories.count > 1 else { return false }
+        return normalizedQuery.count < 4 || commandPaletteSearchTerms(fromNormalizedText: normalizedQuery).count <= 1
+    }
+
+    private func commandPaletteMatchingAlias(for action: CommandPaletteAction, query: String) -> String? {
+        guard !query.isEmpty else { return nil }
+
+        return action.aliases.first { alias in
+            let normalizedAlias = normalizedCommandPaletteSearchText(alias)
+            if normalizedAlias == query || normalizedAlias.hasPrefix(query) || normalizedAlias.contains(query) {
+                return true
+            }
+
+            let queryTerms = commandPaletteSearchTerms(fromNormalizedText: query)
+            let aliasTerms = commandPaletteSearchTerms(fromNormalizedText: normalizedAlias)
+            if !queryTerms.isEmpty && commandPaletteWordPrefixMatch(words: aliasTerms, queryTerms: queryTerms) {
+                return true
+            }
+
+            return false
+        }
+    }
+
+    private func commandPaletteMatchScore(for action: CommandPaletteAction, query: String) -> Int? {
+        let normalizedTitle = normalizedCommandPaletteSearchText(action.title)
+        let normalizedCategory = normalizedCommandPaletteSearchText(action.category)
+        let normalizedAliases = action.aliases.map(normalizedCommandPaletteSearchText)
+        let queryTerms = commandPaletteSearchTerms(fromNormalizedText: query)
+        let condensedQuery = condensedCommandPaletteSearchText(query)
+        let titleWords = commandPaletteSearchTerms(fromNormalizedText: normalizedTitle)
+        var bestScore: Int?
+
+        func consider(_ score: Int?) {
+            guard let score else { return }
+            bestScore = max(bestScore ?? .min, score)
+        }
+
+        if normalizedTitle == query {
+            consider(1_700)
+        }
+
+        if normalizedAliases.contains(query) {
+            consider(1_660)
+        }
+
+        if normalizedTitle.hasPrefix(query) {
+            consider(1_560)
+        }
+
+        if normalizedAliases.contains(where: { $0.hasPrefix(query) }) {
+            consider(1_520)
+        }
+
+        if !queryTerms.isEmpty, commandPaletteWordPrefixMatch(words: titleWords, queryTerms: queryTerms) {
+            consider(1_460)
+        }
+
+        if !queryTerms.isEmpty,
+           normalizedAliases.contains(where: {
+               commandPaletteWordPrefixMatch(
+                   words: commandPaletteSearchTerms(fromNormalizedText: $0),
+                   queryTerms: queryTerms
+               )
+           }) {
+            consider(1_420)
+        }
+
+        if normalizedTitle.contains(query) {
+            consider(1_340)
+        }
+
+        if normalizedAliases.contains(where: { $0.contains(query) }) {
+            consider(1_300)
+        }
+
+        if !queryTerms.isEmpty && queryTerms.allSatisfy({ normalizedTitle.contains($0) }) {
+            consider(1_260 + min(queryTerms.count * 10, 40))
+        }
+
+        if !queryTerms.isEmpty && normalizedAliases.contains(where: { alias in
+            queryTerms.allSatisfy { alias.contains($0) }
+        }) {
+            consider(1_220 + min(queryTerms.count * 10, 40))
+        }
+
+        if normalizedCategory.contains(query) {
+            consider(1_100)
+        }
+
+        if !condensedQuery.isEmpty {
+            let titleInitialism = commandPaletteInitialism(forWords: titleWords)
+            if titleInitialism.hasPrefix(condensedQuery) {
+                consider(1_060)
+            }
+
+            let aliasInitialismScore = normalizedAliases
+                .map { commandPaletteInitialism(forWords: commandPaletteSearchTerms(fromNormalizedText: $0)) }
+                .contains { $0.hasPrefix(condensedQuery) }
+            if aliasInitialismScore {
+                consider(1_020)
+            }
+
+            consider(commandPaletteFuzzyScore(haystack: condensedCommandPaletteSearchText(normalizedTitle), query: condensedQuery))
+            consider(
+                normalizedAliases
+                    .compactMap { commandPaletteFuzzyScore(haystack: condensedCommandPaletteSearchText($0), query: condensedQuery) }
+                    .max()
+                    .map { $0 - 20 }
+            )
+        }
+
+        return bestScore
+    }
+
+    private func normalizedCommandPaletteSearchText(_ text: String) -> String {
+        text
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            .lowercased()
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var availableCommandPaletteScopes: [CommandPaletteScope] {
+        [
+            CommandPaletteScope(id: "file", title: "File", category: "File", queryToken: "file:", aliases: ["file", "files", "f"]),
+            CommandPaletteScope(id: "go", title: "Go", category: "Go", queryToken: "go:", aliases: ["go", "goto", "g"]),
+            CommandPaletteScope(id: "search", title: "Search", category: "Search", queryToken: "search:", aliases: ["search", "find", "s"]),
+            CommandPaletteScope(id: "edit", title: "Edit", category: "Edit", queryToken: "edit:", aliases: ["edit", "e"]),
+            CommandPaletteScope(id: "debug", title: "Debug", category: "Debug", queryToken: "debug:", aliases: ["debug", "dbg", "run"]),
+            CommandPaletteScope(id: "git", title: "Git", category: "Git", queryToken: "git:", aliases: ["git", "scm"]),
+            CommandPaletteScope(id: "project", title: "Project", category: "Project", queryToken: "project:", aliases: ["project", "workspace", "p"]),
+            CommandPaletteScope(id: "view", title: "View", category: "View", queryToken: "view:", aliases: ["view", "panel", "v"])
+        ]
+    }
+
+    private func commandPaletteQueryContext(for query: String) -> CommandPaletteQueryContext {
+        let normalizedQuery = normalizedCommandPaletteSearchText(query)
+        guard let separatorIndex = normalizedQuery.firstIndex(of: ":") else {
+            return CommandPaletteQueryContext(scope: nil, searchText: normalizedQuery)
+        }
+
+        let scopeToken = String(normalizedQuery[..<separatorIndex]).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let scope = availableCommandPaletteScopes.first(where: { $0.aliases.contains(scopeToken) }) else {
+            return CommandPaletteQueryContext(scope: nil, searchText: normalizedQuery)
+        }
+
+        let searchStart = normalizedQuery.index(after: separatorIndex)
+        let searchText = String(normalizedQuery[searchStart...]).trimmingCharacters(in: .whitespacesAndNewlines)
+        return CommandPaletteQueryContext(scope: scope, searchText: searchText)
+    }
+
+    private func condensedCommandPaletteSearchText(_ text: String) -> String {
+        normalizedCommandPaletteSearchText(text)
+            .filter { $0.isLetter || $0.isNumber }
+    }
+
+    private func commandPaletteIdentifierFragment(_ text: String) -> String {
+        let normalized = normalizedCommandPaletteSearchText(text)
+        let collapsed = normalized
+            .split { !$0.isLetter && !$0.isNumber }
+            .joined(separator: "-")
+        return collapsed.isEmpty ? "item" : collapsed
+    }
+
+    private func commandPaletteSearchTerms(fromNormalizedText text: String) -> [String] {
+        text.split { character in
+            !character.isLetter && !character.isNumber
+        }
+        .map(String.init)
+    }
+
+    private func commandPaletteWordPrefixMatch(words: [String], queryTerms: [String]) -> Bool {
+        guard !words.isEmpty, !queryTerms.isEmpty else { return false }
+        var wordIndex = 0
+
+        for term in queryTerms {
+            guard let matchIndex = words[wordIndex...].firstIndex(where: { $0.hasPrefix(term) }) else {
+                return false
+            }
+            wordIndex = words.index(after: matchIndex)
+        }
+
+        return true
+    }
+
+    private func commandPaletteInitialism(forWords words: [String]) -> String {
+        String(words.compactMap(\.first))
+    }
+
+    private func commandPaletteFuzzyScore(haystack: String, query: String) -> Int? {
+        guard !haystack.isEmpty, !query.isEmpty else { return nil }
+        var searchIndex = haystack.startIndex
+        var matched = 0
+        var gapPenalty = 0
+
+        for character in query {
+            guard let matchIndex = haystack[searchIndex...].firstIndex(of: character) else {
+                return nil
+            }
+
+            gapPenalty += haystack.distance(from: searchIndex, to: matchIndex)
+            matched += 1
+            searchIndex = haystack.index(after: matchIndex)
+        }
+
+        return max(900 - gapPenalty * 8 - max(0, haystack.count - matched) * 2, 700)
+    }
+
+    private func commandPaletteRecencyBoost(for actionID: String) -> Int {
+        guard let index = recentCommandPaletteActionIDs.firstIndex(of: actionID) else {
+            return 0
+        }
+
+        return max(220 - index * 24, 40)
+    }
+
+    private func recordCommandPaletteActionAccess(id: String) {
+        recentCommandPaletteActionIDs.removeAll { $0 == id }
+        recentCommandPaletteActionIDs.insert(id, at: 0)
+        recentCommandPaletteActionIDs = Array(recentCommandPaletteActionIDs.prefix(8))
     }
 
     var flatFileList: [FileItem] {
         flattenFileTree(fileTree)
+    }
+
+    var groupedProjectSearchResults: [ProjectSearchFileGroup] {
+        let groupedResults = Dictionary(grouping: projectSearchResults, by: { normalizedPath(for: $0.filePath) })
+
+        return groupedResults.values.compactMap { results in
+            guard let firstResult = results.first else { return nil }
+            let sortedResults = results.sorted { lhs, rhs in
+                if lhs.lineNumber == rhs.lineNumber {
+                    return lhs.columnNumber < rhs.columnNumber
+                }
+                return lhs.lineNumber < rhs.lineNumber
+            }
+
+            let fileURL = firstResult.filePath
+            return ProjectSearchFileGroup(
+                filePath: fileURL,
+                fileName: fileURL.lastPathComponent,
+                displayPath: relativeDisplayPath(for: fileURL),
+                results: sortedResults
+            )
+        }
+        .sorted { lhs, rhs in
+            lhs.displayPath.localizedStandardCompare(rhs.displayPath) == .orderedAscending
+        }
+    }
+
+    var visibleGroupedProjectSearchResults: [ProjectSearchFileGroup] {
+        groupedProjectSearchResults.filter { !collapsedProjectSearchGroupIDs.contains($0.id) }
+    }
+
+    var projectSearchMatchCount: Int {
+        projectSearchResults.reduce(0) { partialResult, result in
+            partialResult + result.matchCount
+        }
+    }
+
+    var orderedProjectSearchResults: [ProjectSearchResult] {
+        visibleGroupedProjectSearchResults.flatMap(\.results)
+    }
+
+    var selectedProjectSearchResults: [ProjectSearchResult] {
+        projectSearchResults.filter { selectedProjectSearchResultIDs.contains($0.id) }
+    }
+
+    var activeProjectSearchResult: ProjectSearchResult? {
+        orderedProjectSearchResults.first { $0.id == activeProjectSearchResultID }
+    }
+
+    var selectedProjectSearchMatchCount: Int {
+        selectedProjectSearchResults.reduce(0) { partialResult, result in
+            partialResult + result.matchCount
+        }
+    }
+
+    var projectSearchFileCount: Int {
+        groupedProjectSearchResults.count
+    }
+
+    var visibleProjectSearchResultCount: Int {
+        orderedProjectSearchResults.count
+    }
+
+    var visibleProjectSearchFileCount: Int {
+        visibleGroupedProjectSearchResults.count
+    }
+
+    var projectSearchVisibilitySummary: String {
+        "\(visibleProjectSearchResultCount) visible result\(visibleProjectSearchResultCount == 1 ? "" : "s") in \(visibleProjectSearchFileCount) file\(visibleProjectSearchFileCount == 1 ? "" : "s")"
+    }
+
+    var selectedProjectSearchFileCount: Int {
+        Set(selectedProjectSearchResults.map { normalizedPath(for: $0.filePath) }).count
+    }
+
+    var canReplaceProjectSearchResults: Bool {
+        let trimmedQuery = projectSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !trimmedQuery.isEmpty
+            && !isSearchingProject
+            && !isReplacingInProject
+            && projectSearchResultsQuery == trimmedQuery
+            && projectSearchResultsOptions == currentProjectSearchOptions
+            && !projectSearchResults.isEmpty
+    }
+
+    var replaceAllProjectResultsTitle: String {
+        guard canReplaceSelectedProjectSearchResults else { return "Replace Selected" }
+        return "Replace Selected (\(selectedProjectSearchMatchCount))"
+    }
+
+    var canReplaceSelectedProjectSearchResults: Bool {
+        canReplaceProjectSearchResults && !selectedProjectSearchResults.isEmpty
+    }
+
+    var canApplyProjectReplacePreview: Bool {
+        projectReplacePreview != nil && !isReplacingInProject
+    }
+
+    var canUndoLastProjectReplace: Bool {
+        lastProjectReplaceTransaction != nil && !isReplacingInProject && projectReplacePreview == nil
+    }
+
+    var canNavigateProjectSearchResults: Bool {
+        sidebarMode == .search && !orderedProjectSearchResults.isEmpty
+    }
+
+    var canCollapseProjectSearchGroups: Bool {
+        groupedProjectSearchResults.contains { !collapsedProjectSearchGroupIDs.contains($0.id) }
+    }
+
+    var canExpandProjectSearchGroups: Bool {
+        groupedProjectSearchResults.contains { collapsedProjectSearchGroupIDs.contains($0.id) }
+    }
+
+    var undoLastProjectReplaceTitle: String {
+        guard let lastProjectReplaceTransaction else { return "Undo Last Replace" }
+        return "Undo Last Replace (\(lastProjectReplaceTransaction.replacementCount))"
+    }
+
+    private var currentProjectSearchOptions: ProjectSearchOptions {
+        ProjectSearchOptions(
+            isCaseSensitive: projectSearchCaseSensitive,
+            isWholeWord: projectSearchWholeWord,
+            isRegularExpression: projectSearchUseRegex,
+            includeGlob: projectSearchIncludeGlob.trimmingCharacters(in: .whitespacesAndNewlines),
+            excludeGlob: projectSearchExcludeGlob.trimmingCharacters(in: .whitespacesAndNewlines)
+        )
+    }
+
+    func isProjectSearchResultSelected(_ result: ProjectSearchResult) -> Bool {
+        selectedProjectSearchResultIDs.contains(result.id)
+    }
+
+    func isProjectSearchGroupCollapsed(_ group: ProjectSearchFileGroup) -> Bool {
+        collapsedProjectSearchGroupIDs.contains(group.id)
+    }
+
+    func isActiveProjectSearchResult(_ result: ProjectSearchResult) -> Bool {
+        activeProjectSearchResultID == result.id
+    }
+
+    func setActiveProjectSearchResult(_ result: ProjectSearchResult) {
+        guard orderedProjectSearchResults.contains(result) else { return }
+        activeProjectSearchResultID = result.id
+    }
+
+    func moveActiveProjectSearchResult(_ direction: Int) {
+        let results = orderedProjectSearchResults
+        guard !results.isEmpty else {
+            activeProjectSearchResultID = nil
+            return
+        }
+
+        guard direction != 0 else { return }
+
+        if let activeProjectSearchResult,
+           let currentIndex = results.firstIndex(of: activeProjectSearchResult) {
+            let nextIndex = (currentIndex + direction + results.count) % results.count
+            activeProjectSearchResultID = results[nextIndex].id
+        } else {
+            activeProjectSearchResultID = direction > 0 ? results.first?.id : results.last?.id
+        }
+    }
+
+    func openActiveProjectSearchResult() {
+        guard let activeProjectSearchResult else { return }
+        openSearchResult(activeProjectSearchResult)
+    }
+
+    func isActiveDiagnostic(_ diagnostic: LSPDiagnostic) -> Bool {
+        activeCurrentDiagnostic?.id == diagnostic.id
+    }
+
+    func showNextProjectSearchResult() {
+        guard canNavigateProjectSearchResults else { return }
+        moveActiveProjectSearchResult(1)
+        openActiveProjectSearchResult()
+    }
+
+    func showPreviousProjectSearchResult() {
+        guard canNavigateProjectSearchResults else { return }
+        moveActiveProjectSearchResult(-1)
+        openActiveProjectSearchResult()
+    }
+
+    func toggleProjectSearchGroupCollapsed(_ group: ProjectSearchFileGroup) {
+        guard groupedProjectSearchResults.contains(group) else { return }
+
+        if collapsedProjectSearchGroupIDs.contains(group.id) {
+            collapsedProjectSearchGroupIDs.remove(group.id)
+        } else {
+            collapsedProjectSearchGroupIDs.insert(group.id)
+        }
+
+        normalizeProjectSearchVisibilityState()
+    }
+
+    func collapseAllProjectSearchGroups() {
+        collapsedProjectSearchGroupIDs = Set(groupedProjectSearchResults.map(\.id))
+        normalizeProjectSearchVisibilityState()
+    }
+
+    func expandAllProjectSearchGroups() {
+        collapsedProjectSearchGroupIDs.removeAll()
+        normalizeProjectSearchVisibilityState()
+    }
+
+    func isProjectSearchGroupFullySelected(_ group: ProjectSearchFileGroup) -> Bool {
+        !group.results.isEmpty && group.results.allSatisfy { isProjectSearchResultSelected($0) }
+    }
+
+    func toggleProjectSearchResultSelection(_ result: ProjectSearchResult) {
+        guard projectSearchResults.contains(result) else { return }
+        clearProjectReplacePreview()
+
+        if selectedProjectSearchResultIDs.contains(result.id) {
+            selectedProjectSearchResultIDs.remove(result.id)
+        } else {
+            selectedProjectSearchResultIDs.insert(result.id)
+        }
+    }
+
+    func toggleProjectSearchGroupSelection(_ group: ProjectSearchFileGroup) {
+        guard groupedProjectSearchResults.contains(group) else { return }
+        clearProjectReplacePreview()
+
+        let shouldSelect = !isProjectSearchGroupFullySelected(group)
+        for result in group.results {
+            if shouldSelect {
+                selectedProjectSearchResultIDs.insert(result.id)
+            } else {
+                selectedProjectSearchResultIDs.remove(result.id)
+            }
+        }
     }
 
     func openFolder() {
@@ -687,7 +2561,7 @@ final class ProjectViewModel: ObservableObject {
         selectedTabIndex = nil
         closeReferencesPanel()
         pendingNewItemDirectory = nil
-        projectSearchResults = []
+        clearProjectSearchResults()
 
         configService.setProjectRoot(url)
         lspService.setProjectRoot(url)
@@ -715,6 +2589,7 @@ final class ProjectViewModel: ObservableObject {
         reloadFileTreeTask?.cancel()
         fileTreeLoadToken = UUID()
         let token = fileTreeLoadToken
+        invalidateWorkspaceSymbolCache()
 
         guard let rootDirectory else {
             isLoadingFileTree = false
@@ -814,6 +2689,7 @@ final class ProjectViewModel: ObservableObject {
             return normalizedPath(for: filePath) == normalizedPath(for: url)
         }) {
             selectedTabIndex = existingIndex
+            recordQuickOpenAccess(for: url)
             persistSession()
             return
         }
@@ -837,6 +2713,7 @@ final class ProjectViewModel: ObservableObject {
                 lspService.documentOpened(uri: uri, language: tab.language, text: content)
             }
 
+            recordQuickOpenAccess(for: url)
             persistSession()
         } catch {
             ui.alert("Error", "Could not open file: \(error.localizedDescription)", .warning)
@@ -847,6 +2724,9 @@ final class ProjectViewModel: ObservableObject {
         guard openTabs.indices.contains(index) else { return }
         dismissGitDiffWorkspace()
         selectedTabIndex = index
+        if let filePath = openTabs[index].filePath {
+            recordQuickOpenAccess(for: filePath)
+        }
         persistSession()
     }
 
@@ -920,6 +2800,7 @@ final class ProjectViewModel: ObservableObject {
         guard let selectedTabIndex, openTabs.indices.contains(selectedTabIndex) else { return }
         openTabs[selectedTabIndex].content = content
         openTabs[selectedTabIndex].isDirty = content != openTabs[selectedTabIndex].originalContent
+        invalidateWorkspaceSymbolCache()
 
         // Notify LSP service of document change
         openTabs[selectedTabIndex].documentVersion += 1
@@ -942,20 +2823,81 @@ final class ProjectViewModel: ObservableObject {
         guard let selectedTabIndex, openTabs.indices.contains(selectedTabIndex) else { return }
         let previousLine = openTabs[selectedTabIndex].cursorPosition.line
         openTabs[selectedTabIndex].cursorPosition = CursorPosition(line: line, column: column)
+        synchronizeActiveDiagnosticSelection()
         if previousLine != line {
             refreshCurrentLineBlame()
         }
     }
 
-    func toggleCommandPalette() {
-        showCommandPalette.toggle()
-        if showCommandPalette {
-            commandPaletteQuery = ""
+    func toggleQuickOpen() {
+        if activePalette == .quickOpen {
+            activePalette = nil
+            return
+        }
+
+        activePalette = .quickOpen
+        quickOpenQuery = ""
+    }
+
+    func beginGoToLine() {
+        guard hasOpenFile else { return }
+        activePalette = .quickOpen
+        let currentLine = max(selectedTab?.cursorPosition.line ?? 1, 1)
+        quickOpenQuery = ":\(currentLine)"
+    }
+
+    func beginWorkspaceSymbolSearch() {
+        guard rootDirectory != nil else { return }
+        activePalette = .quickOpen
+        quickOpenQuery = "#"
+    }
+
+    func beginWorkspaceProblemSearch() {
+        guard hasWorkspaceDiagnostics else { return }
+        activePalette = .quickOpen
+        quickOpenQuery = "!"
+    }
+
+    func executeQuickOpenItem(_ item: QuickOpenItem) {
+        switch item.kind {
+        case .file(let file):
+            openFile(at: file.path)
+        case .lineJump(let fileURL, _, _, let line):
+            if let fileURL {
+                openFile(at: fileURL)
+            }
+            guard let selectedTabIndex, openTabs.indices.contains(selectedTabIndex) else { return }
+            openTabs[selectedTabIndex].pendingLineJump = line
+        case .symbol(let symbol):
+            openFile(at: symbol.fileURL)
+            guard let selectedTabIndex, openTabs.indices.contains(selectedTabIndex) else { return }
+            openTabs[selectedTabIndex].pendingLineJump = symbol.line
+        case .problem(let diagnostic):
+            openWorkspaceDiagnostic(diagnostic)
         }
     }
 
+    func executeCommandPaletteAction(_ action: CommandPaletteAction) {
+        let previousPalette = activePalette
+        action.action()
+
+        if activePalette == previousPalette {
+            closeCommandPalette()
+        }
+    }
+
+    func toggleCommandPalette() {
+        if activePalette == .commandPalette {
+            activePalette = nil
+            return
+        }
+
+        activePalette = .commandPalette
+        commandPaletteQuery = ""
+    }
+
     func closeCommandPalette() {
-        showCommandPalette = false
+        activePalette = nil
     }
 
     func showExplorerSidebar() {
@@ -963,8 +2905,10 @@ final class ProjectViewModel: ObservableObject {
     }
 
     func showSearchSidebar() {
+        let wasShowingSearch = sidebarMode == .search
         sidebarMode = .search
-        if !projectSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        if wasShowingSearch,
+           !projectSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             performProjectSearch()
         }
     }
@@ -991,13 +2935,61 @@ final class ProjectViewModel: ObservableObject {
 
     func toggleDiagnosticsPanel() {
         bottomPanel = isDiagnosticsPanelVisible ? nil : .diagnostics
+        if bottomPanel == .diagnostics {
+            if !canNavigateCurrentProblems && hasWorkspaceDiagnostics {
+                diagnosticsPanelScope = .workspace
+            }
+            synchronizeActiveDiagnosticSelection()
+        }
         persistDebugPreferences()
+    }
+
+    func setDiagnosticsPanelScope(_ scope: DiagnosticsPanelScope) {
+        diagnosticsPanelScope = scope
+        synchronizeActiveDiagnosticSelection()
+    }
+
+    func toggleReferencesPanel() {
+        guard !referenceResults.isEmpty else { return }
+        bottomPanel = isReferencesPanelVisible ? nil : .references
     }
 
     func openDiagnostic(_ diagnostic: LSPDiagnostic) {
         guard let selectedTabIndex, openTabs.indices.contains(selectedTabIndex) else { return }
+        diagnosticsPanelScope = .currentFile
+        activeCurrentDiagnosticID = diagnostic.id
         openTabs[selectedTabIndex].pendingLineJump = diagnostic.range.start.line + 1
         persistDebugPreferences()
+    }
+
+    func openWorkspaceDiagnostic(_ diagnostic: WorkspaceDiagnosticItem) {
+        diagnosticsPanelScope = .workspace
+        activeWorkspaceDiagnosticID = diagnostic.id
+        openFile(at: diagnostic.fileURL)
+        guard let selectedTabIndex, openTabs.indices.contains(selectedTabIndex) else { return }
+        activeCurrentDiagnosticID = diagnostic.diagnostic.id
+        openTabs[selectedTabIndex].pendingLineJump = diagnostic.lineNumber
+        persistDebugPreferences()
+    }
+
+    func openNextProblem() {
+        guard let diagnostic = navigatedProblem(step: 1) else { return }
+        switch diagnostic {
+        case .current(let item):
+            openDiagnostic(item)
+        case .workspace(let item):
+            openWorkspaceDiagnostic(item)
+        }
+    }
+
+    func openPreviousProblem() {
+        guard let diagnostic = navigatedProblem(step: -1) else { return }
+        switch diagnostic {
+        case .current(let item):
+            openDiagnostic(item)
+        case .workspace(let item):
+            openWorkspaceDiagnostic(item)
+        }
     }
 
     func showReferences(_ locations: [LSPLocation]) {
@@ -1010,6 +3002,13 @@ final class ProjectViewModel: ObservableObject {
         if isReferencesPanelVisible {
             bottomPanel = nil
         }
+    }
+
+    private func copyStringToPasteboard(_ value: String?) {
+        guard let value, !value.isEmpty else { return }
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(value, forType: .string)
     }
 
     func openGitChangedFile(_ changedFile: GitChangedFile) {
@@ -1115,6 +3114,14 @@ final class ProjectViewModel: ObservableObject {
         debugConsoleEntries = []
     }
 
+    func openCurrentDebugStopLocation() {
+        guard let debugStoppedFilePath, let debugStoppedLine else { return }
+        let fileURL = URL(fileURLWithPath: debugStoppedFilePath)
+        openFile(at: fileURL)
+        guard let selectedTabIndex, openTabs.indices.contains(selectedTabIndex) else { return }
+        openTabs[selectedTabIndex].pendingLineJump = debugStoppedLine
+    }
+
     func startDebugging() {
         guard let rootDirectory else {
             ui.alert("No Folder Open", "Please open a folder first.", .warning)
@@ -1186,6 +3193,182 @@ final class ProjectViewModel: ObservableObject {
         }
     }
 
+    func openNextBreakpoint() {
+        guard let breakpoint = navigatedBreakpoint(step: 1) else { return }
+        openBreakpoint(breakpoint)
+    }
+
+    func openPreviousBreakpoint() {
+        guard let breakpoint = navigatedBreakpoint(step: -1) else { return }
+        openBreakpoint(breakpoint)
+    }
+
+    private func navigatedProblem(step: Int) -> NavigableProblem? {
+        switch diagnosticsPanelScope {
+        case .currentFile:
+            let diagnostics = orderedCurrentTabDiagnostics
+            guard !diagnostics.isEmpty else { return nil }
+
+            if let activeCurrentDiagnostic,
+               let currentIndex = diagnostics.firstIndex(of: activeCurrentDiagnostic) {
+                let nextIndex = (currentIndex + step + diagnostics.count) % diagnostics.count
+                return .current(diagnostics[nextIndex])
+            }
+
+            let currentPosition = currentProblemReferencePosition()
+
+            if step >= 0 {
+                return .current(
+                    diagnostics.first(where: { diagnostic in
+                        let position = diagnosticSortPosition(for: diagnostic)
+                        return position.line > currentPosition.line
+                            || (position.line == currentPosition.line && position.column > currentPosition.column)
+                    }) ?? diagnostics.first!
+                )
+            }
+
+            return .current(
+                diagnostics.last(where: { diagnostic in
+                    let position = diagnosticSortPosition(for: diagnostic)
+                    return position.line < currentPosition.line
+                        || (position.line == currentPosition.line && position.column < currentPosition.column)
+                }) ?? diagnostics.last!
+            )
+        case .workspace:
+            let diagnostics = orderedWorkspaceDiagnostics
+            guard !diagnostics.isEmpty else { return nil }
+
+            if let activeWorkspaceDiagnostic,
+               let currentIndex = diagnostics.firstIndex(of: activeWorkspaceDiagnostic) {
+                let nextIndex = (currentIndex + step + diagnostics.count) % diagnostics.count
+                return .workspace(diagnostics[nextIndex])
+            }
+
+            return .workspace(inferredWorkspaceDiagnostic(in: diagnostics) ?? diagnostics.first!)
+        }
+    }
+
+    private func sortedCurrentDiagnostics() -> [LSPDiagnostic] {
+        currentTabDiagnostics.sorted { lhs, rhs in
+            let lhsPosition = diagnosticSortPosition(for: lhs)
+            let rhsPosition = diagnosticSortPosition(for: rhs)
+            if lhsPosition.line != rhsPosition.line {
+                return lhsPosition.line < rhsPosition.line
+            }
+            if lhsPosition.column != rhsPosition.column {
+                return lhsPosition.column < rhsPosition.column
+            }
+            let lhsSeverity = lhs.severity?.rawValue ?? Int.max
+            let rhsSeverity = rhs.severity?.rawValue ?? Int.max
+            if lhsSeverity != rhsSeverity {
+                return lhsSeverity < rhsSeverity
+            }
+            return lhs.message.localizedCaseInsensitiveCompare(rhs.message) == .orderedAscending
+        }
+    }
+
+    private func diagnosticSortPosition(for diagnostic: LSPDiagnostic) -> (line: Int, column: Int) {
+        (diagnostic.range.start.line, diagnostic.range.start.character)
+    }
+
+    private func compareWorkspaceDiagnostics(_ lhs: WorkspaceDiagnosticItem, _ rhs: WorkspaceDiagnosticItem) -> Bool {
+        if lhs.displayPath != rhs.displayPath {
+            return lhs.displayPath.localizedStandardCompare(rhs.displayPath) == .orderedAscending
+        }
+
+        if lhs.lineNumber != rhs.lineNumber {
+            return lhs.lineNumber < rhs.lineNumber
+        }
+
+        if lhs.columnNumber != rhs.columnNumber {
+            return lhs.columnNumber < rhs.columnNumber
+        }
+
+        let lhsSeverity = lhs.diagnostic.severity?.rawValue ?? Int.max
+        let rhsSeverity = rhs.diagnostic.severity?.rawValue ?? Int.max
+        if lhsSeverity != rhsSeverity {
+            return lhsSeverity < rhsSeverity
+        }
+
+        return lhs.diagnostic.message.localizedCaseInsensitiveCompare(rhs.diagnostic.message) == .orderedAscending
+    }
+
+    private func currentProblemReferencePosition() -> (line: Int, column: Int) {
+        let currentLine = max((selectedTab?.cursorPosition.line ?? 1) - 1, 0)
+        let currentColumn = max((selectedTab?.cursorPosition.column ?? 1) - 1, 0)
+        return (line: currentLine, column: currentColumn)
+    }
+
+    private func inferredCurrentDiagnostic(in diagnostics: [LSPDiagnostic]) -> LSPDiagnostic? {
+        guard !diagnostics.isEmpty else { return nil }
+        let currentPosition = currentProblemReferencePosition()
+        return diagnostics.last(where: { diagnostic in
+            let position = diagnosticSortPosition(for: diagnostic)
+            return position.line < currentPosition.line
+                || (position.line == currentPosition.line && position.column <= currentPosition.column)
+        }) ?? diagnostics.first
+    }
+
+    private func inferredWorkspaceDiagnostic(in diagnostics: [WorkspaceDiagnosticItem]) -> WorkspaceDiagnosticItem? {
+        guard !diagnostics.isEmpty else { return nil }
+
+        if let selectedFilePath = selectedTab?.filePath.map(normalizedPath(for:)) {
+            let sameFileDiagnostics = diagnostics.filter { normalizedPath(for: $0.fileURL) == selectedFilePath }
+            if !sameFileDiagnostics.isEmpty {
+                let currentPosition = currentProblemReferencePosition()
+                return sameFileDiagnostics.last(where: { diagnostic in
+                    let position = (line: diagnostic.lineNumber - 1, column: diagnostic.columnNumber - 1)
+                    return position.line < currentPosition.line
+                        || (position.line == currentPosition.line && position.column <= currentPosition.column)
+                }) ?? sameFileDiagnostics.first
+            }
+        }
+
+        return diagnostics.first
+    }
+
+    private func synchronizeActiveDiagnosticSelection() {
+        activeCurrentDiagnosticID = inferredCurrentDiagnostic(in: orderedCurrentTabDiagnostics)?.id
+        activeWorkspaceDiagnosticID = inferredWorkspaceDiagnostic(in: orderedWorkspaceDiagnostics)?.id
+    }
+
+    private func navigatedBreakpoint(step: Int) -> Breakpoint? {
+        let sortedBreakpoints = sortedNavigableBreakpoints()
+        guard !sortedBreakpoints.isEmpty else { return nil }
+
+        let currentFilePath = selectedTab?.filePath.map(normalizedPath(for:))
+        let currentLine = max(selectedTab?.cursorPosition.line ?? 1, 1)
+
+        if step >= 0 {
+            return sortedBreakpoints.first(where: { breakpoint in
+                guard let currentFilePath else { return true }
+                let breakpointPath = normalizedPath(for: breakpoint.fileURL)
+                return breakpointPath.localizedStandardCompare(currentFilePath) == .orderedDescending
+                    || (breakpointPath == currentFilePath && breakpoint.line > currentLine)
+            }) ?? sortedBreakpoints.first
+        }
+
+        return sortedBreakpoints.last(where: { breakpoint in
+            guard let currentFilePath else { return true }
+            let breakpointPath = normalizedPath(for: breakpoint.fileURL)
+            return breakpointPath.localizedStandardCompare(currentFilePath) == .orderedAscending
+                || (breakpointPath == currentFilePath && breakpoint.line < currentLine)
+        }) ?? sortedBreakpoints.last
+    }
+
+    private func sortedNavigableBreakpoints() -> [Breakpoint] {
+        breakpoints
+            .filter(\.isEnabled)
+            .sorted { lhs, rhs in
+                let lhsPath = normalizedPath(for: lhs.fileURL)
+                let rhsPath = normalizedPath(for: rhs.fileURL)
+                if lhsPath != rhsPath {
+                    return lhsPath.localizedStandardCompare(rhsPath) == .orderedAscending
+                }
+                return lhs.line < rhs.line
+            }
+    }
+
     func removeBreakpoint(_ breakpoint: Breakpoint) {
         guard rootDirectory != nil else { return }
         breakpoints = breakpointStore.removeBreakpoint(breakpoint, for: rootDirectory)
@@ -1193,20 +3376,22 @@ final class ProjectViewModel: ObservableObject {
     }
 
     func performProjectSearch() {
+        projectSearchDebounceTask?.cancel()
         projectSearchTask?.cancel()
         projectSearchToken = UUID()
         let token = projectSearchToken
+        let searchOptions = currentProjectSearchOptions
 
         guard let rootDirectory else {
             isSearchingProject = false
-            projectSearchResults = []
+            clearProjectSearchResults()
             return
         }
 
         let trimmedQuery = projectSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedQuery.isEmpty else {
             isSearchingProject = false
-            projectSearchResults = []
+            clearProjectSearchResults()
             return
         }
 
@@ -1217,92 +3402,141 @@ final class ProjectViewModel: ObservableObject {
             guard let self else { return }
 
             do {
-                let results = try await fileService.searchProjectAsync(at: rootDirectory, query: trimmedQuery)
+                let results = try await fileService.searchProjectAsync(
+                    at: rootDirectory,
+                    query: trimmedQuery,
+                    options: searchOptions
+                )
                 guard !Task.isCancelled,
                       self.projectSearchToken == token,
                       self.rootDirectory.map(self.normalizedPath(for:)) == normalizedRootPath,
-                      self.projectSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines) == trimmedQuery else {
+                      self.projectSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines) == trimmedQuery,
+                      self.currentProjectSearchOptions == searchOptions else {
                     return
                 }
-                self.projectSearchResults = results
+                self.updateProjectSearchResults(results, query: trimmedQuery, options: searchOptions)
                 self.isSearchingProject = false
             } catch is CancellationError {
                 guard self.projectSearchToken == token else { return }
+                self.clearProjectSearchResults()
                 self.isSearchingProject = false
             } catch {
                 guard self.projectSearchToken == token else { return }
-                self.projectSearchResults = []
+                self.clearProjectSearchResults()
                 self.isSearchingProject = false
             }
         }
     }
 
     func replaceAllProjectResults() {
-        guard let rootDirectory else { return }
-
         let trimmedQuery = projectSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedQuery.isEmpty else { return }
+        guard !trimmedQuery.isEmpty, canReplaceSelectedProjectSearchResults else { return }
+        let selectedResults = selectedProjectSearchResults
+        guard !selectedResults.isEmpty else { return }
+        projectReplacePreview = makeProjectReplacePreview(
+            results: selectedResults,
+            title: "Replace Preview",
+            summary: "Replace \(selectedProjectSearchMatchCount) selected match\(selectedProjectSearchMatchCount == 1 ? "" : "es") across \(selectedProjectSearchFileCount) file\(selectedProjectSearchFileCount == 1 ? "" : "s").",
+            searchQuery: trimmedQuery,
+            searchOptions: currentProjectSearchOptions,
+            replacement: projectReplaceQuery
+        )
+    }
 
-        guard prepareForSessionTransition(
+    func replaceProjectSearchFileGroup(_ group: ProjectSearchFileGroup) {
+        let trimmedQuery = projectSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedQuery.isEmpty,
+              canReplaceProjectSearchResults,
+              groupedProjectSearchResults.contains(group) else { return }
+        projectReplacePreview = makeProjectReplacePreview(
+            results: group.results,
+            title: "Replace Preview",
+            summary: "Replace \(group.matchCount) current match\(group.matchCount == 1 ? "" : "es") in \(group.fileName).",
+            searchQuery: trimmedQuery,
+            searchOptions: currentProjectSearchOptions,
+            replacement: projectReplaceQuery
+        )
+    }
+
+    func cancelProjectReplacePreview() {
+        clearProjectReplacePreview()
+    }
+
+    func applyProjectReplacePreview() {
+        guard let projectReplacePreview else { return }
+
+        guard resolveUnsavedChangesForProjectReplace(
+            affecting: projectReplacePreview.affectedFileURLs,
             title: "Replace in Project",
-            message: "Do you want to save changes before replacing across the project?"
+            message: "Do you want to save affected files before applying this replace preview?"
         ) else {
             return
         }
 
-        let response = ui.confirm(
-            "Replace All Matches?",
-            "This will replace every current match for \"\(trimmedQuery)\" in the open folder.",
-            .warning,
-            ["Replace All", "Cancel"]
-        )
+        let snapshots = snapshotFiles(at: projectReplacePreview.affectedFileURLs)
+        clearProjectReplacePreview()
 
-        guard response == .alertFirstButtonReturn else { return }
+        performProjectReplace(
+            preview: projectReplacePreview,
+            snapshots: snapshots
+        )
+    }
+
+    func undoLastProjectReplace() {
+        guard let lastProjectReplaceTransaction else { return }
+
+        guard resolveUnsavedChangesForProjectReplace(
+            affecting: lastProjectReplaceTransaction.affectedFileURLs,
+            title: "Undo Project Replace",
+            message: "Do you want to save affected files before restoring the previous contents?"
+        ) else {
+            return
+        }
 
         replaceInProjectTask?.cancel()
         replaceInProjectToken = UUID()
         let token = replaceInProjectToken
-        let replacement = projectReplaceQuery
-        let normalizedRootPath = normalizedPath(for: rootDirectory)
+        let normalizedRootPath = rootDirectory.map(normalizedPath(for:))
+        let fileSnapshots = lastProjectReplaceTransaction.fileSnapshots
         isReplacingInProject = true
 
         replaceInProjectTask = Task { [weak self, fileService] in
             guard let self else { return }
 
             do {
-                let summary = try await fileService.replaceInProjectAsync(
-                    at: rootDirectory,
-                    searchQuery: trimmedQuery,
-                    replacement: replacement
-                )
+                try await Task.detached(priority: .utility) {
+                    for snapshot in fileSnapshots {
+                        try fileService.writeFile(content: snapshot.originalContent, to: snapshot.fileURL)
+                    }
+                }.value
                 guard self.replaceInProjectToken == token,
                       self.rootDirectory.map(self.normalizedPath(for:)) == normalizedRootPath else {
                     return
                 }
 
-                self.syncOpenTabs(with: summary.modifiedFiles)
+                self.syncOpenTabs(with: fileSnapshots.map(\.fileURL))
                 self.isReplacingInProject = false
+                self.lastProjectReplaceTransaction = nil
                 self.performProjectSearch()
                 self.refreshGitState()
-                if summary.replacementCount > 0 {
-                    self.ui.alert(
-                        "Replace Complete",
-                        "Replaced \(summary.replacementCount) match\(summary.replacementCount == 1 ? "" : "es") in \(summary.modifiedFiles.count) file\(summary.modifiedFiles.count == 1 ? "" : "s").",
-                        .informational
-                    )
-                }
+                self.ui.alert(
+                    "Replace Undone",
+                    "Restored \(lastProjectReplaceTransaction.replacementCount) match\(lastProjectReplaceTransaction.replacementCount == 1 ? "" : "es") across \(lastProjectReplaceTransaction.fileCount) file\(lastProjectReplaceTransaction.fileCount == 1 ? "" : "s").",
+                    .informational
+                )
             } catch {
                 guard self.replaceInProjectToken == token else { return }
                 self.isReplacingInProject = false
-                self.ui.alert("Error", "Could not replace matches: \(error.localizedDescription)", .warning)
+                self.ui.alert("Error", "Could not undo replace: \(error.localizedDescription)", .warning)
             }
         }
     }
 
     func openSearchResult(_ result: ProjectSearchResult) {
+        activeProjectSearchResultID = result.id
         openFile(at: result.filePath)
         if let selectedTabIndex, openTabs.indices.contains(selectedTabIndex) {
-            openTabs[selectedTabIndex].cursorPosition = CursorPosition(line: result.lineNumber, column: 1)
+            openTabs[selectedTabIndex].cursorPosition = CursorPosition(line: result.lineNumber, column: result.columnNumber)
             openTabs[selectedTabIndex].pendingLineJump = result.lineNumber
         }
     }
@@ -1466,6 +3700,795 @@ final class ProjectViewModel: ObservableObject {
         return result
     }
 
+    private func handleProjectSearchQueryChange(from oldValue: String) {
+        let previousQuery = oldValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let currentQuery = projectSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard previousQuery != currentQuery else { return }
+
+        projectSearchDebounceTask?.cancel()
+        projectSearchTask?.cancel()
+        projectSearchToken = UUID()
+        isSearchingProject = false
+        clearProjectSearchResults()
+
+        guard sidebarMode == .search, rootDirectory != nil, !currentQuery.isEmpty else { return }
+        scheduleProjectSearch()
+    }
+
+    private func handleProjectReplaceQueryChange(from oldValue: String) {
+        guard oldValue != projectReplaceQuery else { return }
+        clearProjectReplacePreview()
+    }
+
+    private func handleProjectSearchOptionsChange<T: Equatable>(from oldValue: T, to newValue: T) {
+        guard oldValue != newValue else { return }
+        invalidateProjectSearchState()
+    }
+
+    private func handleProjectSearchFilterChange(from oldValue: String, to newValue: String) {
+        guard oldValue.trimmingCharacters(in: .whitespacesAndNewlines) != newValue.trimmingCharacters(in: .whitespacesAndNewlines) else {
+            return
+        }
+        invalidateProjectSearchState()
+    }
+
+    private func invalidateProjectSearchState() {
+        projectSearchDebounceTask?.cancel()
+        projectSearchTask?.cancel()
+        projectSearchToken = UUID()
+        isSearchingProject = false
+        clearProjectSearchResults()
+
+        let currentQuery = projectSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard sidebarMode == .search, rootDirectory != nil, !currentQuery.isEmpty else { return }
+        scheduleProjectSearch()
+    }
+
+    private func handleSidebarModeChange(from oldValue: SidebarMode) {
+        guard oldValue != sidebarMode else { return }
+
+        if sidebarMode != .search {
+            projectSearchDebounceTask?.cancel()
+            return
+        }
+
+        let trimmedQuery = projectSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard rootDirectory != nil, !trimmedQuery.isEmpty else { return }
+        performProjectSearch()
+    }
+
+    private func scheduleProjectSearch() {
+        projectSearchDebounceTask?.cancel()
+        let query = projectSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return }
+
+        projectSearchDebounceTask = Task { [weak self] in
+            do {
+                try await Task.sleep(nanoseconds: self?.projectSearchDebounceNanoseconds ?? 0)
+            } catch {
+                return
+            }
+
+            guard !Task.isCancelled,
+                  let self,
+                  self.sidebarMode == .search,
+                  self.rootDirectory != nil,
+                  self.projectSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines) == query else {
+                return
+            }
+
+            self.performProjectSearch()
+        }
+    }
+
+    private func quickOpenLineJumpItems(for query: String) -> [QuickOpenItem] {
+        guard let request = quickOpenLineJumpRequest(from: query),
+              let selectedTab else {
+            return []
+        }
+
+        let fileURL = selectedTab.filePath
+        let displayPath = fileURL.map(relativeDisplayPath(for:)) ?? selectedTab.fileName
+        return [
+            QuickOpenItem(
+                kind: .lineJump(
+                    fileURL: fileURL,
+                    fileName: selectedTab.fileName,
+                    displayPath: displayPath,
+                    line: request.line
+                ),
+                title: "Go to Line \(request.line)",
+                subtitle: displayPath,
+                detailText: nil,
+                iconName: "text.line.first.and.arrowtriangle.forward",
+                badge: "Line",
+                score: 1_300,
+                originalIndex: 0
+            )
+        ]
+    }
+
+    private func quickOpenFileLineItems(for request: QuickOpenFileLineRequest) -> [QuickOpenItem] {
+        flatFileList.enumerated().compactMap { index, item in
+            guard !item.isDirectory else { return nil }
+
+            let displayPath = relativeDisplayPath(for: item.path)
+            guard let score = quickOpenMatchScore(for: item, displayPath: displayPath, query: request.fileQuery) else {
+                return nil
+            }
+
+            return QuickOpenItem(
+                kind: .lineJump(
+                    fileURL: item.path,
+                    fileName: item.name,
+                    displayPath: displayPath,
+                    line: request.line
+                ),
+                title: "\(item.name):\(request.line)",
+                subtitle: displayPath,
+                detailText: nil,
+                iconName: item.iconName,
+                badge: "Line",
+                score: score + 140,
+                originalIndex: index
+            )
+        }
+        .sorted(by: compareQuickOpenItems)
+    }
+
+    private func quickOpenWorkspaceSymbolSections(for query: String) -> [QuickOpenSection] {
+        let symbolQuery = String(query.dropFirst()).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !symbolQuery.isEmpty else { return [] }
+
+        let currentFilePath = selectedTab?.filePath.map(normalizedPath(for:))
+        let symbolItems = workspaceSymbols()
+            .compactMap { quickOpenWorkspaceSymbolItem(for: $0, query: symbolQuery) }
+
+        let currentFileItems = symbolItems
+            .filter { item in
+                guard case .symbol(let symbol) = item.kind,
+                      let currentFilePath else {
+                    return false
+                }
+                return normalizedPath(for: symbol.fileURL) == currentFilePath
+            }
+            .sorted(by: compareQuickOpenItems)
+
+        let workspaceItems = symbolItems
+            .filter { item in
+                guard case .symbol(let symbol) = item.kind,
+                      let currentFilePath else {
+                    return true
+                }
+                return normalizedPath(for: symbol.fileURL) != currentFilePath
+            }
+            .sorted(by: compareQuickOpenItems)
+
+        var sections: [QuickOpenSection] = []
+        if !currentFileItems.isEmpty {
+            sections.append(QuickOpenSection(title: "Current File", items: currentFileItems))
+        }
+        if !workspaceItems.isEmpty {
+            sections.append(
+                QuickOpenSection(
+                    title: currentFileItems.isEmpty ? "Symbols" : "Workspace",
+                    items: workspaceItems
+                )
+            )
+        }
+
+        return sections
+    }
+
+    private func quickOpenWorkspaceProblemSections(for query: String) -> [QuickOpenSection] {
+        let problemQuery = quickOpenWorkspaceProblemQuery(from: query)
+        let currentFilePath = selectedTab?.filePath.map(normalizedPath(for:))
+        let problemItems = orderedWorkspaceDiagnostics.enumerated()
+            .compactMap { index, diagnostic in
+                quickOpenWorkspaceProblemItem(
+                    for: diagnostic,
+                    query: problemQuery.searchText,
+                    severityFilter: problemQuery.severity,
+                    originalIndex: index
+                )
+            }
+
+        let currentFileItems = problemItems
+            .filter { item in
+                guard case .problem(let diagnostic) = item.kind,
+                      let currentFilePath else {
+                    return false
+                }
+                return normalizedPath(for: diagnostic.fileURL) == currentFilePath
+            }
+            .sorted(by: compareQuickOpenItems)
+
+        let workspaceItems = problemItems
+            .filter { item in
+                guard case .problem(let diagnostic) = item.kind,
+                      let currentFilePath else {
+                    return true
+                }
+                return normalizedPath(for: diagnostic.fileURL) != currentFilePath
+            }
+            .sorted(by: compareQuickOpenItems)
+
+        switch problemQuery.scope {
+        case .currentFile:
+            return currentFileItems.isEmpty ? [] : [QuickOpenSection(title: "Current File", items: currentFileItems)]
+        case .workspace:
+            return workspaceItems.isEmpty ? [] : [QuickOpenSection(title: "Workspace", items: workspaceItems)]
+        case nil:
+            var sections: [QuickOpenSection] = []
+            if !currentFileItems.isEmpty {
+                sections.append(QuickOpenSection(title: "Current File", items: currentFileItems))
+            }
+            if !workspaceItems.isEmpty {
+                sections.append(
+                    QuickOpenSection(
+                        title: currentFileItems.isEmpty ? "Problems" : "Workspace",
+                        items: workspaceItems
+                    )
+                )
+            }
+
+            return sections
+        }
+    }
+
+    private func quickOpenWorkspaceSymbolItem(for symbol: WorkspaceSymbolMatch, query: String) -> QuickOpenItem? {
+        guard let score = quickOpenWorkspaceSymbolScore(for: symbol, query: query) else {
+            return nil
+        }
+
+        return QuickOpenItem(
+            kind: .symbol(symbol),
+            title: symbol.name,
+            subtitle: "\(symbol.displayPath):\(symbol.line)",
+            detailText: symbol.lineText,
+            iconName: symbol.iconName,
+            badge: symbol.kindDisplayName,
+            score: score,
+            originalIndex: symbol.originalIndex
+        )
+    }
+
+    private func quickOpenWorkspaceProblemItem(
+        for diagnostic: WorkspaceDiagnosticItem,
+        query: String,
+        severityFilter: DiagnosticSeverity?,
+        originalIndex: Int
+    ) -> QuickOpenItem? {
+        guard let score = quickOpenWorkspaceProblemScore(
+            for: diagnostic,
+            query: query,
+            severityFilter: severityFilter
+        ) else {
+            return nil
+        }
+
+        return QuickOpenItem(
+            kind: .problem(diagnostic),
+            title: diagnostic.diagnostic.message,
+            subtitle: "\(diagnostic.displayPath):\(diagnostic.lineNumber)",
+            detailText: diagnostic.lineText,
+            iconName: quickOpenWorkspaceProblemIconName(for: diagnostic.diagnostic.severity),
+            badge: quickOpenWorkspaceProblemBadge(for: diagnostic.diagnostic.severity),
+            score: score,
+            originalIndex: originalIndex
+        )
+    }
+
+    private func quickOpenLineJumpRequest(from query: String) -> QuickOpenLineJumpRequest? {
+        guard query.hasPrefix(":") else { return nil }
+        let linePortion = String(query.dropFirst()).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let line = Int(linePortion), line > 0 else { return nil }
+        return QuickOpenLineJumpRequest(line: line)
+    }
+
+    private func quickOpenFileLineRequest(from query: String) -> QuickOpenFileLineRequest? {
+        guard !query.hasPrefix(":"),
+              let separatorIndex = query.lastIndex(of: ":"),
+              separatorIndex < query.index(before: query.endIndex) else {
+            return nil
+        }
+
+        let fileQuery = String(query[..<separatorIndex]).trimmingCharacters(in: .whitespacesAndNewlines)
+        let linePortion = String(query[query.index(after: separatorIndex)...]).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !fileQuery.isEmpty,
+              let line = Int(linePortion),
+              line > 0 else {
+            return nil
+        }
+
+        return QuickOpenFileLineRequest(fileQuery: fileQuery, line: line)
+    }
+
+    private func quickOpenMatchScore(for item: FileItem, displayPath: String, query: String) -> Int? {
+        let normalizedFileName = item.name.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+        let normalizedDisplayPath = displayPath.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+        let normalizedQuery = query.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+        let openTabBoost = quickOpenOpenTabBoost(for: item.path)
+        let recencyBoost = quickOpenRecencyBoost(for: item.path)
+        let querySegments = normalizedQuery
+            .split(whereSeparator: { $0 == "/" || $0 == "\\" || $0 == " " })
+            .map(String.init)
+            .filter { !$0.isEmpty }
+        var bestScore: Int?
+
+        guard !normalizedQuery.isEmpty else {
+            return openTabBoost + recencyBoost
+        }
+
+        if normalizedFileName == normalizedQuery {
+            bestScore = max(bestScore ?? .min, 1_000)
+        }
+
+        if normalizedFileName.hasPrefix(normalizedQuery) {
+            bestScore = max(bestScore ?? .min, 860)
+        }
+
+        if normalizedFileName.contains(normalizedQuery) {
+            bestScore = max(bestScore ?? .min, 720)
+        }
+
+        if normalizedDisplayPath == normalizedQuery {
+            bestScore = max(bestScore ?? .min, 900)
+        }
+
+        if normalizedDisplayPath.hasPrefix(normalizedQuery) {
+            bestScore = max(bestScore ?? .min, 640)
+        }
+
+        if normalizedDisplayPath.contains(normalizedQuery) {
+            bestScore = max(bestScore ?? .min, 420)
+        }
+
+        if let pathSegmentScore = quickOpenPathSegmentScore(
+            for: normalizedDisplayPath,
+            querySegments: querySegments
+        ) {
+            bestScore = max(bestScore ?? .min, pathSegmentScore)
+        }
+
+        guard let bestScore else { return nil }
+        return bestScore + openTabBoost + recencyBoost
+    }
+
+    private func quickOpenPathSegmentScore(for displayPath: String, querySegments: [String]) -> Int? {
+        guard !querySegments.isEmpty else { return nil }
+        let components = displayPath.split(separator: "/").map(String.init)
+        guard !components.isEmpty else { return nil }
+
+        var searchStart = 0
+        var score = querySegments.count > 1 ? 420 : 0
+
+        for querySegment in querySegments {
+            var bestMatch: (index: Int, score: Int)?
+
+            for index in searchStart..<components.count {
+                let component = components[index]
+                let componentScore: Int
+                if component == querySegment {
+                    componentScore = 210
+                } else if component.hasPrefix(querySegment) {
+                    componentScore = 170
+                } else if component.contains(querySegment) {
+                    componentScore = 120
+                } else {
+                    continue
+                }
+
+                if let bestMatch, bestMatch.score >= componentScore {
+                    continue
+                }
+
+                bestMatch = (index, componentScore)
+            }
+
+            guard let bestMatch else { return nil }
+            score += bestMatch.score
+            score -= bestMatch.index * 6
+            searchStart = bestMatch.index + 1
+        }
+
+        return score
+    }
+
+    private func quickOpenWorkspaceSymbolScore(for symbol: WorkspaceSymbolMatch, query: String) -> Int? {
+        let normalizedName = symbol.name.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+        let normalizedPath = symbol.displayPath.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+        let normalizedQuery = query.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+        let fileBoost = quickOpenOpenTabBoost(for: symbol.fileURL)
+            + quickOpenRecencyBoost(for: symbol.fileURL)
+            + quickOpenCurrentFileSymbolBoost(for: symbol.fileURL)
+
+        guard !normalizedQuery.isEmpty else { return nil }
+
+        if normalizedName == normalizedQuery {
+            return 1_060 + fileBoost
+        }
+
+        if normalizedName.hasPrefix(normalizedQuery) {
+            return 900 + fileBoost
+        }
+
+        if normalizedName.contains(normalizedQuery) {
+            return 760 + fileBoost
+        }
+
+        if normalizedPath.contains(normalizedQuery) {
+            return 420 + fileBoost
+        }
+
+        return nil
+    }
+
+    private func quickOpenWorkspaceProblemScore(
+        for diagnostic: WorkspaceDiagnosticItem,
+        query: String,
+        severityFilter: DiagnosticSeverity?
+    ) -> Int? {
+        let normalizedQuery = query.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+        let normalizedMessage = diagnostic.diagnostic.message
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+        let normalizedLineText = diagnostic.lineText
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+        let normalizedPath = diagnostic.displayPath
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+        let severityLabel = quickOpenWorkspaceProblemBadge(for: diagnostic.diagnostic.severity).lowercased()
+        let fileBoost = quickOpenOpenTabBoost(for: diagnostic.fileURL)
+            + quickOpenRecencyBoost(for: diagnostic.fileURL)
+            + quickOpenCurrentFileProblemBoost(for: diagnostic.fileURL)
+        let severityBoost = quickOpenWorkspaceProblemSeverityBoost(for: diagnostic.diagnostic.severity)
+
+        if let severityFilter, diagnostic.diagnostic.severity != severityFilter {
+            return nil
+        }
+
+        guard !normalizedQuery.isEmpty else {
+            return severityBoost + fileBoost
+        }
+
+        if normalizedMessage == normalizedQuery {
+            return 1_020 + severityBoost + fileBoost
+        }
+
+        if normalizedMessage.hasPrefix(normalizedQuery) {
+            return 900 + severityBoost + fileBoost
+        }
+
+        if normalizedMessage.contains(normalizedQuery) {
+            return 760 + severityBoost + fileBoost
+        }
+
+        if normalizedLineText.contains(normalizedQuery) {
+            return 620 + severityBoost + fileBoost
+        }
+
+        if normalizedPath.contains(normalizedQuery) {
+            return 520 + severityBoost + fileBoost
+        }
+
+        if severityLabel.contains(normalizedQuery) {
+            return 440 + severityBoost + fileBoost
+        }
+
+        return nil
+    }
+
+    private func quickOpenWorkspaceProblemQuery(from query: String) -> WorkspaceProblemQuery {
+        let trimmedQuery = String(query.dropFirst()).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedQuery.isEmpty else {
+            return WorkspaceProblemQuery(
+                searchText: "",
+                severity: nil,
+                severityLabel: nil,
+                scope: nil,
+                scopeLabel: nil
+            )
+        }
+
+        var severity: DiagnosticSeverity?
+        var scope: WorkspaceProblemScope?
+        var remainingComponents: [Substring] = []
+        var parsingFilters = true
+
+        for component in trimmedQuery.split(whereSeparator: \.isWhitespace) {
+            let token = String(component).folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+
+            if parsingFilters, severity == nil, let matchedSeverity = workspaceProblemSeverity(for: token) {
+                severity = matchedSeverity
+                continue
+            }
+
+            if parsingFilters, scope == nil, let matchedScope = workspaceProblemScope(for: token) {
+                scope = matchedScope
+                continue
+            }
+
+            parsingFilters = false
+            remainingComponents.append(component)
+        }
+
+        let remainingQuery = remainingComponents.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+        return WorkspaceProblemQuery(
+            searchText: remainingQuery,
+            severity: severity,
+            severityLabel: severity.map { quickOpenWorkspaceProblemBadge(for: $0).lowercased() },
+            scope: scope,
+            scopeLabel: scope.map(\.emptyStateLabel)
+        )
+    }
+
+    private func workspaceProblemSeverity(for token: String) -> DiagnosticSeverity? {
+        switch token {
+        case "error", "errors", "err":
+            return .error
+        case "warning", "warnings", "warn":
+            return .warning
+        case "info", "information":
+            return .information
+        case "hint", "hints":
+            return .hint
+        default:
+            return nil
+        }
+    }
+
+    private func workspaceProblemScope(for token: String) -> WorkspaceProblemScope? {
+        switch token {
+        case "current", "current-file", "currentfile", "here":
+            return .currentFile
+        case "workspace", "project", "all":
+            return .workspace
+        default:
+            return nil
+        }
+    }
+
+    private func problemFilterToken(for severity: DiagnosticSeverity) -> String {
+        switch severity {
+        case .error:
+            return "error"
+        case .warning:
+            return "warning"
+        case .information:
+            return "info"
+        case .hint:
+            return "hint"
+        }
+    }
+
+    private func quickOpenWorkspaceProblemEmptyStateText(for query: WorkspaceProblemQuery) -> String {
+        let noun = query.severityLabel.map { "\($0)s" } ?? "problems"
+        if let scopeLabel = query.scopeLabel {
+            return "No matching \(scopeLabel) \(noun)."
+        }
+        return "No matching \(noun)."
+    }
+
+    private func quickOpenCurrentFileSymbolBoost(for fileURL: URL) -> Int {
+        guard let currentFileURL = selectedTab?.filePath else { return 0 }
+        return normalizedPath(for: currentFileURL) == normalizedPath(for: fileURL) ? 180 : 0
+    }
+
+    private func quickOpenCurrentFileProblemBoost(for fileURL: URL) -> Int {
+        guard let currentFileURL = selectedTab?.filePath else { return 0 }
+        return normalizedPath(for: currentFileURL) == normalizedPath(for: fileURL) ? 180 : 0
+    }
+
+    private func quickOpenWorkspaceProblemSeverityBoost(for severity: DiagnosticSeverity?) -> Int {
+        switch severity {
+        case .error:
+            return 220
+        case .warning:
+            return 120
+        case .information:
+            return 60
+        case .hint:
+            return 30
+        case nil:
+            return 0
+        }
+    }
+
+    private func quickOpenWorkspaceProblemBadge(for severity: DiagnosticSeverity?) -> String {
+        switch severity {
+        case .error:
+            return "Error"
+        case .warning:
+            return "Warning"
+        case .information:
+            return "Info"
+        case .hint:
+            return "Hint"
+        case nil:
+            return "Problem"
+        }
+    }
+
+    private func quickOpenWorkspaceProblemIconName(for severity: DiagnosticSeverity?) -> String {
+        switch severity {
+        case .error:
+            return "xmark.octagon"
+        case .warning:
+            return "exclamationmark.triangle"
+        case .information:
+            return "info.circle"
+        case .hint:
+            return "lightbulb"
+        case nil:
+            return "exclamationmark.bubble"
+        }
+    }
+
+    private func quickOpenOpenTabBoost(for fileURL: URL) -> Int {
+        let normalizedFilePath = normalizedPath(for: fileURL)
+
+        if let selectedTab,
+           let selectedFilePath = selectedTab.filePath,
+           normalizedPath(for: selectedFilePath) == normalizedFilePath {
+            return 120
+        }
+
+        if openTabs.contains(where: {
+            guard let filePath = $0.filePath else { return false }
+            return normalizedPath(for: filePath) == normalizedFilePath
+        }) {
+            return 60
+        }
+
+        return 0
+    }
+
+    private func quickOpenRecencyBoost(for fileURL: URL) -> Int {
+        let normalizedFilePath = normalizedPath(for: fileURL)
+        guard let accessStamp = quickOpenRecentAccessByPath[normalizedFilePath] else { return 0 }
+        let distance = max(quickOpenAccessSequence - accessStamp, 0)
+        return max(0, 90 - min(distance, 8) * 10)
+    }
+
+    private func recordQuickOpenAccess(for fileURL: URL) {
+        quickOpenAccessSequence += 1
+        quickOpenRecentAccessByPath[normalizedPath(for: fileURL)] = quickOpenAccessSequence
+    }
+
+    private func invalidateWorkspaceSymbolCache() {
+        cachedWorkspaceSymbols = nil
+        cachedWorkspaceSymbolRootPath = nil
+    }
+
+    private func workspaceSymbols() -> [WorkspaceSymbolMatch] {
+        guard let rootDirectory else { return [] }
+        let normalizedRootPath = normalizedPath(for: rootDirectory)
+
+        if let cachedWorkspaceSymbols, cachedWorkspaceSymbolRootPath == normalizedRootPath {
+            return cachedWorkspaceSymbols
+        }
+
+        var symbols: [WorkspaceSymbolMatch] = []
+        symbols.reserveCapacity(flatFileList.count * 2)
+
+        for (index, item) in flatFileList.enumerated() where !item.isDirectory {
+            let fileURL = item.path
+            guard shouldIndexWorkspaceSymbols(in: fileURL),
+                  let contents = workspaceSymbolContents(for: fileURL) else {
+                continue
+            }
+
+            symbols.append(
+                contentsOf: extractWorkspaceSymbols(
+                    from: contents,
+                    fileURL: fileURL,
+                    displayPath: relativeDisplayPath(for: fileURL),
+                    originalIndex: index
+                )
+            )
+        }
+
+        cachedWorkspaceSymbols = symbols
+        cachedWorkspaceSymbolRootPath = normalizedRootPath
+        return symbols
+    }
+
+    private func shouldIndexWorkspaceSymbols(in fileURL: URL) -> Bool {
+        let pathExtension = fileURL.pathExtension.lowercased()
+        guard Self.workspaceSymbolIndexedExtensions.contains(pathExtension) else { return false }
+
+        let resourceValues = try? fileURL.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey])
+        guard resourceValues?.isRegularFile != false else { return false }
+        let fileSize = resourceValues?.fileSize ?? 0
+        return fileSize <= Self.workspaceSymbolFileSizeLimit
+    }
+
+    private func workspaceSymbolContents(for fileURL: URL) -> String? {
+        if let openTab = openTabs.first(where: {
+            guard let path = $0.filePath else { return false }
+            return normalizedPath(for: path) == normalizedPath(for: fileURL)
+        }) {
+            return openTab.content
+        }
+
+        return try? fileService.readFile(at: fileURL)
+    }
+
+    private func extractWorkspaceSymbols(
+        from contents: String,
+        fileURL: URL,
+        displayPath: String,
+        originalIndex: Int
+    ) -> [WorkspaceSymbolMatch] {
+        let lines = contents.components(separatedBy: .newlines)
+        let fileExtension = fileURL.pathExtension.lowercased()
+
+        return lines.enumerated().compactMap { offset, line in
+            guard let match = firstWorkspaceSymbolMatch(in: line, fileExtension: fileExtension) else { return nil }
+
+            return WorkspaceSymbolMatch(
+                name: match.name,
+                kind: match.kind,
+                fileURL: fileURL,
+                displayPath: displayPath,
+                line: offset + 1,
+                column: match.column,
+                lineText: line.trimmingCharacters(in: .whitespaces),
+                originalIndex: originalIndex
+            )
+        }
+    }
+
+    private func firstWorkspaceSymbolMatch(
+        in line: String,
+        fileExtension: String
+    ) -> (kind: String, name: String, column: Int)? {
+        let fullRange = NSRange(line.startIndex..<line.endIndex, in: line)
+
+        for pattern in Self.workspaceSymbolPatterns where pattern.matches(fileExtension: fileExtension) {
+            guard let match = pattern.regularExpression.firstMatch(in: line, options: [], range: fullRange) else {
+                continue
+            }
+
+            guard let nameRange = Range(match.range(at: pattern.nameGroup), in: line) else {
+                continue
+            }
+
+            let kind: String
+            if let fixedKind = pattern.fixedKind {
+                kind = fixedKind
+            } else if let kindGroup = pattern.kindGroup,
+                      let kindRange = Range(match.range(at: kindGroup), in: line) {
+                kind = String(line[kindRange])
+            } else {
+                continue
+            }
+
+            let name = String(line[nameRange])
+            let column = line.distance(from: line.startIndex, to: nameRange.lowerBound) + 1
+            return (kind, name, column)
+        }
+
+        return nil
+    }
+
+    private func compareQuickOpenItems(_ lhs: QuickOpenItem, _ rhs: QuickOpenItem) -> Bool {
+        if lhs.score != rhs.score {
+            return lhs.score > rhs.score
+        }
+
+        let pathComparison = lhs.subtitle.localizedStandardCompare(rhs.subtitle)
+        if pathComparison != .orderedSame {
+            return pathComparison == .orderedAscending
+        }
+
+        let titleComparison = lhs.title.localizedStandardCompare(rhs.title)
+        if titleComparison != .orderedSame {
+            return titleComparison == .orderedAscending
+        }
+
+        return lhs.originalIndex < rhs.originalIndex
+    }
+
     @discardableResult
     private func saveTab(at index: Int) -> Bool {
         guard openTabs.indices.contains(index), let url = openTabs[index].filePath else { return false }
@@ -1582,6 +4605,116 @@ final class ProjectViewModel: ObservableObject {
         return String(filePath.dropFirst(rootPath.count + 1))
     }
 
+    private func clearProjectSearchResults() {
+        projectSearchResults = []
+        projectSearchResultsQuery = ""
+        projectSearchResultsOptions = ProjectSearchOptions()
+        activeProjectSearchResultID = nil
+        collapsedProjectSearchGroupIDs = []
+        selectedProjectSearchResultIDs = []
+        clearProjectReplacePreview()
+    }
+
+    private func updateProjectSearchResults(_ results: [ProjectSearchResult], query: String, options: ProjectSearchOptions) {
+        projectSearchResults = results
+        projectSearchResultsQuery = query
+        projectSearchResultsOptions = options
+        let validGroupIDs = Set(groupedProjectSearchResults.map(\.id))
+        collapsedProjectSearchGroupIDs = collapsedProjectSearchGroupIDs.intersection(validGroupIDs)
+        normalizeProjectSearchVisibilityState()
+        selectedProjectSearchResultIDs = Set(results.map(\.id))
+        clearProjectReplacePreview()
+    }
+
+    private func normalizeProjectSearchVisibilityState() {
+        let visibleResults = orderedProjectSearchResults
+        if let activeProjectSearchResultID,
+           visibleResults.contains(where: { $0.id == activeProjectSearchResultID }) {
+            return
+        }
+
+        activeProjectSearchResultID = visibleResults.first?.id
+    }
+
+    private func clearProjectReplacePreview() {
+        projectReplacePreview = nil
+    }
+
+    private func makeProjectReplacePreview(
+        results: [ProjectSearchResult],
+        title: String,
+        summary: String,
+        searchQuery: String,
+        searchOptions: ProjectSearchOptions,
+        replacement: String
+    ) -> ProjectReplacePreview? {
+        guard !results.isEmpty else { return nil }
+
+        let files = Dictionary(grouping: results, by: { normalizedPath(for: $0.filePath) })
+            .values
+            .compactMap { groupedResults -> ProjectReplacePreviewFile? in
+                guard let firstResult = groupedResults.first else { return nil }
+                let fileURL = firstResult.filePath
+                let matchCount = groupedResults.reduce(0) { partialResult, result in
+                    partialResult + result.matchCount
+                }
+                return ProjectReplacePreviewFile(
+                    fileURL: fileURL,
+                    fileName: fileURL.lastPathComponent,
+                    displayPath: relativeDisplayPath(for: fileURL),
+                    matchCount: matchCount
+                )
+            }
+            .sorted { lhs, rhs in
+                lhs.displayPath.localizedStandardCompare(rhs.displayPath) == .orderedAscending
+            }
+
+        return ProjectReplacePreview(
+            title: title,
+            summary: summary,
+            searchQuery: searchQuery,
+            searchOptions: searchOptions,
+            replacement: replacement,
+            results: results,
+            files: files
+        )
+    }
+
+    private func snapshotFiles(at fileURLs: [URL]) -> [ProjectReplaceFileSnapshot] {
+        let uniqueFiles = Array(
+            Dictionary(
+                fileURLs.map { (normalizedPath(for: $0), $0.standardizedFileURL) },
+                uniquingKeysWith: { current, _ in current }
+            ).values
+        )
+        .sorted { normalizedPath(for: $0).localizedStandardCompare(normalizedPath(for: $1)) == .orderedAscending }
+
+        return uniqueFiles.compactMap { fileURL in
+            guard let originalContent = try? fileService.readFile(at: fileURL) else { return nil }
+            return ProjectReplaceFileSnapshot(fileURL: fileURL, originalContent: originalContent)
+        }
+    }
+
+    private func makeProjectReplaceTransaction(
+        preview: ProjectReplacePreview,
+        summary: ProjectReplaceSummary,
+        snapshots: [ProjectReplaceFileSnapshot]
+    ) -> ProjectReplaceTransaction? {
+        guard summary.replacementCount > 0 else { return nil }
+
+        let modifiedPaths = Set(summary.modifiedFiles.map(normalizedPath(for:)))
+        let modifiedSnapshots = snapshots.filter { modifiedPaths.contains(normalizedPath(for: $0.fileURL)) }
+        guard !modifiedSnapshots.isEmpty else { return nil }
+
+        return ProjectReplaceTransaction(
+            summary: preview.summary,
+            searchQuery: preview.searchQuery,
+            replacement: preview.replacement,
+            replacementCount: summary.replacementCount,
+            fileSnapshots: modifiedSnapshots
+        )
+    }
+
     private func makeReferenceResult(for location: LSPLocation) -> ReferenceResult? {
         guard let fileURL = URL(string: location.uri), fileURL.isFileURL else { return nil }
 
@@ -1632,9 +4765,77 @@ final class ProjectViewModel: ObservableObject {
         return String(filePath.dropFirst(rootPath.count + 1))
     }
 
+    private func resolveUnsavedChangesForProjectReplace(
+        affecting fileURLs: [URL],
+        title: String,
+        message: String
+    ) -> Bool {
+        let normalizedPaths = Set(fileURLs.map(normalizedPath(for:)))
+        let affectedDirtyIndices = openTabs.indices.filter { index in
+            guard openTabs[index].isDirty, let filePath = openTabs[index].filePath else {
+                return false
+            }
+            return normalizedPaths.contains(normalizedPath(for: filePath))
+        }
+
+        return resolveUnsavedChanges(for: affectedDirtyIndices, title: title, message: message)
+    }
+
+    private func performProjectReplace(
+        preview: ProjectReplacePreview,
+        snapshots: [ProjectReplaceFileSnapshot]
+    ) {
+        guard !preview.results.isEmpty else { return }
+
+        replaceInProjectTask?.cancel()
+        replaceInProjectToken = UUID()
+        let token = replaceInProjectToken
+        let normalizedRootPath = rootDirectory.map(normalizedPath(for:))
+        isReplacingInProject = true
+
+        replaceInProjectTask = Task { [weak self, fileService] in
+            guard let self else { return }
+
+            do {
+                let summary = try await fileService.replaceSearchResultsAsync(
+                    preview.results,
+                    searchQuery: preview.searchQuery,
+                    replacement: preview.replacement,
+                    options: preview.searchOptions
+                )
+                guard self.replaceInProjectToken == token,
+                      self.rootDirectory.map(self.normalizedPath(for:)) == normalizedRootPath else {
+                    return
+                }
+
+                self.syncOpenTabs(with: summary.modifiedFiles)
+                self.isReplacingInProject = false
+                self.lastProjectReplaceTransaction = self.makeProjectReplaceTransaction(
+                    preview: preview,
+                    summary: summary,
+                    snapshots: snapshots
+                )
+                self.performProjectSearch()
+                self.refreshGitState()
+                if summary.replacementCount > 0 {
+                    self.ui.alert(
+                        "Replace Complete",
+                        "Replaced \(summary.replacementCount) match\(summary.replacementCount == 1 ? "" : "es") in \(summary.modifiedFiles.count) file\(summary.modifiedFiles.count == 1 ? "" : "s").",
+                        .informational
+                    )
+                }
+            } catch {
+                guard self.replaceInProjectToken == token else { return }
+                self.isReplacingInProject = false
+                self.ui.alert("Error", "Could not replace matches: \(error.localizedDescription)", .warning)
+            }
+        }
+    }
+
     private func syncOpenTabs(with fileURLs: [URL]) {
         let normalizedPaths = Set(fileURLs.map(normalizedPath(for:)))
         guard !normalizedPaths.isEmpty else { return }
+        invalidateWorkspaceSymbolCache()
 
         for index in openTabs.indices {
             guard let filePath = openTabs[index].filePath,
@@ -2109,5 +5310,213 @@ struct CommandPaletteAction: Identifiable {
     let title: String
     let shortcut: String
     let category: String
+    let aliases: [String]
+    let detailText: String?
+    let badge: String?
     let action: () -> Void
+}
+
+struct CommandPaletteSection: Identifiable {
+    let title: String
+    let actions: [CommandPaletteAction]
+
+    var id: String {
+        title
+    }
+}
+
+struct CommandPaletteScope: Identifiable, Hashable {
+    let id: String
+    let title: String
+    let category: String
+    let queryToken: String
+    let aliases: [String]
+}
+
+struct CommandPaletteQueryContext {
+    let scope: CommandPaletteScope?
+    let searchText: String
+}
+
+struct QuickOpenLineJumpRequest: Hashable {
+    let line: Int
+}
+
+struct QuickOpenFileLineRequest: Hashable {
+    let fileQuery: String
+    let line: Int
+}
+
+struct WorkspaceProblemQuery: Hashable {
+    let searchText: String
+    let severity: DiagnosticSeverity?
+    let severityLabel: String?
+    let scope: WorkspaceProblemScope?
+    let scopeLabel: String?
+}
+
+enum WorkspaceProblemScope: Hashable {
+    case currentFile
+    case workspace
+
+    var queryToken: String {
+        switch self {
+        case .currentFile:
+            return "current"
+        case .workspace:
+            return "workspace"
+        }
+    }
+
+    var emptyStateLabel: String {
+        switch self {
+        case .currentFile:
+            return "current-file"
+        case .workspace:
+            return "workspace"
+        }
+    }
+}
+
+enum QuickOpenProblemFilterKind: Hashable {
+    case scope(WorkspaceProblemScope)
+    case severity(DiagnosticSeverity)
+}
+
+struct QuickOpenProblemFilterHint: Identifiable, Hashable {
+    let id: String
+    let token: String
+    let title: String
+    let isActive: Bool
+    let kind: QuickOpenProblemFilterKind
+}
+
+struct QuickOpenSection: Identifiable, Hashable {
+    let title: String
+    let items: [QuickOpenItem]
+
+    var id: String {
+        title
+    }
+}
+
+struct WorkspaceSymbolMatch: Identifiable, Hashable {
+    let name: String
+    let kind: String
+    let fileURL: URL
+    let displayPath: String
+    let line: Int
+    let column: Int
+    let lineText: String
+    let originalIndex: Int
+
+    var id: String {
+        "\(fileURL.standardizedFileURL.path):\(line):\(column):\(name)"
+    }
+
+    var kindDisplayName: String {
+        switch kind.lowercased() {
+        case "func", "function", "def", "fn", "fun":
+            return "Function"
+        case "class":
+            return "Class"
+        case "struct":
+            return "Struct"
+        case "enum":
+            return "Enum"
+        case "protocol", "interface":
+            return "Protocol"
+        case "actor":
+            return "Actor"
+        case "macro":
+            return "Macro"
+        case "var", "let", "const":
+            return "Variable"
+        case "typealias", "type":
+            return "Type"
+        case "extension":
+            return "Extension"
+        case "object":
+            return "Object"
+        default:
+            return kind.capitalized
+        }
+    }
+
+    var iconName: String {
+        switch kind.lowercased() {
+        case "func", "function", "def", "fn", "fun":
+            return "function"
+        case "class", "actor":
+            return "shippingbox"
+        case "struct", "protocol", "interface", "enum", "typealias", "type", "object":
+            return "cube.box"
+        case "var", "let", "const":
+            return "character.cursor.ibeam"
+        case "extension":
+            return "square.stack.3d.up"
+        case "macro":
+            return "wand.and.stars"
+        default:
+            return "number"
+        }
+    }
+}
+
+struct QuickOpenItem: Identifiable, Hashable {
+    enum Kind: Hashable {
+        case file(FileItem)
+        case lineJump(fileURL: URL?, fileName: String, displayPath: String, line: Int)
+        case symbol(WorkspaceSymbolMatch)
+        case problem(WorkspaceDiagnosticItem)
+    }
+
+    let kind: Kind
+    let title: String
+    let subtitle: String
+    let detailText: String?
+    let iconName: String
+    let badge: String?
+    let score: Int
+    let originalIndex: Int
+
+    var id: String {
+        switch kind {
+        case .file(let file):
+            return file.id
+        case .lineJump(let fileURL, let fileName, _, let line):
+            let path = fileURL?.standardizedFileURL.path ?? fileName
+            return "\(path):line:\(line)"
+        case .symbol(let symbol):
+            return symbol.id
+        case .problem(let diagnostic):
+            return diagnostic.id
+        }
+    }
+
+    var file: FileItem? {
+        guard case .file(let file) = kind else { return nil }
+        return file
+    }
+
+    var displayPath: String {
+        subtitle
+    }
+}
+
+struct ProjectSearchFileGroup: Identifiable, Hashable {
+    let filePath: URL
+    let fileName: String
+    let displayPath: String
+    let results: [ProjectSearchResult]
+
+    var id: String {
+        filePath.standardizedFileURL.path
+    }
+
+    var matchCount: Int {
+        results.reduce(0) { partialResult, result in
+            partialResult + result.matchCount
+        }
+    }
 }

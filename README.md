@@ -15,7 +15,7 @@ A lightweight, native macOS code editor built with Swift and SwiftUI/AppKit.
 - **Project-wide search & replace** with line-level results
 - **In-file find & replace** with the native macOS find bar
 - **File tree browser** with expand/collapse, create, rename, duplicate, and delete
-- **Command palette** (Cmd+P) with fuzzy search for commands and files
+- **Quick Open** (`Cmd+P`) for files plus a separate **Command Palette** (`Cmd+Shift+P`)
 - **Bracket matching** and auto-closing pairs
 - **Settings UI** for font, wrapping, line numbers, auto-save, and theme selection
 - **Auto-save** plus reload prompts for externally modified files
@@ -115,7 +115,8 @@ export PATH="$HOME/.local/bin:$PATH"
 | Cmd+N | New File |
 | Cmd+S | Save |
 | Cmd+W | Close Tab |
-| Cmd+P | Command Palette |
+| Cmd+P | Quick Open |
+| Cmd+Shift+P | Command Palette |
 | Cmd+F | Find in File |
 | Cmd+Opt+F | Replace in File |
 | Cmd+G | Find Next |
@@ -166,7 +167,7 @@ UITests/                XCTest UI tests
 - [x] Syntax highlighting (20+ languages)
 - [x] Project-wide search & replace
 - [x] In-file find & replace
-- [x] Command palette
+- [x] Quick Open + command palette
 - [x] Bracket matching & auto-close pairs
 - [x] Line numbers with gutter
 - [x] Session persistence

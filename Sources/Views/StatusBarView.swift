@@ -53,12 +53,75 @@ struct StatusBarView: View {
         return "\(blame.shortCommitHash) \(blame.author): \(blame.summary)"
     }
 
+    private var searchResultsLabel: String {
+        let count = projectViewModel.projectSearchMatchCount
+        return "\(count) Result\(count == 1 ? "" : "s")"
+    }
+
+    @ViewBuilder
+    private var diagnosticsToggle: some View {
+        let diagCount = projectViewModel.currentTabDiagnosticCount
+        let workspaceDiagCount = projectViewModel.workspaceDiagnosticCount
+        let hasCurrentProblems = diagCount.errors > 0 || diagCount.warnings > 0
+        let hasWorkspaceProblems = workspaceDiagCount.errors > 0 || workspaceDiagCount.warnings > 0
+
+        if hasCurrentProblems || hasWorkspaceProblems {
+            Button {
+                projectViewModel.toggleDiagnosticsPanel()
+            } label: {
+                HStack(spacing: 8) {
+                    if diagCount.errors > 0 {
+                        HStack(spacing: 2) {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 10))
+                            Text("\(diagCount.errors)")
+                                .font(.system(size: 11))
+                        }
+                        .foregroundColor(themeColors.danger)
+                    }
+
+                    if diagCount.warnings > 0 {
+                        HStack(spacing: 2) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.system(size: 10))
+                            Text("\(diagCount.warnings)")
+                                .font(.system(size: 11))
+                        }
+                        .foregroundColor(themeColors.warning)
+                    }
+
+                    if hasWorkspaceProblems && projectViewModel.workspaceDiagnosticFileCount > 1 {
+                        Text("WS \(workspaceDiagCount.errors + workspaceDiagCount.warnings)")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundColor(themeColors.accent)
+                    }
+                }
+                .frame(minWidth: 44, minHeight: 18)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(projectViewModel.isDiagnosticsPanelVisible ? themeColors.hoverBackground.opacity(0.5) : Color.clear)
+                )
+            }
+            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+            .help(projectViewModel.isDiagnosticsPanelVisible ? "Hide Problems" : "Show Problems")
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Problems")
+            .accessibilityValue("\(diagCount.errors) current errors, \(diagCount.warnings) current warnings, \(workspaceDiagCount.errors) workspace errors, \(workspaceDiagCount.warnings) workspace warnings")
+            .accessibilityIdentifier("statusbar-diagnostics-toggle")
+        }
+    }
+
     var body: some View {
         HStack {
             if let tab = projectViewModel.selectedTab {
                 Text(tab.cursorPosition.description)
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundColor(themeColors.subduedText)
+                    .accessibilityLabel(tab.cursorPosition.description)
+                    .accessibilityIdentifier("statusbar-cursor-position")
 
                 Spacer()
 
@@ -116,50 +179,14 @@ struct StatusBarView: View {
                         .foregroundColor(themeColors.accent)
                 }
 
-                let diagCount = projectViewModel.currentTabDiagnosticCount
-                if diagCount.errors > 0 || diagCount.warnings > 0 {
+                if projectViewModel.currentTabDiagnosticCount.errors > 0
+                    || projectViewModel.currentTabDiagnosticCount.warnings > 0
+                    || projectViewModel.workspaceDiagnosticCount.errors > 0
+                    || projectViewModel.workspaceDiagnosticCount.warnings > 0 {
                     Divider()
                         .frame(height: 12)
 
-                    Button {
-                        projectViewModel.toggleDiagnosticsPanel()
-                    } label: {
-                        HStack(spacing: 8) {
-                            if diagCount.errors > 0 {
-                                HStack(spacing: 2) {
-                                    Image(systemName: "xmark.circle.fill")
-                                        .font(.system(size: 10))
-                                    Text("\(diagCount.errors)")
-                                        .font(.system(size: 11))
-                                }
-                                .foregroundColor(themeColors.danger)
-                            }
-
-                            if diagCount.warnings > 0 {
-                                HStack(spacing: 2) {
-                                    Image(systemName: "exclamationmark.triangle.fill")
-                                        .font(.system(size: 10))
-                                    Text("\(diagCount.warnings)")
-                                        .font(.system(size: 11))
-                                }
-                        .foregroundColor(themeColors.warning)
-                            }
-                        }
-                        .frame(minWidth: 44, minHeight: 18)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(
-                            RoundedRectangle(cornerRadius: 6)
-                                .fill(projectViewModel.isDiagnosticsPanelVisible ? themeColors.hoverBackground.opacity(0.5) : Color.clear)
-                        )
-                    }
-                    .contentShape(Rectangle())
-                    .buttonStyle(.plain)
-                    .help(projectViewModel.isDiagnosticsPanelVisible ? "Hide Problems" : "Show Problems")
-                    .accessibilityElement(children: .combine)
-                    .accessibilityLabel("Problems")
-                    .accessibilityValue("\(diagCount.errors) errors, \(diagCount.warnings) warnings")
-                    .accessibilityIdentifier("statusbar-diagnostics-toggle")
+                    diagnosticsToggle
                 }
 
                 if let gitBlameText, !tab.isDirty {
@@ -178,9 +205,11 @@ struct StatusBarView: View {
                     Divider()
                         .frame(height: 12)
 
-                    Text("\(projectViewModel.projectSearchResults.count) Results")
+                    Text(searchResultsLabel)
                         .font(.system(size: 11))
                         .foregroundColor(themeColors.subduedText)
+                        .accessibilityLabel(searchResultsLabel)
+                        .accessibilityIdentifier("statusbar-search-results")
                 }
             } else {
                 Text("Rosewood")
@@ -196,6 +225,18 @@ struct StatusBarView: View {
 
                     Divider()
                         .frame(height: 12)
+                }
+
+                if projectViewModel.workspaceDiagnosticCount.errors > 0
+                    || projectViewModel.workspaceDiagnosticCount.warnings > 0 {
+                    diagnosticsToggle
+
+                    if projectViewModel.gitRepositoryStatus.branchName != nil
+                        || projectViewModel.selectedGitChangeReviewLabel != nil
+                        || projectViewModel.sidebarMode == .search && !projectViewModel.projectSearchQuery.isEmpty {
+                        Divider()
+                            .frame(height: 12)
+                    }
                 }
 
                 if let branchName = projectViewModel.gitRepositoryStatus.branchName {
@@ -225,9 +266,11 @@ struct StatusBarView: View {
                             .frame(height: 12)
                     }
 
-                    Text("\(projectViewModel.projectSearchResults.count) Results")
+                    Text(searchResultsLabel)
                         .font(.system(size: 11))
                         .foregroundColor(themeColors.subduedText)
+                        .accessibilityLabel(searchResultsLabel)
+                        .accessibilityIdentifier("statusbar-search-results")
                 }
             }
         }
