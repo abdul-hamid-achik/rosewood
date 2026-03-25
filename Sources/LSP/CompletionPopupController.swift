@@ -6,6 +6,8 @@ final class CompletionPopupController {
     private let tableView: NSTableView
     private let scrollView: NSScrollView
     private let dataSource: CompletionDataSource
+    private var themeColors: ThemeColors = .nord
+    private var font: NSFont = .monospacedSystemFont(ofSize: 13, weight: .regular)
 
     private(set) var isVisible = false
     private(set) var items: [CompletionItem] = []
@@ -19,6 +21,11 @@ final class CompletionPopupController {
     private static let panelWidth: CGFloat = 280
 
     init() {
+        let initialThemeColors = ThemeColors.nord
+        let initialFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+
+        themeColors = initialThemeColors
+        font = initialFont
         dataSource = CompletionDataSource()
 
         tableView = NSTableView()
@@ -28,14 +35,17 @@ final class CompletionPopupController {
         tableView.headerView = nil
         tableView.rowHeight = Self.rowHeight
         tableView.intercellSpacing = NSSize(width: 0, height: 0)
-        tableView.selectionHighlightStyle = .regular
+        tableView.selectionHighlightStyle = .none
         tableView.usesAlternatingRowBackgroundColors = false
+        tableView.backgroundColor = initialThemeColors.nsElevatedBackground
 
         scrollView = NSScrollView()
         scrollView.documentView = tableView
         scrollView.hasVerticalScroller = true
         scrollView.autohidesScrollers = true
         scrollView.borderType = .noBorder
+        scrollView.drawsBackground = true
+        scrollView.backgroundColor = initialThemeColors.nsElevatedBackground
 
         panel = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: Self.panelWidth, height: Self.rowHeight * CGFloat(Self.maxVisibleRows)),
@@ -46,13 +56,32 @@ final class CompletionPopupController {
         panel.level = .popUpMenu
         panel.isOpaque = false
         panel.hasShadow = true
-        panel.backgroundColor = .windowBackgroundColor
+        panel.backgroundColor = initialThemeColors.nsElevatedBackground
         panel.contentView = scrollView
         panel.isReleasedWhenClosed = false
+        panel.appearance = NSAppearance(named: initialThemeColors.isLightAppearance ? .aqua : .darkAqua)
 
         tableView.dataSource = dataSource
         tableView.delegate = dataSource
         dataSource.controller = self
+        applyTheme(initialThemeColors, font: initialFont)
+    }
+
+    func applyTheme(_ themeColors: ThemeColors, font: NSFont) {
+        self.themeColors = themeColors
+        self.font = font
+        panel.backgroundColor = themeColors.nsElevatedBackground
+        panel.appearance = NSAppearance(named: themeColors.isLightAppearance ? .aqua : .darkAqua)
+        scrollView.backgroundColor = themeColors.nsElevatedBackground
+        scrollView.wantsLayer = true
+        scrollView.layer?.backgroundColor = themeColors.nsElevatedBackground.cgColor
+        scrollView.layer?.borderColor = themeColors.nsBorder.cgColor
+        scrollView.layer?.borderWidth = 1
+        scrollView.layer?.cornerRadius = 10
+        tableView.backgroundColor = themeColors.nsElevatedBackground
+        dataSource.themeColors = themeColors
+        dataSource.font = font
+        tableView.reloadData()
     }
 
     func show(items: [CompletionItem], at rect: NSRect, in window: NSWindow?) {
@@ -145,6 +174,8 @@ final class CompletionPopupController {
 private final class CompletionDataSource: NSObject, NSTableViewDataSource, NSTableViewDelegate {
     var items: [CompletionItem] = []
     weak var controller: CompletionPopupController?
+    var themeColors: ThemeColors = .nord
+    var font: NSFont = .monospacedSystemFont(ofSize: 13, weight: .regular)
 
     func numberOfRows(in tableView: NSTableView) -> Int {
         items.count
@@ -170,7 +201,7 @@ private final class CompletionDataSource: NSObject, NSTableViewDataSource, NSTab
             let textField = NSTextField(labelWithString: "")
             textField.translatesAutoresizingMaskIntoConstraints = false
             textField.lineBreakMode = .byTruncatingTail
-            textField.font = .systemFont(ofSize: 12)
+            textField.font = font
             cell.addSubview(textField)
             cell.textField = textField
 
@@ -186,9 +217,11 @@ private final class CompletionDataSource: NSObject, NSTableViewDataSource, NSTab
         }
 
         cell.textField?.stringValue = item.label
+        cell.textField?.font = font
+        cell.textField?.textColor = themeColors.nsForeground
         if let symbolName = item.kind?.symbolName {
             cell.imageView?.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)
-            cell.imageView?.contentTintColor = .secondaryLabelColor
+            cell.imageView?.contentTintColor = themeColors.nsAccent
         } else {
             cell.imageView?.image = nil
         }
@@ -196,7 +229,31 @@ private final class CompletionDataSource: NSObject, NSTableViewDataSource, NSTab
         return cell
     }
 
+    func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
+        let rowView = ThemedCompletionRowView()
+        rowView.themeColors = themeColors
+        return rowView
+    }
+
     func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
         CompletionPopupController.rowHeight
+    }
+}
+
+private final class ThemedCompletionRowView: NSTableRowView {
+    var themeColors: ThemeColors = .nord
+
+    override func drawBackground(in dirtyRect: NSRect) {
+        themeColors.nsElevatedBackground.setFill()
+        dirtyRect.fill()
+    }
+
+    override func drawSelection(in dirtyRect: NSRect) {
+        guard selectionHighlightStyle != .none || isSelected else { return }
+
+        let selectionRect = bounds.insetBy(dx: 4, dy: 1)
+        let path = NSBezierPath(roundedRect: selectionRect, xRadius: 7, yRadius: 7)
+        themeColors.nsSelection.withAlphaComponent(themeColors.isLightAppearance ? 0.95 : 0.65).setFill()
+        path.fill()
     }
 }

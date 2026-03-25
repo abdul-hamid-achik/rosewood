@@ -49,16 +49,10 @@ struct GitDiffPanelView: View {
         VStack(spacing: 0) {
             headerView
 
-            Divider()
-                .overlay(themeColors.border)
+            ThemedDivider()
 
             bodyView
         }
-        .frame(
-            minHeight: layoutStyle == .workspace ? nil : 220,
-            idealHeight: layoutStyle == .workspace ? nil : 300,
-            maxHeight: layoutStyle == .workspace ? .infinity : 420
-        )
         .frame(maxWidth: .infinity, maxHeight: layoutStyle == .workspace ? .infinity : nil)
         .background(layoutStyle == .workspace ? themeColors.background : themeColors.panelBackground)
         .accessibilityElement(children: .contain)

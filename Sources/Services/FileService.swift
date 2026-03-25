@@ -312,16 +312,45 @@ final class FileService {
     }
 
     func readFile(at url: URL) throws -> String {
+        try readDocument(at: url).content
+    }
+
+    func readDocument(at url: URL) throws -> (content: String, metadata: FileDocumentMetadata) {
+        let data = try Data(contentsOf: url)
+
         do {
-            return try String(contentsOf: url, encoding: .utf8)
+            let content = try String(contentsOf: url, encoding: .utf8)
+            return (
+                content,
+                FileDocumentMetadata(
+                    encoding: .utf8,
+                    lineEnding: LineEndingStyle.detect(in: content)
+                )
+            )
         } catch {
             var detectedEncoding: String.Encoding = .utf8
-            return try String(contentsOf: url, usedEncoding: &detectedEncoding)
+            let content = try String(contentsOf: url, usedEncoding: &detectedEncoding)
+            return (
+                content,
+                FileDocumentMetadata(
+                    encoding: detectedEncoding,
+                    lineEnding: detectLineEnding(in: content, data: data, encoding: detectedEncoding)
+                )
+            )
         }
     }
 
     func writeFile(content: String, to url: URL) throws {
-        try content.write(to: url, atomically: true, encoding: .utf8)
+        try writeDocument(content: content, metadata: .utf8LF, to: url)
+    }
+
+    func writeDocument(content: String, metadata: FileDocumentMetadata, to url: URL) throws {
+        let normalizedContent = normalized(content: content, lineEnding: metadata.lineEnding)
+        guard let data = normalizedContent.data(using: metadata.encoding) else {
+            throw CocoaError(.fileWriteInapplicableStringEncoding)
+        }
+
+        try data.write(to: url, options: .atomic)
     }
 
     func createFile(named name: String, in directory: URL) throws -> URL {
@@ -523,11 +552,11 @@ final class FileService {
 
         for groupedResult in groupedResults.values {
             guard let fileURL = groupedResult.first?.filePath.standardizedFileURL,
-                  let originalContent = try? readFile(at: fileURL) else {
+                  let document = try? readDocument(at: fileURL) else {
                 continue
             }
 
-            var updatedContent = originalContent
+            var updatedContent = document.content
             var fileReplacementCount = 0
             let targetLineNumbers = Set(groupedResult.map(\.lineNumber)).sorted(by: >)
 
@@ -543,7 +572,7 @@ final class FileService {
 
             guard fileReplacementCount > 0 else { continue }
 
-            try writeFile(content: updatedContent, to: fileURL)
+            try writeDocument(content: updatedContent, metadata: document.metadata, to: fileURL)
             replacementCount += fileReplacementCount
             modifiedFiles.append(fileURL)
         }
@@ -592,14 +621,14 @@ final class FileService {
         var modifiedFiles: [URL] = []
 
         for fileURL in uniqueFileURLs {
-            guard let content = try? readFile(at: fileURL) else {
+            guard let document = try? readDocument(at: fileURL) else {
                 continue
             }
 
-            let replacementResult = matcher.replacingMatches(in: content, replacement: replacement)
+            let replacementResult = matcher.replacingMatches(in: document.content, replacement: replacement)
             guard replacementResult.replacementCount > 0 else { continue }
 
-            try writeFile(content: replacementResult.content, to: fileURL)
+            try writeDocument(content: replacementResult.content, metadata: document.metadata, to: fileURL)
             replacementCount += replacementResult.replacementCount
             modifiedFiles.append(fileURL)
         }
@@ -635,6 +664,55 @@ final class FileService {
         }
 
         return lineStart..<lineEnd
+    }
+}
+
+private extension FileService {
+    func detectLineEnding(in content: String, data: Data, encoding: String.Encoding) -> LineEndingStyle {
+        let textBasedLineEnding = LineEndingStyle.detect(in: content)
+        if textBasedLineEnding != .lf || !content.contains("\n") {
+            return textBasedLineEnding
+        }
+
+        let byteOrderMarkAwareData: Data
+        switch encoding {
+        case .utf16LittleEndian, .utf16:
+            byteOrderMarkAwareData = data
+        default:
+            byteOrderMarkAwareData = data
+        }
+
+        if byteOrderMarkAwareData.windows(ofCount: 2).contains(where: { $0.elementsEqual([0x0D, 0x0A]) }) {
+            return .crlf
+        }
+
+        if byteOrderMarkAwareData.contains(0x0D) && !byteOrderMarkAwareData.contains(0x0A) {
+            return .cr
+        }
+
+        return textBasedLineEnding
+    }
+
+    func normalized(content: String, lineEnding: LineEndingStyle) -> String {
+        let unixNormalized = content
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+
+        guard lineEnding != .lf else {
+            return unixNormalized
+        }
+
+        return unixNormalized.replacingOccurrences(of: "\n", with: lineEnding.sequence)
+    }
+}
+
+private extension Data {
+    func windows(ofCount count: Int) -> [ArraySlice<UInt8>] {
+        let bytes = Array(self)
+        guard bytes.count >= count else { return [] }
+        return (0...(bytes.count - count)).map { index in
+            bytes[index..<(index + count)]
+        }
     }
 }
 

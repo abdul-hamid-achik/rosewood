@@ -13,6 +13,7 @@ struct AppSettingsTests {
         #expect(settings.editor.fontFamily == "SF Mono")
         #expect(settings.editor.tabSize == 4)
         #expect(settings.editor.showLineNumbers == true)
+        #expect(settings.editor.showMinimap == true)
         #expect(settings.editor.wordWrap == false)
         #expect(settings.editor.autoSaveDelay == 2.0)
         #expect(settings.editor.autoSaveEnabled == true)
@@ -29,6 +30,7 @@ struct AppSettingsTests {
         #expect(decoded.editor.fontSize == settings.editor.fontSize)
         #expect(decoded.editor.fontFamily == settings.editor.fontFamily)
         #expect(decoded.editor.tabSize == settings.editor.tabSize)
+        #expect(decoded.editor.showMinimap == settings.editor.showMinimap)
         #expect(decoded.editor.autoSaveDelay == settings.editor.autoSaveDelay)
         #expect(decoded.theme.name == settings.theme.name)
     }
@@ -41,6 +43,7 @@ struct AppSettingsTests {
 
         #expect(tomlString.contains("fontSize"))
         #expect(tomlString.contains("fontFamily"))
+        #expect(tomlString.contains("showMinimap"))
         #expect(tomlString.contains("theme"))
         #expect(tomlString.contains("nord"))
     }
@@ -76,5 +79,6 @@ struct ThemeDefinitionTests {
     func additionalThemesHaveExpectedMetadata() {
         #expect(ThemeDefinition.githubLight.highlightrTheme == "github")
         #expect(ThemeDefinition.dracula.highlightrTheme == "dracula")
+        #expect(ThemeDefinition.githubLight.name == "GitHub Light Default")
     }
 }

@@ -4,16 +4,23 @@ import SwiftUI
 class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItemValidation {
     var window: NSWindow!
     private var projectViewModel: ProjectViewModel!
-    private let notificationCenter: NotificationCenter
+    private let notificationCenter: NotificationCenter?
+    private let commandDispatcher: AppCommandDispatcher
     private var pendingOpenURLs: [URL] = []
 
     override init() {
-        self.notificationCenter = .default
+        self.notificationCenter = nil
+        self.commandDispatcher = .shared
         super.init()
     }
 
-    init(notificationCenter: NotificationCenter, projectViewModel: ProjectViewModel? = nil) {
+    init(
+        notificationCenter: NotificationCenter,
+        projectViewModel: ProjectViewModel? = nil,
+        commandDispatcher: AppCommandDispatcher = AppCommandDispatcher()
+    ) {
         self.notificationCenter = notificationCenter
+        self.commandDispatcher = commandDispatcher
         self.projectViewModel = projectViewModel
         super.init()
     }
@@ -29,6 +36,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItem
         let contentView = ContentView()
             .environmentObject(projectViewModel)
             .environmentObject(ConfigurationService.shared)
+            .environmentObject(commandDispatcher)
 
         window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1200, height: 800),
@@ -225,79 +233,84 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItem
     }
 
     @objc func handleNewFile() {
-        notificationCenter.post(name: .handleNewFile, object: nil)
+        dispatch(.newFile, legacyNotification: .handleNewFile)
     }
 
     @objc func handleOpenFolder() {
-        notificationCenter.post(name: .handleOpenFolder, object: nil)
+        dispatch(.openFolder, legacyNotification: .handleOpenFolder)
     }
 
     @objc func handleSave() {
-        notificationCenter.post(name: .handleSave, object: nil)
+        dispatch(.save, legacyNotification: .handleSave)
     }
 
     @objc func handleQuickOpen() {
-        notificationCenter.post(name: .handleQuickOpen, object: nil)
+        dispatch(.quickOpen, legacyNotification: .handleQuickOpen)
     }
 
     @objc func handleCommandPalette() {
-        notificationCenter.post(name: .handleCommandPalette, object: nil)
+        dispatch(.commandPalette, legacyNotification: .handleCommandPalette)
     }
 
     @objc func handleToggleProblems() {
-        notificationCenter.post(name: .handleToggleProblems, object: nil)
+        dispatch(.toggleProblems, legacyNotification: .handleToggleProblems)
     }
 
     @objc func handleCloseTab() {
-        notificationCenter.post(name: .handleCloseTab, object: nil)
+        dispatch(.closeTab, legacyNotification: .handleCloseTab)
     }
 
     @objc func handleProjectSearch() {
-        notificationCenter.post(name: .handleProjectSearch, object: nil)
+        dispatch(.projectSearch, legacyNotification: .handleProjectSearch)
     }
 
     @objc func handleFindInFile() {
-        notificationCenter.post(name: .handleFindInFile, object: nil)
+        dispatch(.findInFile, legacyNotification: .handleFindInFile)
     }
 
     @objc func handleFindNext() {
-        notificationCenter.post(name: .handleFindNext, object: nil)
+        dispatch(.findNext, legacyNotification: .handleFindNext)
     }
 
     @objc func handleFindPrevious() {
-        notificationCenter.post(name: .handleFindPrevious, object: nil)
+        dispatch(.findPrevious, legacyNotification: .handleFindPrevious)
     }
 
     @objc func handleUseSelectionForFind() {
-        notificationCenter.post(name: .handleUseSelectionForFind, object: nil)
+        dispatch(.useSelectionForFind, legacyNotification: .handleUseSelectionForFind)
     }
 
     @objc func handleShowReplace() {
-        notificationCenter.post(name: .handleShowReplace, object: nil)
+        dispatch(.showReplace, legacyNotification: .handleShowReplace)
     }
 
     @objc func handleGoToLine() {
-        notificationCenter.post(name: .handleGoToLine, object: nil)
+        dispatch(.goToLine, legacyNotification: .handleGoToLine)
     }
 
     @objc func handleSettings() {
-        notificationCenter.post(name: .handleSettings, object: nil)
+        dispatch(.settings, legacyNotification: .handleSettings)
     }
 
     @objc func handleGoToDefinition() {
-        notificationCenter.post(name: .handleGoToDefinition, object: nil)
+        dispatch(.goToDefinition, legacyNotification: .handleGoToDefinition)
     }
 
     @objc func handleFindReferences() {
-        notificationCenter.post(name: .handleFindReferences, object: nil)
+        dispatch(.findReferences, legacyNotification: .handleFindReferences)
     }
 
     @objc func handleNextProblem() {
-        notificationCenter.post(name: .handleNextProblem, object: nil)
+        dispatch(.nextProblem, legacyNotification: .handleNextProblem)
     }
 
     @objc func handlePreviousProblem() {
-        notificationCenter.post(name: .handlePreviousProblem, object: nil)
+        dispatch(.previousProblem, legacyNotification: .handlePreviousProblem)
+    }
+
+    private func dispatch(_ command: AppCommand, legacyNotification: Notification.Name) {
+        commandDispatcher.send(command)
+        notificationCenter?.post(name: legacyNotification, object: nil)
     }
 
     @MainActor

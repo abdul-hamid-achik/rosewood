@@ -8,6 +8,7 @@ struct SettingsView: View {
     @State private var fontFamily: String = "SF Mono"
     @State private var tabSize: Int = 4
     @State private var showLineNumbers: Bool = true
+    @State private var showMinimap: Bool = true
     @State private var wordWrap: Bool = false
     @State private var autoSaveEnabled: Bool = true
     @State private var autoSaveDelay: Double = 2.0
@@ -22,11 +23,15 @@ struct SettingsView: View {
         "Menlo-Regular"
     ]
 
+    private var themeColors: ThemeColors {
+        configService.currentThemeColors
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             headerView
 
-            Divider()
+            ThemedDivider()
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
@@ -37,49 +42,51 @@ struct SettingsView: View {
                 .padding(24)
             }
 
-            Divider()
+            ThemedDivider()
 
             footerView
         }
         .frame(width: 520, height: 480)
+        .background(themeColors.panelBackground)
         .onAppear { loadCurrentSettings() }
     }
 
     private var headerView: some View {
         HStack {
             Text("Settings")
-                .font(.system(size: 16, weight: .semibold))
+                .font(RosewoodType.title)
+                .foregroundColor(themeColors.foreground)
             Spacer()
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 14)
-        .background(configService.currentThemeColors.panelBackground)
+        .background(themeColors.panelBackground)
     }
 
     private var editorSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Editor")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundColor(configService.currentThemeColors.subduedText)
+                .font(RosewoodType.bodyStrong)
+                .foregroundColor(themeColors.subduedText)
 
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
                     Text("Font Size")
-                        .font(.system(size: 13))
-                        .foregroundColor(configService.currentThemeColors.foreground)
+                        .font(RosewoodType.body)
+                        .foregroundColor(themeColors.foreground)
                     Spacer()
                     Stepper(value: $fontSize, in: 10...24, step: 1) {
                         Text("\(Int(fontSize))")
-                            .font(.system(size: 13, design: .monospaced))
-                            .foregroundColor(configService.currentThemeColors.subduedText)
+                            .font(RosewoodType.monoBody)
+                            .foregroundColor(themeColors.subduedText)
                             .frame(width: 30)
                     }
                 }
 
                 HStack {
                     Text("Font Family")
-                        .font(.system(size: 13))
-                        .foregroundColor(configService.currentThemeColors.foreground)
+                        .font(RosewoodType.body)
+                        .foregroundColor(themeColors.foreground)
                     Spacer()
                     Picker("", selection: $fontFamily) {
                         ForEach(fontFamilies, id: \.self) { family in
@@ -92,81 +99,85 @@ struct SettingsView: View {
 
                 HStack {
                     Text("Tab Size")
-                        .font(.system(size: 13))
-                        .foregroundColor(configService.currentThemeColors.foreground)
+                        .font(RosewoodType.body)
+                        .foregroundColor(themeColors.foreground)
                     Spacer()
                     Stepper(value: $tabSize, in: 2...8, step: 1) {
                         Text("\(tabSize)")
-                            .font(.system(size: 13, design: .monospaced))
-                            .foregroundColor(configService.currentThemeColors.subduedText)
+                            .font(RosewoodType.monoBody)
+                            .foregroundColor(themeColors.subduedText)
                             .frame(width: 30)
                     }
                 }
 
                 Toggle("Show Line Numbers", isOn: $showLineNumbers)
-                    .font(.system(size: 13))
-                    .foregroundColor(configService.currentThemeColors.foreground)
+                    .font(RosewoodType.body)
+                    .foregroundColor(themeColors.foreground)
                     .toggleStyle(.switch)
-                    .tint(configService.currentThemeColors.accent)
+                    .tint(themeColors.accent)
+
+                Toggle("Show Minimap", isOn: $showMinimap)
+                    .font(RosewoodType.body)
+                    .foregroundColor(themeColors.foreground)
+                    .toggleStyle(.switch)
+                    .tint(themeColors.accent)
 
                 Toggle("Word Wrap", isOn: $wordWrap)
-                    .font(.system(size: 13))
-                    .foregroundColor(configService.currentThemeColors.foreground)
+                    .font(RosewoodType.body)
+                    .foregroundColor(themeColors.foreground)
                     .toggleStyle(.switch)
-                    .tint(configService.currentThemeColors.accent)
+                    .tint(themeColors.accent)
             }
             .padding(16)
-            .background(configService.currentThemeColors.elevatedBackground)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .rosewoodCard(themeColors, radius: RosewoodUI.radiusSmall)
         }
     }
 
     private var autoSaveSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Auto-Save")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundColor(configService.currentThemeColors.subduedText)
+                .font(RosewoodType.bodyStrong)
+                .foregroundColor(themeColors.subduedText)
 
             VStack(alignment: .leading, spacing: 12) {
                 Toggle("Enable Auto-Save", isOn: $autoSaveEnabled)
-                    .font(.system(size: 13))
-                    .foregroundColor(configService.currentThemeColors.foreground)
+                    .font(RosewoodType.body)
+                    .foregroundColor(themeColors.foreground)
                     .toggleStyle(.switch)
-                    .tint(configService.currentThemeColors.accent)
+                    .tint(themeColors.accent)
 
                 HStack {
                     Text("Delay")
-                        .font(.system(size: 13))
+                        .font(RosewoodType.body)
                         .foregroundColor(autoSaveEnabled
-                            ? configService.currentThemeColors.foreground
-                            : configService.currentThemeColors.mutedText)
+                            ? themeColors.foreground
+                            : themeColors.mutedText)
                     Spacer()
                     Slider(value: $autoSaveDelay, in: 0.5...10.0, step: 0.5)
                         .frame(width: 160)
                         .disabled(!autoSaveEnabled)
                     Text("\(String(format: "%.1f", autoSaveDelay))s")
-                        .font(.system(size: 13, design: .monospaced))
-                        .foregroundColor(configService.currentThemeColors.subduedText)
+                        .font(RosewoodType.monoBody)
+                        .foregroundColor(themeColors.subduedText)
                         .frame(width: 40)
                 }
             }
             .padding(16)
-            .background(configService.currentThemeColors.elevatedBackground)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .rosewoodCard(themeColors, radius: RosewoodUI.radiusSmall)
         }
     }
 
     private var themeSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Theme")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundColor(configService.currentThemeColors.subduedText)
+                .font(RosewoodType.bodyStrong)
+                .foregroundColor(themeColors.subduedText)
 
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
                     Text("Color Theme")
-                        .font(.system(size: 13))
-                        .foregroundColor(configService.currentThemeColors.foreground)
+                        .font(RosewoodType.body)
+                        .foregroundColor(themeColors.foreground)
                     Spacer()
                     Picker("", selection: $selectedThemeId) {
                         ForEach(ThemeDefinition.builtInThemes) { theme in
@@ -178,8 +189,7 @@ struct SettingsView: View {
                 }
             }
             .padding(16)
-            .background(configService.currentThemeColors.elevatedBackground)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .rosewoodCard(themeColors, radius: RosewoodUI.radiusSmall)
         }
     }
 
@@ -188,7 +198,7 @@ struct SettingsView: View {
             Button("Reset to Defaults") {
                 loadDefaultSettings()
             }
-            .foregroundColor(configService.currentThemeColors.danger)
+            .foregroundColor(themeColors.danger)
 
             Spacer()
 
@@ -202,11 +212,11 @@ struct SettingsView: View {
             }
             .keyboardShortcut(.defaultAction)
             .buttonStyle(.borderedProminent)
-            .tint(configService.currentThemeColors.accent)
+            .tint(themeColors.accent)
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 14)
-        .background(configService.currentThemeColors.panelBackground)
+        .background(themeColors.panelBackground)
     }
 
     private func loadCurrentSettings() {
@@ -215,6 +225,7 @@ struct SettingsView: View {
         fontFamily = settings.editor.fontFamily
         tabSize = settings.editor.tabSize
         showLineNumbers = settings.editor.showLineNumbers
+        showMinimap = settings.editor.showMinimap
         wordWrap = settings.editor.wordWrap
         autoSaveEnabled = settings.editor.autoSaveEnabled
         autoSaveDelay = settings.editor.autoSaveDelay
@@ -227,6 +238,7 @@ struct SettingsView: View {
         fontFamily = defaults.editor.fontFamily
         tabSize = defaults.editor.tabSize
         showLineNumbers = defaults.editor.showLineNumbers
+        showMinimap = defaults.editor.showMinimap
         wordWrap = defaults.editor.wordWrap
         autoSaveEnabled = defaults.editor.autoSaveEnabled
         autoSaveDelay = defaults.editor.autoSaveDelay
@@ -239,6 +251,7 @@ struct SettingsView: View {
         newSettings.editor.fontFamily = fontFamily
         newSettings.editor.tabSize = tabSize
         newSettings.editor.showLineNumbers = showLineNumbers
+        newSettings.editor.showMinimap = showMinimap
         newSettings.editor.wordWrap = wordWrap
         newSettings.editor.autoSaveEnabled = autoSaveEnabled
         newSettings.editor.autoSaveDelay = autoSaveDelay

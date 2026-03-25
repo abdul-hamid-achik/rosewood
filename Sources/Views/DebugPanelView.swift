@@ -12,8 +12,7 @@ struct DebugPanelView: View {
         VStack(spacing: 0) {
             headerView
 
-            Divider()
-                .overlay(themeColors.border)
+            ThemedDivider()
 
             if projectViewModel.debugConsoleEntries.isEmpty {
                 emptyStateView
@@ -47,14 +46,13 @@ struct DebugPanelView: View {
                 }
             }
         }
-        .frame(minHeight: 150, idealHeight: 180, maxHeight: 240)
         .background(themeColors.panelBackground)
     }
 
     private var headerView: some View {
         HStack {
             Text("Debug Console")
-                .font(.system(size: 12, weight: .semibold))
+                .font(RosewoodType.subheadlineStrong)
                 .foregroundColor(themeColors.subduedText)
 
             Spacer()
@@ -85,7 +83,7 @@ struct DebugPanelView: View {
                 .font(.system(size: 22))
                 .foregroundColor(themeColors.mutedText)
             Text("Debugger output will appear here.")
-                .font(.system(size: 12))
+                .font(RosewoodType.subheadline)
                 .foregroundColor(themeColors.subduedText)
             Spacer()
         }

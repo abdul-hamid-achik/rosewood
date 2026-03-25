@@ -34,8 +34,12 @@ final class HighlightService {
         return AttributedString(highlighted)
     }
 
-    func highlightedAttributedString(_ code: String, language: String, themeColors: ThemeColors) -> NSAttributedString {
-        let font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+    func highlightedAttributedString(
+        _ code: String,
+        language: String,
+        themeColors: ThemeColors,
+        font: NSFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+    ) -> NSAttributedString {
         let nsForeground = themeColors.nsForeground
 
         let highlighted: NSMutableAttributedString
@@ -206,17 +210,17 @@ struct ThemeColors: Equatable {
     static let nord = ThemeColors()
     static let githubLight = ThemeColors(
         backgroundHex: "#FFFFFF",
-        foregroundHex: "#24292F",
+        foregroundHex: "#1F2328",
         subduedTextHex: "#57606A",
         mutedTextHex: "#6E7781",
-        lineNumbersHex: "#8C959F",
-        cursorHex: "#24292F",
+        lineNumbersHex: "#9AA4AF",
+        cursorHex: "#1F2328",
         selectionHex: "#DDEBFF",
         gutterBackgroundHex: "#F6F8FA",
         gutterDividerHex: "#D0D7DE",
         panelBackgroundHex: "#F6F8FA",
         elevatedBackgroundHex: "#FFFFFF",
-        hoverBackgroundHex: "#EAEEF2",
+        hoverBackgroundHex: "#EAEFF5",
         accentHex: "#0969DA",
         accentStrongHex: "#0550AE",
         successHex: "#1A7F37",
@@ -263,6 +267,10 @@ struct ThemeColors: Equatable {
     var warning: Color { Color(hex: warningHex) }
     var danger: Color { Color(hex: dangerHex) }
     var border: Color { Color(hex: borderHex) }
+    var overlayScrim: Color { isLightAppearance ? Color.black.opacity(0.16) : Color.black.opacity(0.46) }
+    var shadowColor: Color { isLightAppearance ? Color.black.opacity(0.12) : Color.black.opacity(0.34) }
+    var rowSelection: Color { isLightAppearance ? selection.opacity(0.9) : selection.opacity(0.55) }
+    var inactiveChipBackground: Color { hoverBackground.opacity(isLightAppearance ? 0.65 : 0.32) }
 
     var nsBackground: NSColor { NSColor(hex: backgroundHex) }
     var nsForeground: NSColor { NSColor(hex: foregroundHex) }
@@ -282,6 +290,19 @@ struct ThemeColors: Equatable {
     var nsWarning: NSColor { NSColor(hex: warningHex) }
     var nsDanger: NSColor { NSColor(hex: dangerHex) }
     var nsBorder: NSColor { NSColor(hex: borderHex) }
+
+    var isLightAppearance: Bool {
+        guard let background = nsBackground.usingColorSpace(.sRGB) else { return false }
+
+        func channel(_ value: CGFloat) -> CGFloat {
+            value <= 0.03928 ? value / 12.92 : pow((value + 0.055) / 1.055, 2.4)
+        }
+
+        let luminance = 0.2126 * channel(background.redComponent)
+            + 0.7152 * channel(background.greenComponent)
+            + 0.0722 * channel(background.blueComponent)
+        return luminance > 0.5
+    }
 }
 
 extension Color {

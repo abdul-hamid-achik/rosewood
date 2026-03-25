@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import Combine
 
 struct ProjectViewModelUI {
     var openPanel: (_ canChooseDirectories: Bool, _ canChooseFiles: Bool, _ allowsMultipleSelection: Bool) -> URL?
@@ -224,6 +225,7 @@ final class ProjectViewModel: ObservableObject {
     @Published private(set) var projectReplacePreview: ProjectReplacePreview?
     @Published private(set) var lastProjectReplaceTransaction: ProjectReplaceTransaction?
     @Published var showSettings: Bool = false
+    @Published private(set) var editorVisibleLineRange: ClosedRange<Int>?
     @Published var debugConfigurations: [DebugConfiguration] = []
     @Published var selectedDebugConfigurationName: String?
     @Published var debugConfigurationError: String?
@@ -549,13 +551,14 @@ final class ProjectViewModel: ObservableObject {
     private let configService: ConfigurationService
     private let fileWatcher: FileWatcherService
     private let notificationCenter: NotificationCenter
+    private let commandDispatcher: AppCommandDispatcher
     private let ui: ProjectViewModelUI
     private let lspService: LSPServiceProtocol
     private let breakpointStore: BreakpointStore
     private let debugConfigurationService: DebugConfigurationService
     private let debugSessionService: DebugSessionServiceProtocol
     private let gitService: GitServiceProtocol
-    private var settingsObserver: NSObjectProtocol?
+    private var settingsCommandCancellable: AnyCancellable?
     private var fileTreeLoadToken = UUID()
     private var projectSearchToken = UUID()
     private var replaceInProjectToken = UUID()
@@ -635,6 +638,7 @@ final class ProjectViewModel: ObservableObject {
             configService: .shared,
             fileWatcher: .shared,
             notificationCenter: .default,
+            commandDispatcher: .shared,
             ui: .live,
             lspService: LSPService.shared,
             breakpointStore: BreakpointStore(),
@@ -651,6 +655,7 @@ final class ProjectViewModel: ObservableObject {
         configService: ConfigurationService,
         fileWatcher: FileWatcherService,
         notificationCenter: NotificationCenter,
+        commandDispatcher: AppCommandDispatcher = .shared,
         ui: ProjectViewModelUI,
         lspService: LSPServiceProtocol? = nil,
         breakpointStore: BreakpointStore = BreakpointStore(),
@@ -668,6 +673,7 @@ final class ProjectViewModel: ObservableObject {
         self.configService = configService
         self.fileWatcher = fileWatcher
         self.notificationCenter = notificationCenter
+        self.commandDispatcher = commandDispatcher
         self.ui = ui
         self.lspService = lspService ?? LSPService.shared
         self.breakpointStore = breakpointStore
@@ -688,7 +694,7 @@ final class ProjectViewModel: ObservableObject {
             sessionStore.removeObject(forKey: debugPanelVisibilityKey)
         }
         setupFileWatcher()
-        setupNotificationObservers()
+        setupCommandObservers()
         restoreSession()
         reloadDebuggerState(resetConsole: false)
         installUITestEditorFixturesIfNeeded()
@@ -708,9 +714,7 @@ final class ProjectViewModel: ObservableObject {
         gitStatusTask?.cancel()
         gitDiffTask?.cancel()
         gitBlameTask?.cancel()
-        if let settingsObserver {
-            notificationCenter.removeObserver(settingsObserver)
-        }
+        settingsCommandCancellable?.cancel()
     }
 
     private func setupFileWatcher() {
@@ -721,16 +725,12 @@ final class ProjectViewModel: ObservableObject {
         }
     }
 
-    private func setupNotificationObservers() {
-        settingsObserver = notificationCenter.addObserver(
-            forName: .handleSettings,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor in
+    private func setupCommandObservers() {
+        settingsCommandCancellable = commandDispatcher.publisher
+            .filter { $0 == .settings }
+            .sink { [weak self] _ in
                 self?.showSettings = true
             }
-        }
     }
 
     private func installUITestEditorFixturesIfNeeded() {
@@ -1022,6 +1022,36 @@ final class ProjectViewModel: ObservableObject {
     var selectedTab: EditorTab? {
         guard let index = selectedTabIndex, openTabs.indices.contains(index) else { return nil }
         return openTabs[index]
+    }
+
+    var selectedTabEncodingLabel: String? {
+        selectedTab?.documentMetadata.encodingLabel
+    }
+
+    var selectedTabLineEndingLabel: String? {
+        selectedTab?.documentMetadata.lineEnding.label
+    }
+
+    var editorStickyScopes: [EditorStickyScopeItem] {
+        guard let selectedTab else { return [] }
+        let focusLine = editorVisibleLineRange?.lowerBound ?? selectedTab.cursorPosition.line
+        return EditorNavigationModel.stickyScopes(
+            text: selectedTab.content,
+            language: selectedTab.language,
+            focusLine: max(focusLine, 1)
+        )
+    }
+
+    var editorBreadcrumbs: [EditorBreadcrumbSegment] {
+        guard let selectedTab else { return [] }
+        return EditorNavigationModel.breadcrumbs(
+            fileURL: selectedTab.filePath,
+            rootURL: rootDirectory,
+            text: selectedTab.content,
+            language: selectedTab.language,
+            visibleTopLine: editorVisibleLineRange?.lowerBound ?? 1,
+            cursorLine: selectedTab.cursorPosition.line
+        )
     }
 
     var hasUnsavedChanges: Bool {
@@ -1323,7 +1353,7 @@ final class ProjectViewModel: ObservableObject {
                     category: "Go",
                     aliases: ["references", "find usages", "show references"]
                 ) {
-                    self.notificationCenter.post(name: .handleFindReferences, object: nil)
+                    self.commandDispatcher.send(.findReferences)
                 }
             )
         }
@@ -2689,28 +2719,31 @@ final class ProjectViewModel: ObservableObject {
             return normalizedPath(for: filePath) == normalizedPath(for: url)
         }) {
             selectedTabIndex = existingIndex
+            revealInExplorer(url)
             recordQuickOpenAccess(for: url)
             persistSession()
             return
         }
 
         do {
-            let content = try fileService.readFile(at: url)
+            let document = try fileService.readDocument(at: url)
             openTabs.append(
                 EditorTab(
                     filePath: url,
                     fileName: url.lastPathComponent,
-                    content: content,
-                    originalContent: content
+                    content: document.content,
+                    originalContent: document.content,
+                    documentMetadata: document.metadata
                 )
             )
             selectedTabIndex = openTabs.count - 1
+            revealInExplorer(url)
             fileWatcher.watch(url: url)
 
             // Notify LSP service of document open
             let tab = openTabs[openTabs.count - 1]
             if let uri = tab.documentURI {
-                lspService.documentOpened(uri: uri, language: tab.language, text: content)
+                lspService.documentOpened(uri: uri, language: tab.language, text: document.content)
             }
 
             recordQuickOpenAccess(for: url)
@@ -2827,6 +2860,20 @@ final class ProjectViewModel: ObservableObject {
         if previousLine != line {
             refreshCurrentLineBlame()
         }
+    }
+
+    func updateEditorVisibleLineRange(startLine: Int, endLine: Int) {
+        guard startLine > 0, endLine >= startLine else {
+            editorVisibleLineRange = nil
+            return
+        }
+
+        editorVisibleLineRange = startLine...endLine
+    }
+
+    func jumpToLineInSelectedTab(_ line: Int) {
+        guard let selectedTabIndex, openTabs.indices.contains(selectedTabIndex) else { return }
+        openTabs[selectedTabIndex].pendingLineJump = max(line, 1)
     }
 
     func toggleQuickOpen() {
@@ -3582,10 +3629,11 @@ final class ProjectViewModel: ObservableObject {
         guard openTabs.indices.contains(index), let url = openTabs[index].filePath else { return }
 
         do {
-            let content = try fileService.readFile(at: url)
-            openTabs[index].content = content
-            openTabs[index].originalContent = content
+            let document = try fileService.readDocument(at: url)
+            openTabs[index].content = document.content
+            openTabs[index].originalContent = document.content
             openTabs[index].isDirty = false
+            openTabs[index].documentMetadata = document.metadata
             persistSession()
             refreshGitState()
             refreshCurrentLineBlame()
@@ -4494,7 +4542,7 @@ final class ProjectViewModel: ObservableObject {
         guard openTabs.indices.contains(index), let url = openTabs[index].filePath else { return false }
 
         do {
-            try fileService.writeFile(content: openTabs[index].content, to: url)
+            try fileService.writeDocument(content: openTabs[index].content, metadata: openTabs[index].documentMetadata, to: url)
             openTabs[index].originalContent = openTabs[index].content
             openTabs[index].isDirty = false
 
@@ -4895,6 +4943,28 @@ final class ProjectViewModel: ObservableObject {
         })
     }
 
+    func revealActiveFileInExplorer() {
+        guard let fileURL = selectedTab?.filePath else { return }
+        revealInExplorer(fileURL)
+        persistSession()
+    }
+
+    private func revealInExplorer(_ fileURL: URL) {
+        guard let rootDirectory else { return }
+
+        let rootStandardized = rootDirectory.standardizedFileURL
+        let filePath = normalizedPath(for: fileURL)
+        guard filePath.hasPrefix(rootStandardized.path + "/") else { return }
+
+        var currentDirectory = fileURL.deletingLastPathComponent().standardizedFileURL
+        while currentDirectory != rootStandardized, currentDirectory.path.hasPrefix(rootStandardized.path) {
+            expandedDirectoryPaths.insert(normalizedPath(for: currentDirectory))
+            currentDirectory.deleteLastPathComponent()
+        }
+
+        reloadFileTree()
+    }
+
     private func persistSession() {
         let session = ProjectSessionState(
             rootDirectoryPath: rootDirectory.map(normalizedPath(for:)),
@@ -4906,7 +4976,10 @@ final class ProjectViewModel: ObservableObject {
                     fileName: tab.fileName,
                     content: tab.content,
                     originalContent: tab.originalContent,
-                    isDirty: tab.isDirty
+                    isDirty: tab.isDirty,
+                    encodingRawValue: tab.documentMetadata.encodingRawValue,
+                    encodingLabel: tab.documentMetadata.encodingLabel,
+                    lineEndingRawValue: tab.documentMetadata.lineEnding.rawValue
                 )
             },
             selectedTabPath: selectedTab?.filePath.map(normalizedPath(for:))
@@ -4946,7 +5019,12 @@ final class ProjectViewModel: ObservableObject {
                 fileName: tabState.fileName,
                 content: tabState.content,
                 originalContent: tabState.originalContent,
-                isDirty: tabState.isDirty
+                isDirty: tabState.isDirty,
+                documentMetadata: FileDocumentMetadata(
+                    encoding: String.Encoding(rawValue: tabState.encodingRawValue ?? String.Encoding.utf8.rawValue),
+                    encodingLabel: tabState.encodingLabel ?? String.Encoding.utf8.displayLabel,
+                    lineEnding: LineEndingStyle(rawValue: tabState.lineEndingRawValue ?? LineEndingStyle.lf.rawValue) ?? .lf
+                )
             )
         }
         for tab in openTabs {
@@ -5290,6 +5368,29 @@ struct ProjectSessionTabState: Codable, Equatable {
     let content: String
     let originalContent: String
     let isDirty: Bool
+    let encodingRawValue: UInt?
+    let encodingLabel: String?
+    let lineEndingRawValue: String?
+
+    init(
+        filePath: String,
+        fileName: String,
+        content: String,
+        originalContent: String,
+        isDirty: Bool,
+        encodingRawValue: UInt? = nil,
+        encodingLabel: String? = nil,
+        lineEndingRawValue: String? = nil
+    ) {
+        self.filePath = filePath
+        self.fileName = fileName
+        self.content = content
+        self.originalContent = originalContent
+        self.isDirty = isDirty
+        self.encodingRawValue = encodingRawValue
+        self.encodingLabel = encodingLabel
+        self.lineEndingRawValue = lineEndingRawValue
+    }
 }
 
 struct ReferenceResult: Identifiable, Equatable {

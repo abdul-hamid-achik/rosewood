@@ -110,15 +110,14 @@ final class ConfigurationService: ObservableObject {
     }
 
     var font: NSFont {
-        NSFont.monospacedSystemFont(ofSize: settings.editor.fontSize, weight: .regular)
+        resolveFont(named: settings.editor.fontFamily, size: settings.editor.fontSize)
     }
 
     private func applyTheme(named name: String) {
         let definition = ThemeDefinition.builtInThemes.first { $0.id == name } ?? .nord
         currentThemeDefinition = definition
         currentThemeColors = highlightService.themeColors(for: definition)
-        // Keep syntax highlighting on Nord for consistent token colors across UI themes.
-        highlightService.setHighlightrTheme(to: HighlightService.defaultHighlightrThemeName)
+        highlightService.setHighlightrTheme(to: definition.highlightrTheme)
     }
 
     private func loadUserConfig() -> AppSettings? {
@@ -159,6 +158,7 @@ final class ConfigurationService: ObservableObject {
         result.editor.fontFamily = override.editor.fontFamily
         result.editor.tabSize = override.editor.tabSize
         result.editor.showLineNumbers = override.editor.showLineNumbers
+        result.editor.showMinimap = override.editor.showMinimap
         result.editor.wordWrap = override.editor.wordWrap
         result.editor.autoSaveDelay = override.editor.autoSaveDelay
         result.editor.autoSaveEnabled = override.editor.autoSaveEnabled
@@ -222,5 +222,35 @@ final class ConfigurationService: ObservableObject {
                 self.reload()
             }
         }
+    }
+
+    private func resolveFont(named family: String, size: CGFloat) -> NSFont {
+        let trimmedFamily = family.trimmingCharacters(in: .whitespacesAndNewlines)
+        let candidates: [String]
+
+        switch trimmedFamily {
+        case "SF Mono":
+            candidates = ["SFMono-Regular", ".SFMono-Regular", ".SF NS Mono"]
+        case "Menlo":
+            candidates = ["Menlo-Regular", "Menlo"]
+        case "Monaco":
+            candidates = ["Monaco"]
+        case "Courier":
+            candidates = ["Courier"]
+        case "Courier New":
+            candidates = ["CourierNewPSMT", "Courier New"]
+        case "Menlo-Regular":
+            candidates = ["Menlo-Regular", "Menlo"]
+        default:
+            candidates = [trimmedFamily]
+        }
+
+        for candidate in candidates where !candidate.isEmpty {
+            if let font = NSFont(name: candidate, size: size) {
+                return font
+            }
+        }
+
+        return NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
     }
 }

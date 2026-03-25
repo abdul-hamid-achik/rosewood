@@ -63,8 +63,7 @@ struct ProblemsPanelView: View {
         VStack(spacing: 0) {
             headerView
 
-            Divider()
-                .overlay(themeColors.border)
+            ThemedDivider()
 
             if !hasVisibleProblems {
                 emptyStateView
@@ -98,7 +97,6 @@ struct ProblemsPanelView: View {
                 }
             }
         }
-        .frame(minHeight: 150, idealHeight: 180, maxHeight: 240)
         .background(themeColors.panelBackground)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("problems-panel")
@@ -107,29 +105,29 @@ struct ProblemsPanelView: View {
     private var headerView: some View {
         HStack {
             Text("Problems")
-                .font(.system(size: 12, weight: .semibold))
+                .font(RosewoodType.subheadlineStrong)
                 .foregroundColor(themeColors.subduedText)
                 .accessibilityIdentifier("problems-panel-title")
 
             Text("\(visibleProblemCount)")
-                .font(.system(size: 11, design: .monospaced))
+                .font(RosewoodType.monoCaption)
                 .foregroundColor(themeColors.mutedText)
 
             Text(summaryText)
-                .font(.system(size: 11))
+                .font(RosewoodType.caption)
                 .foregroundColor(themeColors.mutedText)
                 .accessibilityIdentifier("problems-panel-summary")
 
             if let scopeSummaryText {
                 Text(scopeSummaryText)
-                    .font(.system(size: 11))
+                    .font(RosewoodType.caption)
                     .foregroundColor(themeColors.mutedText)
                     .accessibilityIdentifier("problems-panel-scope-summary")
             }
 
             if let currentProblemPositionText = projectViewModel.currentProblemPositionText {
                 Text(currentProblemPositionText)
-                    .font(.system(size: 11, design: .monospaced))
+                    .font(RosewoodType.monoCaption)
                     .foregroundColor(themeColors.accent)
                     .accessibilityLabel(currentProblemPositionText)
                     .accessibilityValue(currentProblemPositionText)
@@ -200,7 +198,7 @@ struct ProblemsPanelView: View {
                 .font(.system(size: 22))
                 .foregroundColor(themeColors.success)
             Text(projectViewModel.diagnosticsPanelScope == .workspace ? "No problems in the workspace." : "No problems in the current file.")
-                .font(.system(size: 12))
+                .font(RosewoodType.subheadline)
                 .foregroundColor(themeColors.subduedText)
             Spacer()
         }

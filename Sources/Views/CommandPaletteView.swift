@@ -2,8 +2,16 @@ import SwiftUI
 
 struct CommandPaletteView: View {
     @EnvironmentObject var projectViewModel: ProjectViewModel
+    @EnvironmentObject private var configService: ConfigurationService
+
     let mode: ProjectViewModel.PaletteMode
+
     @State private var selectedIndex: Int = 0
+    @FocusState private var isQueryFieldFocused: Bool
+
+    private var themeColors: ThemeColors {
+        configService.currentThemeColors
+    }
 
     private var queryBinding: Binding<String> {
         switch mode {
@@ -70,207 +78,55 @@ struct CommandPaletteView: View {
         mode == .quickOpen ? projectViewModel.quickOpenItems : []
     }
 
+    private var emptyStateText: String {
+        switch mode {
+        case .commandPalette:
+            return projectViewModel.commandPaletteEmptyStateText
+        case .quickOpen:
+            return projectViewModel.quickOpenEmptyStateText
+        }
+    }
+
     var body: some View {
         ZStack {
-            Color.black.opacity(0.3)
+            themeColors.overlayScrim
                 .ignoresSafeArea()
+                .contentShape(Rectangle())
                 .onTapGesture {
                     projectViewModel.closeCommandPalette()
                 }
 
             VStack(spacing: 0) {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Image(systemName: titleIcon)
-                            .foregroundColor(.secondary)
-                        TextField(placeholder, text: queryBinding)
-                            .id(mode)
-                            .textFieldStyle(.plain)
-                            .font(.system(size: 14))
-                            .accessibilityIdentifier(
-                                mode == .commandPalette ? "command-palette-input" : "quick-open-input"
-                            )
-                            .onSubmit {
-                                executeSelectedAction()
-                            }
-                    }
-                    .padding(12)
-                    .background(Color(nsColor: .textBackgroundColor))
+                headerView
 
-                    if mode == .commandPalette {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text(commandPaletteHelpText)
-                                .font(.system(size: 11))
-                                .foregroundColor(.secondary)
-                                .padding(.horizontal, 12)
-                                .accessibilityIdentifier("command-palette-help-text")
+                ThemedDivider()
 
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                HStack(spacing: 8) {
-                                    ForEach(commandPaletteScopeHints) { scope in
-                                        Button {
-                                            projectViewModel.applyCommandPaletteScope(scope)
-                                        } label: {
-                                            CommandPaletteScopeChipView(
-                                                scope: scope,
-                                                isActive: projectViewModel.activeCommandPaletteScope?.id == scope.id
-                                            )
-                                        }
-                                        .buttonStyle(.plain)
-                                        .accessibilityIdentifier("command-palette-scope-\(scope.id)")
-                                    }
-                                }
-                                .padding(.horizontal, 12)
-                            }
-                        }
-                        .padding(.bottom, 8)
-                    }
-
-                    if mode == .quickOpen, let quickOpenHelpText {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text(quickOpenHelpText)
-                                .font(.system(size: 11))
-                                .foregroundColor(.secondary)
-                                .padding(.horizontal, 12)
-                                .accessibilityIdentifier("quick-open-help-text")
-
-                            if !quickOpenProblemFilterHints.isEmpty {
-                                ScrollView(.horizontal, showsIndicators: false) {
-                                    HStack(spacing: 8) {
-                                        ForEach(quickOpenProblemFilterHints) { hint in
-                                            Button {
-                                                projectViewModel.applyQuickOpenProblemFilterHint(hint)
-                                            } label: {
-                                                QuickOpenProblemFilterChipView(hint: hint)
-                                            }
-                                            .buttonStyle(.plain)
-                                            .accessibilityIdentifier("quick-open-problem-filter-\(hint.id)")
-                                        }
-                                    }
-                                    .padding(.horizontal, 12)
-                                }
-                            }
-                        }
-                        .padding(.bottom, 8)
-                    }
-
-                    Divider()
-                }
-
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 0) {
-                        if !visibleCommandSections.isEmpty {
-                            ForEach(visibleCommandSections) { section in
-                                Section {
-                                    ForEach(Array(section.actions.enumerated()), id: \.element.id) { index, action in
-                                        let selectionOffset = commandSelectionOffset(for: section)
-
-                                        Button {
-                                            DispatchQueue.main.async {
-                                                projectViewModel.executeCommandPaletteAction(action)
-                                            }
-                                        } label: {
-                                            CommandPaletteItemView(
-                                                action: action,
-                                                isSelected: selectedIndex == selectionOffset + index
-                                            )
-                                        }
-                                        .buttonStyle(.plain)
-                                        .accessibilityIdentifier("command-palette-action-\(action.id)")
-                                        .onHover { hovering in
-                                            if hovering {
-                                                selectedIndex = selectionOffset + index
-                                            }
-                                        }
-                                    }
-                                } header: {
-                                    HStack {
-                                        Text(section.title)
-                                            .font(.system(size: 11, weight: .semibold))
-                                            .foregroundColor(.secondary)
-
-                                        Spacer()
-
-                                        Text("\(section.actions.count)")
-                                            .font(.system(size: 10, weight: .medium))
-                                            .foregroundColor(.secondary.opacity(0.8))
-                                    }
-                                    .padding(.horizontal, 12)
-                                    .padding(.vertical, 6)
-                                }
-                            }
-                        }
-
-                        if !visibleSections.isEmpty {
-                            ForEach(visibleSections) { section in
-                                Section {
-                                    ForEach(Array(section.items.enumerated()), id: \.element.id) { index, item in
-                                        let selectionOffset = quickOpenSelectionOffset(for: section)
-
-                                        Button {
-                                            projectViewModel.executeQuickOpenItem(item)
-                                            projectViewModel.closeCommandPalette()
-                                        } label: {
-                                            CommandPaletteQuickOpenItemView(
-                                                item: item,
-                                                isSelected: selectedIndex == selectionOffset + index
-                                            )
-                                        }
-                                        .buttonStyle(.plain)
-                                        .accessibilityIdentifier(
-                                            quickOpenAccessibilityIdentifier(
-                                                for: item,
-                                                index: selectionOffset - visibleActions.count + index
-                                            )
-                                        )
-                                        .onHover { hovering in
-                                            if hovering {
-                                                selectedIndex = selectionOffset + index
-                                            }
-                                        }
-                                    }
-                                } header: {
-                                    if mode == .quickOpen {
-                                        Text(section.title)
-                                            .font(.system(size: 11, weight: .semibold))
-                                            .foregroundColor(.secondary)
-                                            .padding(.horizontal, 12)
-                                            .padding(.vertical, 6)
-                                    }
-                                }
-                            }
-                        }
-
-                        if visibleActions.isEmpty && visibleItems.isEmpty {
-                            Text(mode == .commandPalette ? projectViewModel.commandPaletteEmptyStateText : projectViewModel.quickOpenEmptyStateText)
-                                .font(.system(size: 12))
-                                .foregroundColor(.secondary)
-                                .padding(16)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                    }
-                }
-                .frame(maxHeight: 300)
+                resultsView
             }
-            .background(Color(nsColor: .controlBackgroundColor))
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-            .overlay {
-                RoundedRectangle(cornerRadius: 12)
-                    .strokeBorder(Color.white.opacity(0.08))
-            }
-            .shadow(color: .black.opacity(0.35), radius: 24, x: 0, y: 14)
-            .frame(width: 560)
-            .padding(.horizontal, 24)
+            .background(themeColors.elevatedBackground)
+            .clipShape(RoundedRectangle(cornerRadius: RosewoodUI.radiusLarge))
+            .overlay(
+                RoundedRectangle(cornerRadius: RosewoodUI.radiusLarge)
+                    .stroke(themeColors.border.opacity(0.8), lineWidth: 1)
+            )
+            .shadow(color: themeColors.shadowColor, radius: 28, x: 0, y: 16)
+            .frame(width: 600)
+            .padding(.horizontal, RosewoodUI.spacing8)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear {
             selectedIndex = 0
+            focusQueryFieldSoon()
         }
         .onExitCommand {
             projectViewModel.closeCommandPalette()
         }
         .onChange(of: queryBinding.wrappedValue) { _, _ in
             selectedIndex = 0
+        }
+        .onChange(of: mode) { _, _ in
+            selectedIndex = 0
+            focusQueryFieldSoon()
         }
         .onKeyPress { event in
             switch event.key {
@@ -292,6 +148,202 @@ struct CommandPaletteView: View {
         }
     }
 
+    private var headerView: some View {
+        VStack(alignment: .leading, spacing: RosewoodUI.spacing3) {
+            HStack(spacing: RosewoodUI.spacing3) {
+                Image(systemName: titleIcon)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(themeColors.accent)
+
+                TextField(placeholder, text: queryBinding)
+                    .focused($isQueryFieldFocused)
+                    .id(mode)
+                    .textFieldStyle(.plain)
+                    .font(RosewoodType.body)
+                    .foregroundColor(themeColors.foreground)
+                    .accessibilityIdentifier(
+                        mode == .commandPalette ? "command-palette-input" : "quick-open-input"
+                    )
+                    .onSubmit {
+                        executeSelectedAction()
+                    }
+            }
+            .padding(.horizontal, RosewoodUI.spacing5)
+            .padding(.vertical, RosewoodUI.spacing4)
+            .background(themeColors.background)
+            .clipShape(RoundedRectangle(cornerRadius: RosewoodUI.radiusMedium))
+            .overlay(
+                RoundedRectangle(cornerRadius: RosewoodUI.radiusMedium)
+                    .stroke(themeColors.border.opacity(0.8), lineWidth: 1)
+            )
+
+            if mode == .commandPalette {
+                commandPaletteHeaderDetails
+            } else if mode == .quickOpen {
+                quickOpenHeaderDetails
+            }
+        }
+        .padding(RosewoodUI.spacing5)
+        .background(themeColors.panelBackground)
+    }
+
+    @ViewBuilder
+    private var commandPaletteHeaderDetails: some View {
+        if !commandPaletteHelpText.isEmpty {
+            Text(commandPaletteHelpText)
+                .font(RosewoodType.caption)
+                .foregroundColor(themeColors.mutedText)
+                .accessibilityIdentifier("command-palette-help-text")
+        }
+
+        if !commandPaletteScopeHints.isEmpty {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: RosewoodUI.spacing3) {
+                    ForEach(commandPaletteScopeHints) { scope in
+                        Button {
+                            projectViewModel.applyCommandPaletteScope(scope)
+                            focusQueryFieldSoon()
+                        } label: {
+                            CommandPaletteScopeChipView(
+                                scope: scope,
+                                isActive: projectViewModel.activeCommandPaletteScope?.id == scope.id
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("command-palette-scope-\(scope.id)")
+                    }
+                }
+            }
+            .scrollClipDisabled()
+        }
+    }
+
+    @ViewBuilder
+    private var quickOpenHeaderDetails: some View {
+        if let quickOpenHelpText, !quickOpenHelpText.isEmpty {
+            Text(quickOpenHelpText)
+                .font(RosewoodType.caption)
+                .foregroundColor(themeColors.mutedText)
+                .accessibilityIdentifier("quick-open-help-text")
+        }
+
+        if !quickOpenProblemFilterHints.isEmpty {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: RosewoodUI.spacing3) {
+                    ForEach(quickOpenProblemFilterHints) { hint in
+                        Button {
+                            projectViewModel.applyQuickOpenProblemFilterHint(hint)
+                            focusQueryFieldSoon()
+                        } label: {
+                            QuickOpenProblemFilterChipView(hint: hint)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("quick-open-problem-filter-\(hint.id)")
+                    }
+                }
+            }
+            .scrollClipDisabled()
+        }
+    }
+
+    private var resultsView: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 0) {
+                if !visibleCommandSections.isEmpty {
+                    ForEach(visibleCommandSections) { section in
+                        Section {
+                            ForEach(Array(section.actions.enumerated()), id: \.element.id) { index, action in
+                                let selectionOffset = commandSelectionOffset(for: section)
+
+                                Button {
+                                    DispatchQueue.main.async {
+                                        projectViewModel.executeCommandPaletteAction(action)
+                                    }
+                                } label: {
+                                    CommandPaletteItemView(
+                                        action: action,
+                                        isSelected: selectedIndex == selectionOffset + index
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityIdentifier("command-palette-action-\(action.id)")
+                                .onHover { hovering in
+                                    if hovering {
+                                        selectedIndex = selectionOffset + index
+                                    }
+                                }
+                            }
+                        } header: {
+                            sectionHeader(title: section.title, count: section.actions.count)
+                        }
+                    }
+                }
+
+                if !visibleSections.isEmpty {
+                    ForEach(visibleSections) { section in
+                        Section {
+                            ForEach(Array(section.items.enumerated()), id: \.element.id) { index, item in
+                                let selectionOffset = quickOpenSelectionOffset(for: section)
+
+                                Button {
+                                    projectViewModel.executeQuickOpenItem(item)
+                                    projectViewModel.closeCommandPalette()
+                                } label: {
+                                    CommandPaletteQuickOpenItemView(
+                                        item: item,
+                                        isSelected: selectedIndex == selectionOffset + index
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityIdentifier(
+                                    quickOpenAccessibilityIdentifier(
+                                        for: item,
+                                        index: selectionOffset - visibleActions.count + index
+                                    )
+                                )
+                                .onHover { hovering in
+                                    if hovering {
+                                        selectedIndex = selectionOffset + index
+                                    }
+                                }
+                            }
+                        } header: {
+                            sectionHeader(title: section.title, count: section.items.count)
+                        }
+                    }
+                }
+
+                if visibleActions.isEmpty && visibleItems.isEmpty {
+                    Text(emptyStateText)
+                        .font(RosewoodType.subheadline)
+                        .foregroundColor(themeColors.mutedText)
+                        .padding(RosewoodUI.spacing6)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .padding(.vertical, RosewoodUI.spacing2)
+        }
+        .frame(maxHeight: 340)
+        .background(themeColors.elevatedBackground)
+    }
+
+    private func sectionHeader(title: String, count: Int) -> some View {
+        HStack(spacing: RosewoodUI.spacing3) {
+            Text(title)
+                .font(RosewoodType.captionStrong)
+                .foregroundColor(themeColors.mutedText)
+
+            Spacer()
+
+            Text("\(count)")
+                .font(RosewoodType.monoMicro)
+                .foregroundColor(themeColors.mutedText)
+        }
+        .padding(.horizontal, RosewoodUI.spacing5)
+        .padding(.top, RosewoodUI.spacing4)
+        .padding(.bottom, RosewoodUI.spacing2)
+    }
+
     private func moveSelection(_ direction: Int) {
         let totalItems = visibleActions.count + visibleItems.count
         guard totalItems > 0 else { return }
@@ -305,10 +357,9 @@ struct CommandPaletteView: View {
         if selectedIndex < actionCount {
             projectViewModel.executeCommandPaletteAction(visibleActions[selectedIndex])
         } else {
-            let fileIndex = selectedIndex - actionCount
-            guard visibleItems.indices.contains(fileIndex) else { return }
-            let item = visibleItems[fileIndex]
-            projectViewModel.executeQuickOpenItem(item)
+            let itemIndex = selectedIndex - actionCount
+            guard visibleItems.indices.contains(itemIndex) else { return }
+            projectViewModel.executeQuickOpenItem(visibleItems[itemIndex])
             projectViewModel.closeCommandPalette()
         }
     }
@@ -351,130 +402,171 @@ struct CommandPaletteView: View {
 
         return offset
     }
+
+    private func focusQueryFieldSoon() {
+        DispatchQueue.main.async {
+            isQueryFieldFocused = true
+        }
+    }
 }
 
 struct CommandPaletteItemView: View {
+    @EnvironmentObject private var configService: ConfigurationService
+
     let action: CommandPaletteAction
     let isSelected: Bool
 
+    private var themeColors: ThemeColors {
+        configService.currentThemeColors
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            HStack {
+            HStack(spacing: RosewoodUI.spacing3) {
                 Text(action.title)
-                    .font(.system(size: 13))
+                    .font(RosewoodType.body)
+                    .foregroundColor(themeColors.foreground)
 
-                Spacer()
+                Spacer(minLength: RosewoodUI.spacing3)
 
                 if let badge = action.badge {
                     Text(badge)
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundColor(.secondary)
+                        .font(RosewoodType.micro)
+                        .foregroundColor(themeColors.mutedText)
                 }
 
                 if !action.shortcut.isEmpty {
                     Text(action.shortcut)
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
+                        .font(RosewoodType.caption)
+                        .foregroundColor(themeColors.mutedText)
                 }
 
                 Text(action.category)
-                    .font(.system(size: 11))
-                    .foregroundColor(.secondary)
-                    .padding(.leading, 8)
+                    .font(RosewoodType.caption)
+                    .foregroundColor(themeColors.mutedText)
             }
 
             if let detailText = action.detailText {
                 Text(detailText)
-                    .font(.system(size: 11))
-                    .foregroundColor(.secondary.opacity(0.9))
+                    .font(RosewoodType.caption)
+                    .foregroundColor(themeColors.mutedText)
                     .lineLimit(1)
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(isSelected ? Color.accentColor.opacity(0.2) : Color.clear)
+        .padding(.horizontal, RosewoodUI.spacing5)
+        .padding(.vertical, RosewoodUI.spacing3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(isSelected ? themeColors.rowSelection : Color.clear)
     }
 }
 
 struct CommandPaletteScopeChipView: View {
+    @EnvironmentObject private var configService: ConfigurationService
+
     let scope: CommandPaletteScope
     let isActive: Bool
 
+    private var themeColors: ThemeColors {
+        configService.currentThemeColors
+    }
+
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: RosewoodUI.spacing2) {
             Text(scope.queryToken)
-                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                .font(RosewoodType.monoCaptionStrong)
 
             Text(scope.title)
-                .font(.system(size: 11))
+                .font(RosewoodType.caption)
         }
-        .foregroundColor(isActive ? .accentColor : .secondary)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
+        .foregroundColor(isActive ? themeColors.accentStrong : themeColors.subduedText)
+        .padding(.horizontal, RosewoodUI.spacing4)
+        .padding(.vertical, RosewoodUI.spacing2)
         .background(
             Capsule()
-                .fill(isActive ? Color.accentColor.opacity(0.16) : Color.secondary.opacity(0.08))
+                .fill(isActive ? themeColors.selection : themeColors.inactiveChipBackground)
+        )
+        .overlay(
+            Capsule()
+                .stroke(isActive ? themeColors.accent.opacity(0.55) : themeColors.border.opacity(0.55), lineWidth: 1)
         )
     }
 }
 
 struct QuickOpenProblemFilterChipView: View {
+    @EnvironmentObject private var configService: ConfigurationService
+
     let hint: QuickOpenProblemFilterHint
 
+    private var themeColors: ThemeColors {
+        configService.currentThemeColors
+    }
+
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: RosewoodUI.spacing2) {
             Text(hint.token)
-                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                .font(RosewoodType.monoCaptionStrong)
 
             Text(hint.title)
-                .font(.system(size: 11))
+                .font(RosewoodType.caption)
         }
-        .foregroundColor(hint.isActive ? .accentColor : .secondary)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
+        .foregroundColor(hint.isActive ? themeColors.accentStrong : themeColors.subduedText)
+        .padding(.horizontal, RosewoodUI.spacing4)
+        .padding(.vertical, RosewoodUI.spacing2)
         .background(
             Capsule()
-                .fill(hint.isActive ? Color.accentColor.opacity(0.16) : Color.secondary.opacity(0.08))
+                .fill(hint.isActive ? themeColors.selection : themeColors.inactiveChipBackground)
+        )
+        .overlay(
+            Capsule()
+                .stroke(hint.isActive ? themeColors.accent.opacity(0.55) : themeColors.border.opacity(0.55), lineWidth: 1)
         )
     }
 }
 
 struct CommandPaletteQuickOpenItemView: View {
+    @EnvironmentObject private var configService: ConfigurationService
+
     let item: QuickOpenItem
     let isSelected: Bool
 
+    private var themeColors: ThemeColors {
+        configService.currentThemeColors
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            HStack {
+            HStack(spacing: RosewoodUI.spacing3) {
                 Image(systemName: item.iconName)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(isSelected ? themeColors.accentStrong : themeColors.mutedText)
 
                 Text(item.title)
-                    .font(.system(size: 13))
+                    .font(RosewoodType.body)
+                    .foregroundColor(themeColors.foreground)
 
-                Spacer()
+                Spacer(minLength: RosewoodUI.spacing3)
 
                 if let badge = item.badge {
                     Text(badge)
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundColor(.secondary)
+                        .font(RosewoodType.micro)
+                        .foregroundColor(themeColors.mutedText)
                 }
             }
 
             Text(item.subtitle)
-                .font(.system(size: 11))
-                .foregroundColor(.secondary)
+                .font(RosewoodType.caption)
+                .foregroundColor(themeColors.mutedText)
                 .lineLimit(1)
 
             if let detailText = item.detailText {
                 Text(detailText)
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundColor(.secondary.opacity(0.9))
+                    .font(RosewoodType.monoCaption)
+                    .foregroundColor(themeColors.mutedText)
                     .lineLimit(1)
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(isSelected ? Color.accentColor.opacity(0.2) : Color.clear)
+        .padding(.horizontal, RosewoodUI.spacing5)
+        .padding(.vertical, RosewoodUI.spacing3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(isSelected ? themeColors.rowSelection : Color.clear)
     }
 }

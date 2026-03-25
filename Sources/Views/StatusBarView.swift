@@ -58,6 +58,14 @@ struct StatusBarView: View {
         return "\(count) Result\(count == 1 ? "" : "s")"
     }
 
+    private var indentLabel: String {
+        "Spaces: \(configService.settings.editor.tabSize)"
+    }
+
+    private var wrapLabel: String {
+        configService.settings.editor.wordWrap ? "Wrap On" : "Wrap Off"
+    }
+
     @ViewBuilder
     private var diagnosticsToggle: some View {
         let diagCount = projectViewModel.currentTabDiagnosticCount
@@ -117,31 +125,43 @@ struct StatusBarView: View {
     var body: some View {
         HStack {
             if let tab = projectViewModel.selectedTab {
-                Text(tab.cursorPosition.description)
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundColor(themeColors.subduedText)
+                statusMonospaceText(tab.cursorPosition.description)
                     .accessibilityLabel(tab.cursorPosition.description)
                     .accessibilityIdentifier("statusbar-cursor-position")
 
                 Spacer()
 
-                Text("UTF-8")
-                    .font(.system(size: 11))
-                    .foregroundColor(themeColors.subduedText)
+                statusText(indentLabel)
+                    .accessibilityIdentifier("statusbar-indent-width")
 
-                Divider()
-                    .frame(height: 12)
+                statusDivider
 
-                Text(tab.language.capitalized)
-                    .font(.system(size: 11))
-                    .foregroundColor(themeColors.subduedText)
+                statusText(wrapLabel)
+                    .accessibilityIdentifier("statusbar-wrap-mode")
+
+                statusDivider
+
+                if let lineEndingLabel = projectViewModel.selectedTabLineEndingLabel {
+                    statusText(lineEndingLabel)
+                        .accessibilityIdentifier("statusbar-line-endings")
+
+                    statusDivider
+                }
+
+                if let encodingLabel = projectViewModel.selectedTabEncodingLabel {
+                    statusText(encodingLabel)
+                        .accessibilityIdentifier("statusbar-file-encoding")
+
+                    statusDivider
+                }
+
+                statusText(tab.language.capitalized)
 
                 if let branchName = projectViewModel.gitRepositoryStatus.branchName {
-                    Divider()
-                        .frame(height: 12)
+                    statusDivider
 
                     Label(branchName, systemImage: "arrow.triangle.branch")
-                        .font(.system(size: 11))
+                        .font(RosewoodType.caption)
                         .foregroundColor(themeColors.subduedText)
                         .labelStyle(.titleAndIcon)
                         .accessibilityLabel(branchName)
@@ -149,11 +169,10 @@ struct StatusBarView: View {
                 }
 
                 if let reviewLabel = projectViewModel.selectedGitChangeReviewLabel {
-                    Divider()
-                        .frame(height: 12)
+                    statusDivider
 
                     Label(reviewLabel, systemImage: "square.split.2x1")
-                        .font(.system(size: 11))
+                        .font(RosewoodType.caption)
                         .foregroundColor(themeColors.accent)
                         .labelStyle(.titleAndIcon)
                         .lineLimit(1)
@@ -161,70 +180,75 @@ struct StatusBarView: View {
                 }
 
                 if let lspStatusText {
-                    Divider()
-                        .frame(height: 12)
+                    statusDivider
 
                     Label(lspStatusText, systemImage: "network")
-                        .font(.system(size: 11))
+                        .font(RosewoodType.caption)
                         .foregroundColor(lspStatusColor)
                         .labelStyle(.titleAndIcon)
                 }
 
-                if projectViewModel.debugSessionState != .idle {
-                    Divider()
-                        .frame(height: 12)
+                if projectViewModel.sidebarMode == .search, !projectViewModel.projectSearchQuery.isEmpty {
+                    statusDivider
 
-                    Text(projectViewModel.debugSessionState.statusText)
-                        .font(.system(size: 11))
-                        .foregroundColor(themeColors.accent)
+                    statusText(searchResultsLabel)
+                        .accessibilityLabel(searchResultsLabel)
+                        .accessibilityIdentifier("statusbar-search-results")
                 }
 
                 if projectViewModel.currentTabDiagnosticCount.errors > 0
                     || projectViewModel.currentTabDiagnosticCount.warnings > 0
                     || projectViewModel.workspaceDiagnosticCount.errors > 0
                     || projectViewModel.workspaceDiagnosticCount.warnings > 0 {
-                    Divider()
-                        .frame(height: 12)
+                    statusDivider
 
                     diagnosticsToggle
                 }
 
+                if projectViewModel.debugSessionState != .idle {
+                    statusDivider
+
+                    statusText(projectViewModel.debugSessionState.statusText, color: themeColors.accent)
+                }
+
                 if let gitBlameText, !tab.isDirty {
-                    Divider()
-                        .frame(height: 12)
+                    statusDivider
 
                     Text(gitBlameText)
-                        .font(.system(size: 11))
+                        .font(RosewoodType.caption)
                         .foregroundColor(themeColors.mutedText)
                         .lineLimit(1)
                         .truncationMode(.middle)
                         .accessibilityIdentifier("statusbar-git-blame")
                 }
-
-                if projectViewModel.sidebarMode == .search, !projectViewModel.projectSearchQuery.isEmpty {
-                    Divider()
-                        .frame(height: 12)
-
-                    Text(searchResultsLabel)
-                        .font(.system(size: 11))
-                        .foregroundColor(themeColors.subduedText)
-                        .accessibilityLabel(searchResultsLabel)
-                        .accessibilityIdentifier("statusbar-search-results")
-                }
             } else {
-                Text("Rosewood")
-                    .font(.system(size: 11))
-                    .foregroundColor(themeColors.subduedText)
+                statusText("Rosewood")
 
                 Spacer()
 
-                if projectViewModel.debugSessionState != .idle {
-                    Text(projectViewModel.debugSessionState.statusText)
-                        .font(.system(size: 11))
-                        .foregroundColor(themeColors.accent)
+                if projectViewModel.sidebarMode == .search, !projectViewModel.projectSearchQuery.isEmpty {
+                    statusText(searchResultsLabel)
+                        .accessibilityLabel(searchResultsLabel)
+                        .accessibilityIdentifier("statusbar-search-results")
 
-                    Divider()
-                        .frame(height: 12)
+                    if projectViewModel.debugSessionState != .idle
+                        || projectViewModel.workspaceDiagnosticCount.errors > 0
+                        || projectViewModel.workspaceDiagnosticCount.warnings > 0
+                        || projectViewModel.gitRepositoryStatus.branchName != nil
+                        || projectViewModel.selectedGitChangeReviewLabel != nil {
+                        statusDivider
+                    }
+                }
+
+                if projectViewModel.debugSessionState != .idle {
+                    statusText(projectViewModel.debugSessionState.statusText, color: themeColors.accent)
+
+                    if projectViewModel.workspaceDiagnosticCount.errors > 0
+                        || projectViewModel.workspaceDiagnosticCount.warnings > 0
+                        || projectViewModel.gitRepositoryStatus.branchName != nil
+                        || projectViewModel.selectedGitChangeReviewLabel != nil {
+                        statusDivider
+                    }
                 }
 
                 if projectViewModel.workspaceDiagnosticCount.errors > 0
@@ -232,16 +256,14 @@ struct StatusBarView: View {
                     diagnosticsToggle
 
                     if projectViewModel.gitRepositoryStatus.branchName != nil
-                        || projectViewModel.selectedGitChangeReviewLabel != nil
-                        || projectViewModel.sidebarMode == .search && !projectViewModel.projectSearchQuery.isEmpty {
-                        Divider()
-                            .frame(height: 12)
+                        || projectViewModel.selectedGitChangeReviewLabel != nil {
+                        statusDivider
                     }
                 }
 
                 if let branchName = projectViewModel.gitRepositoryStatus.branchName {
                     Label(branchName, systemImage: "arrow.triangle.branch")
-                        .font(.system(size: 11))
+                        .font(RosewoodType.caption)
                         .foregroundColor(themeColors.subduedText)
                         .labelStyle(.titleAndIcon)
                         .accessibilityLabel(branchName)
@@ -249,39 +271,42 @@ struct StatusBarView: View {
                 }
 
                 if let reviewLabel = projectViewModel.selectedGitChangeReviewLabel {
-                    Divider()
-                        .frame(height: 12)
+                    statusDivider
 
                     Label(reviewLabel, systemImage: "square.split.2x1")
-                        .font(.system(size: 11))
+                        .font(RosewoodType.caption)
                         .foregroundColor(themeColors.accent)
                         .labelStyle(.titleAndIcon)
                         .lineLimit(1)
                         .accessibilityIdentifier("statusbar-git-review")
                 }
-
-                if projectViewModel.sidebarMode == .search, !projectViewModel.projectSearchQuery.isEmpty {
-                    if projectViewModel.gitRepositoryStatus.branchName != nil || projectViewModel.selectedGitChangeReviewLabel != nil {
-                        Divider()
-                            .frame(height: 12)
-                    }
-
-                    Text(searchResultsLabel)
-                        .font(.system(size: 11))
-                        .foregroundColor(themeColors.subduedText)
-                        .accessibilityLabel(searchResultsLabel)
-                        .accessibilityIdentifier("statusbar-search-results")
-                }
             }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 4)
-        .frame(height: 24)
+        .frame(height: RosewoodUI.statusBarHeight)
         .background(themeColors.gutterBackground)
         .overlay(alignment: .top) {
             Rectangle()
                 .fill(themeColors.border)
                 .frame(height: 1)
         }
+    }
+
+    private var statusDivider: some View {
+        ThemedDivider(Axis.vertical)
+            .frame(height: 12)
+    }
+
+    private func statusText(_ text: String, color: Color? = nil) -> some View {
+        Text(text)
+            .font(RosewoodType.caption)
+            .foregroundColor(color ?? themeColors.subduedText)
+    }
+
+    private func statusMonospaceText(_ text: String, color: Color? = nil) -> some View {
+        Text(text)
+            .font(RosewoodType.monoCaption)
+            .foregroundColor(color ?? themeColors.subduedText)
     }
 }

@@ -13,7 +13,7 @@ struct ThemeDefinition: Identifiable, Equatable {
 
     static let githubLight = ThemeDefinition(
         id: "github-light",
-        name: "GitHub Light",
+        name: "GitHub Light Default",
         highlightrTheme: "github"
     )
 

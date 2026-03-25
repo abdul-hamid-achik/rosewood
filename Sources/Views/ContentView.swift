@@ -3,6 +3,10 @@ import SwiftUI
 struct ContentView: View {
     @EnvironmentObject var projectViewModel: ProjectViewModel
     @EnvironmentObject private var configService: ConfigurationService
+    @EnvironmentObject private var commandDispatcher: AppCommandDispatcher
+
+    @State private var bottomPanelHeight: CGFloat = RosewoodUI.defaultBottomPanelHeight
+    @State private var bottomPanelResizeBaseline: CGFloat?
 
     private var themeColors: ThemeColors {
         configService.currentThemeColors
@@ -35,50 +39,47 @@ struct ContentView: View {
                     }
                 }
             }
-            .onReceive(NotificationCenter.default.publisher(for: .handleNewFile)) { _ in
-                projectViewModel.createNewFile()
+            .onReceive(commandDispatcher.publisher) { command in
+                handleAppCommand(command)
             }
-            .onReceive(NotificationCenter.default.publisher(for: .handleOpenFolder)) { _ in
-                projectViewModel.openFolder()
+    }
+
+    private func handleAppCommand(_ command: AppCommand) {
+        switch command {
+        case .newFile:
+            projectViewModel.createNewFile()
+        case .openFolder:
+            projectViewModel.openFolder()
+        case .save:
+            projectViewModel.saveCurrentFile()
+        case .quickOpen:
+            projectViewModel.toggleQuickOpen()
+        case .commandPalette:
+            projectViewModel.toggleCommandPalette()
+        case .toggleProblems:
+            guard projectViewModel.canShowProblemsPanel else { return }
+            projectViewModel.toggleDiagnosticsPanel()
+        case .closeTab:
+            if let index = projectViewModel.selectedTabIndex {
+                projectViewModel.closeTab(at: index)
             }
-            .onReceive(NotificationCenter.default.publisher(for: .handleSave)) { _ in
-                projectViewModel.saveCurrentFile()
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .handleQuickOpen)) { _ in
-                projectViewModel.toggleQuickOpen()
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .handleCommandPalette)) { _ in
-                projectViewModel.toggleCommandPalette()
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .handleToggleProblems)) { _ in
-                guard projectViewModel.canShowProblemsPanel else { return }
-                projectViewModel.toggleDiagnosticsPanel()
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .handleCloseTab)) { _ in
-                if let index = projectViewModel.selectedTabIndex {
-                    projectViewModel.closeTab(at: index)
-                }
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .handleProjectSearch)) { _ in
-                projectViewModel.showSearchSidebar()
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .handleGoToLine)) { _ in
-                projectViewModel.beginGoToLine()
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .handleFindNext)) { _ in
-                guard projectViewModel.canNavigateProjectSearchResults else { return }
-                projectViewModel.showNextProjectSearchResult()
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .handleFindPrevious)) { _ in
-                guard projectViewModel.canNavigateProjectSearchResults else { return }
-                projectViewModel.showPreviousProjectSearchResult()
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .handleNextProblem)) { _ in
-                projectViewModel.openNextProblem()
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .handlePreviousProblem)) { _ in
-                projectViewModel.openPreviousProblem()
-            }
+        case .projectSearch:
+            projectViewModel.showSearchSidebar()
+        case .goToLine:
+            projectViewModel.beginGoToLine()
+        case .findNext:
+            guard projectViewModel.canNavigateProjectSearchResults else { return }
+            projectViewModel.showNextProjectSearchResult()
+        case .findPrevious:
+            guard projectViewModel.canNavigateProjectSearchResults else { return }
+            projectViewModel.showPreviousProjectSearchResult()
+        case .nextProblem:
+            projectViewModel.openNextProblem()
+        case .previousProblem:
+            projectViewModel.openPreviousProblem()
+        case .settings, .findInFile, .useSelectionForFind, .showReplace, .goToDefinition, .findReferences:
+            break
+        }
     }
 
     private var shellView: some View {
@@ -86,17 +87,22 @@ struct ContentView: View {
             ToolbarView()
 
             HSplitView {
-                sidebarView
-                    .frame(minWidth: 200, idealWidth: 250, maxWidth: 400)
+                HStack(spacing: 0) {
+                    ActivitySidebarView()
+                        .frame(width: RosewoodUI.sidebarRailWidth)
+
+                    ThemedDivider(Axis.vertical)
+
+                    sidebarView
+                }
+                .frame(minWidth: 220, idealWidth: 280, maxWidth: 420)
 
                 VStack(spacing: 0) {
                     editorArea
                         .frame(minWidth: 400)
 
                     if let bottomPanel = projectViewModel.bottomPanel {
-                        Divider()
-                            .overlay(themeColors.border)
-                        bottomPanelView(bottomPanel)
+                        bottomPanelContainer(bottomPanel)
                     }
                 }
             }
@@ -115,8 +121,7 @@ struct ContentView: View {
         VStack(spacing: 0) {
             sidebarHeaderView
 
-            Divider()
-                .overlay(themeColors.border)
+            ThemedDivider()
 
             if projectViewModel.sidebarMode == .search {
                 SearchSidebarView()
@@ -135,17 +140,29 @@ struct ContentView: View {
 
     private var sidebarHeaderView: some View {
         HStack(spacing: 8) {
-            Picker("Sidebar", selection: $projectViewModel.sidebarMode) {
-                Text("Explorer").tag(ProjectViewModel.SidebarMode.explorer)
-                Text("Search").tag(ProjectViewModel.SidebarMode.search)
-                Text("Git").tag(ProjectViewModel.SidebarMode.sourceControl)
-                Text("Debug").tag(ProjectViewModel.SidebarMode.debug)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(sidebarTitle)
+                    .font(RosewoodType.subheadlineStrong)
+                    .foregroundColor(themeColors.foreground)
+
+                Text(sidebarSubtitle)
+                    .font(RosewoodType.caption)
+                    .foregroundColor(themeColors.mutedText)
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .accessibilityIdentifier("sidebar-mode-picker")
 
             if projectViewModel.sidebarMode == .explorer {
+                if projectViewModel.selectedTab?.filePath != nil {
+                    Button {
+                        projectViewModel.revealActiveFileInExplorer()
+                    } label: {
+                        Image(systemName: "scope")
+                            .font(.system(size: 12))
+                            .foregroundColor(themeColors.mutedText)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Reveal Active File")
+                }
+
                 Menu {
                     Button("New File") {
                         projectViewModel.showNewFileSheet = true
@@ -160,20 +177,62 @@ struct ContentView: View {
                 }
                 .menuStyle(.borderlessButton)
             }
+
+            if projectViewModel.sidebarMode == .sourceControl {
+                Button {
+                    projectViewModel.refreshGitState()
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(themeColors.mutedText)
+                }
+                .buttonStyle(.plain)
+            }
+
+            Spacer()
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .background(themeColors.panelBackground)
     }
 
+    private var sidebarTitle: String {
+        switch projectViewModel.sidebarMode {
+        case .explorer:
+            return "Explorer"
+        case .search:
+            return "Search"
+        case .sourceControl:
+            return "Source Control"
+        case .debug:
+            return "Run & Debug"
+        }
+    }
+
+    private var sidebarSubtitle: String {
+        switch projectViewModel.sidebarMode {
+        case .explorer:
+            if let rootDirectory = projectViewModel.rootDirectory {
+                return rootDirectory.lastPathComponent
+            }
+            return "Open a folder to browse files"
+        case .search:
+            return projectViewModel.projectSearchQuery.isEmpty ? "Find in the current workspace" : projectViewModel.projectSearchVisibilitySummary
+        case .sourceControl:
+            return projectViewModel.gitRepositoryStatus.branchName ?? "Review changes and commits"
+        case .debug:
+            return projectViewModel.selectedDebugConfigurationName ?? "Choose a configuration to start debugging"
+        }
+    }
+
     private var emptyStateView: some View {
         VStack(spacing: 12) {
             Spacer()
             Image(systemName: "folder.badge.plus")
-                .font(.system(size: 40))
+                .font(.system(size: 40, weight: .regular))
                 .foregroundColor(themeColors.mutedText)
             Text("No Folder Open")
-                .font(.system(size: 14, weight: .medium))
+                .font(RosewoodType.bodyStrong)
                 .foregroundColor(themeColors.subduedText)
             Button("Open Folder") {
                 projectViewModel.openFolder()
@@ -190,19 +249,46 @@ struct ContentView: View {
         VStack(spacing: 0) {
             if !projectViewModel.openTabs.isEmpty {
                 TabBarView()
-                Divider()
-                    .overlay(themeColors.border)
+                ThemedDivider()
             }
 
             if projectViewModel.isGitDiffWorkspaceVisible {
                 GitDiffPanelView(layoutStyle: .workspace)
             } else if let tab = projectViewModel.selectedTab {
+                editorChromeView
                 EditorView(tab: tab)
             } else {
                 emptyEditorView
             }
         }
         .background(themeColors.background)
+    }
+
+    @ViewBuilder
+    private var editorChromeView: some View {
+        if !projectViewModel.editorBreadcrumbs.isEmpty {
+            EditorBreadcrumbBar(segments: projectViewModel.editorBreadcrumbs) { line in
+                if let line {
+                    projectViewModel.jumpToLineInSelectedTab(line)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(themeColors.panelBackground)
+
+            if !projectViewModel.editorStickyScopes.isEmpty {
+                ThemedDivider()
+
+                EditorStickyScopeBar(scopes: projectViewModel.editorStickyScopes) { line in
+                    projectViewModel.jumpToLineInSelectedTab(line)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(themeColors.panelBackground)
+            }
+
+            ThemedDivider()
+        }
     }
 
     private var emptyEditorView: some View {
@@ -236,11 +322,132 @@ struct ContentView: View {
             GitDiffPanelView()
         }
     }
+
+    private func bottomPanelContainer(_ panel: ProjectViewModel.BottomPanelKind) -> some View {
+        VStack(spacing: 0) {
+            ThemedDivider()
+
+            ZStack {
+                Rectangle()
+                    .fill(themeColors.panelBackground)
+                    .frame(height: 8)
+
+                Capsule()
+                    .fill(themeColors.border.opacity(0.9))
+                    .frame(width: 44, height: 4)
+            }
+            .contentShape(Rectangle())
+            .gesture(bottomPanelResizeGesture)
+
+            bottomPanelView(panel)
+                .frame(height: bottomPanelHeight)
+        }
+        .background(themeColors.panelBackground)
+    }
+
+    private var bottomPanelResizeGesture: some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { value in
+                let baseline = bottomPanelResizeBaseline ?? bottomPanelHeight
+                if bottomPanelResizeBaseline == nil {
+                    bottomPanelResizeBaseline = bottomPanelHeight
+                }
+
+                bottomPanelHeight = min(max(baseline - value.translation.height, 140), 460)
+            }
+            .onEnded { _ in
+                bottomPanelResizeBaseline = nil
+            }
+    }
+}
+
+struct ActivitySidebarView: View {
+    @EnvironmentObject var projectViewModel: ProjectViewModel
+    @EnvironmentObject private var configService: ConfigurationService
+
+    private var themeColors: ThemeColors {
+        configService.currentThemeColors
+    }
+
+    var body: some View {
+        VStack(spacing: RosewoodUI.spacing2) {
+            activityButton(
+                mode: .explorer,
+                systemImage: "doc.on.doc",
+                label: "Explorer"
+            )
+
+            activityButton(
+                mode: .search,
+                systemImage: "magnifyingglass",
+                label: "Search"
+            )
+
+            activityButton(
+                mode: .sourceControl,
+                systemImage: "arrow.triangle.branch",
+                label: "Source Control",
+                badge: projectViewModel.gitRepositoryStatus.changedFiles.isEmpty ? nil : "\(projectViewModel.gitRepositoryStatus.changedFiles.count)"
+            )
+
+            activityButton(
+                mode: .debug,
+                systemImage: "play.square",
+                label: "Run & Debug",
+                badge: projectViewModel.workspaceDiagnosticCount.errors > 0 ? "!" : nil
+            )
+
+            Spacer()
+        }
+        .padding(.vertical, RosewoodUI.spacing4)
+        .background(themeColors.gutterBackground)
+    }
+
+    private func activityButton(
+        mode: ProjectViewModel.SidebarMode,
+        systemImage: String,
+        label: String,
+        badge: String? = nil
+    ) -> some View {
+        let isActive = projectViewModel.sidebarMode == mode
+
+        return Button {
+            projectViewModel.sidebarMode = mode
+        } label: {
+            ZStack(alignment: .topTrailing) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(isActive ? themeColors.accent : themeColors.mutedText)
+                    .frame(width: 34, height: 34)
+                    .background(isActive ? themeColors.selection : Color.clear)
+                    .clipShape(RoundedRectangle(cornerRadius: RosewoodUI.radiusSmall))
+
+                if let badge {
+                    Text(badge)
+                        .font(RosewoodType.micro)
+                        .foregroundColor(themeColors.background)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(themeColors.accentStrong)
+                        .clipShape(Capsule())
+                        .offset(x: 8, y: -6)
+                }
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.plain)
+        .help(label)
+        .accessibilityIdentifier("activity-sidebar-\(label.lowercased().replacingOccurrences(of: " ", with: "-"))")
+    }
 }
 
 struct SearchSidebarView: View {
     @EnvironmentObject var projectViewModel: ProjectViewModel
     @EnvironmentObject private var configService: ConfigurationService
+
+    @State private var showsFilterControls = true
+    @State private var showsReplaceControls = true
+    @FocusState private var isSearchFieldFocused: Bool
 
     private var themeColors: ThemeColors {
         configService.currentThemeColors
@@ -255,6 +462,7 @@ struct SearchSidebarView: View {
                             .foregroundColor(themeColors.mutedText)
 
                         TextField("Search in project", text: $projectViewModel.projectSearchQuery)
+                            .focused($isSearchFieldFocused)
                             .textFieldStyle(.plain)
                             .font(.system(size: 13))
                             .onSubmit {
@@ -311,74 +519,162 @@ struct SearchSidebarView: View {
                     Spacer()
                 }
 
-                HStack(spacing: 8) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "line.3.horizontal.decrease.circle")
-                            .foregroundColor(themeColors.mutedText)
+                DisclosureGroup(isExpanded: $showsFilterControls) {
+                    HStack(spacing: 8) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "line.3.horizontal.decrease.circle")
+                                .foregroundColor(themeColors.mutedText)
 
-                        TextField("Include glob", text: $projectViewModel.projectSearchIncludeGlob)
-                            .textFieldStyle(.plain)
-                            .font(.system(size: 12))
-                            .accessibilityIdentifier("project-search-include-glob")
-                    }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 8)
-                    .background(themeColors.elevatedBackground)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-
-                    HStack(spacing: 6) {
-                        Image(systemName: "line.3.horizontal.decrease.circle.fill")
-                            .foregroundColor(themeColors.mutedText)
-
-                        TextField("Exclude glob", text: $projectViewModel.projectSearchExcludeGlob)
-                            .textFieldStyle(.plain)
-                            .font(.system(size: 12))
-                            .accessibilityIdentifier("project-search-exclude-glob")
-                    }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 8)
-                    .background(themeColors.elevatedBackground)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                }
-
-                HStack(spacing: 8) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "arrow.triangle.2.circlepath")
-                            .foregroundColor(themeColors.mutedText)
-
-                        TextField("Replace with", text: $projectViewModel.projectReplaceQuery)
-                            .textFieldStyle(.plain)
-                            .font(.system(size: 13))
-                    }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 8)
-                    .background(themeColors.elevatedBackground)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-
-                    Button(projectViewModel.replaceAllProjectResultsTitle) {
-                        projectViewModel.replaceAllProjectResults()
-                    }
-                    .buttonStyle(.borderless)
-                    .foregroundColor(themeColors.warning)
-                    .disabled(!projectViewModel.canReplaceSelectedProjectSearchResults)
-                    .accessibilityIdentifier("project-search-replace-all")
-
-                    if projectViewModel.canUndoLastProjectReplace {
-                        Button(projectViewModel.undoLastProjectReplaceTitle) {
-                            projectViewModel.undoLastProjectReplace()
+                            TextField("Include glob", text: $projectViewModel.projectSearchIncludeGlob)
+                                .textFieldStyle(.plain)
+                                .font(.system(size: 12))
+                                .accessibilityIdentifier("project-search-include-glob")
                         }
-                        .buttonStyle(.borderless)
-                        .foregroundColor(themeColors.accent)
-                        .disabled(!projectViewModel.canUndoLastProjectReplace)
-                        .accessibilityIdentifier("project-replace-undo")
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 8)
+                        .background(themeColors.elevatedBackground)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                        HStack(spacing: 6) {
+                            Image(systemName: "line.3.horizontal.decrease.circle.fill")
+                                .foregroundColor(themeColors.mutedText)
+
+                            TextField("Exclude glob", text: $projectViewModel.projectSearchExcludeGlob)
+                                .textFieldStyle(.plain)
+                                .font(.system(size: 12))
+                                .accessibilityIdentifier("project-search-exclude-glob")
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 8)
+                        .background(themeColors.elevatedBackground)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
                     }
+                    .padding(.top, 8)
+                } label: {
+                    Label("Filters", systemImage: "line.3.horizontal.decrease.circle")
+                        .font(RosewoodType.captionStrong)
+                        .foregroundColor(themeColors.subduedText)
                 }
 
-                if projectViewModel.canReplaceProjectSearchResults {
-                    Text("\(projectViewModel.selectedProjectSearchMatchCount) selected in \(projectViewModel.selectedProjectSearchFileCount) file\(projectViewModel.selectedProjectSearchFileCount == 1 ? "" : "s")")
-                        .font(.system(size: 11))
-                        .foregroundColor(themeColors.mutedText)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                DisclosureGroup(isExpanded: $showsReplaceControls) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(spacing: 8) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "arrow.triangle.2.circlepath")
+                                    .foregroundColor(themeColors.mutedText)
+
+                                TextField("Replace with", text: $projectViewModel.projectReplaceQuery)
+                                    .textFieldStyle(.plain)
+                                    .font(.system(size: 13))
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 8)
+                            .background(themeColors.elevatedBackground)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                            Button(projectViewModel.replaceAllProjectResultsTitle) {
+                                projectViewModel.replaceAllProjectResults()
+                            }
+                            .buttonStyle(.borderless)
+                            .foregroundColor(themeColors.warning)
+                            .disabled(!projectViewModel.canReplaceSelectedProjectSearchResults)
+                            .accessibilityIdentifier("project-search-replace-all")
+
+                            if projectViewModel.canUndoLastProjectReplace {
+                                Button(projectViewModel.undoLastProjectReplaceTitle) {
+                                    projectViewModel.undoLastProjectReplace()
+                                }
+                                .buttonStyle(.borderless)
+                                .foregroundColor(themeColors.accent)
+                                .disabled(!projectViewModel.canUndoLastProjectReplace)
+                                .accessibilityIdentifier("project-replace-undo")
+                            }
+                        }
+
+                        if projectViewModel.canReplaceProjectSearchResults {
+                            Text("\(projectViewModel.selectedProjectSearchMatchCount) selected in \(projectViewModel.selectedProjectSearchFileCount) file\(projectViewModel.selectedProjectSearchFileCount == 1 ? "" : "s")")
+                                .font(.system(size: 11))
+                                .foregroundColor(themeColors.mutedText)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+
+                        if let projectReplacePreview = projectViewModel.projectReplacePreview {
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(projectReplacePreview.title)
+                                            .font(.system(size: 12, weight: .semibold))
+                                            .foregroundColor(themeColors.foreground)
+
+                                        Text(projectReplacePreview.summary)
+                                            .font(.system(size: 11))
+                                            .foregroundColor(themeColors.mutedText)
+                                    }
+                                    Spacer()
+                                }
+
+                                HStack(spacing: 8) {
+                                    Text("\"\(projectReplacePreview.searchQuery)\"")
+                                        .foregroundColor(themeColors.accent)
+                                    Image(systemName: "arrow.right")
+                                        .foregroundColor(themeColors.mutedText)
+                                    Text("\"\(projectReplacePreview.replacement)\"")
+                                        .foregroundColor(themeColors.success)
+                                }
+                                .font(.system(size: 11, design: .monospaced))
+
+                                VStack(alignment: .leading, spacing: 4) {
+                                    ForEach(projectReplacePreview.files.prefix(5)) { file in
+                                        HStack(spacing: 6) {
+                                            Text(file.fileName)
+                                                .font(.system(size: 11, weight: .medium))
+                                                .foregroundColor(themeColors.foreground)
+                                            Text(file.displayPath)
+                                                .font(.system(size: 11))
+                                                .foregroundColor(themeColors.mutedText)
+                                                .lineLimit(1)
+                                            Spacer()
+                                            Text("\(file.matchCount)")
+                                                .font(.system(size: 11, design: .monospaced))
+                                                .foregroundColor(themeColors.warning)
+                                        }
+                                    }
+
+                                    if projectReplacePreview.files.count > 5 {
+                                        Text("+\(projectReplacePreview.files.count - 5) more file\(projectReplacePreview.files.count - 5 == 1 ? "" : "s")")
+                                            .font(.system(size: 11))
+                                            .foregroundColor(themeColors.mutedText)
+                                    }
+                                }
+
+                                HStack(spacing: 8) {
+                                    Button("Cancel") {
+                                        projectViewModel.cancelProjectReplacePreview()
+                                    }
+                                    .buttonStyle(.borderless)
+                                    .foregroundColor(themeColors.mutedText)
+                                    .accessibilityIdentifier("project-replace-cancel")
+
+                                    Button("Apply Replace") {
+                                        projectViewModel.applyProjectReplacePreview()
+                                    }
+                                    .buttonStyle(.borderless)
+                                    .foregroundColor(themeColors.warning)
+                                    .disabled(!projectViewModel.canApplyProjectReplacePreview)
+                                    .accessibilityIdentifier("project-replace-apply")
+                                }
+                            }
+                            .padding(10)
+                            .background(themeColors.elevatedBackground)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                            .accessibilityIdentifier("project-replace-preview")
+                        }
+                    }
+                    .padding(.top, 8)
+                } label: {
+                    Label("Replace", systemImage: "arrow.triangle.2.circlepath")
+                        .font(RosewoodType.captionStrong)
+                        .foregroundColor(themeColors.subduedText)
                 }
 
                 if !projectViewModel.projectSearchResults.isEmpty {
@@ -413,77 +709,6 @@ struct SearchSidebarView: View {
                     }
                 }
 
-                if let projectReplacePreview = projectViewModel.projectReplacePreview {
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(projectReplacePreview.title)
-                                    .font(.system(size: 12, weight: .semibold))
-                                    .foregroundColor(themeColors.foreground)
-
-                                Text(projectReplacePreview.summary)
-                                    .font(.system(size: 11))
-                                    .foregroundColor(themeColors.mutedText)
-                            }
-                            Spacer()
-                        }
-
-                        HStack(spacing: 8) {
-                            Text("\"\(projectReplacePreview.searchQuery)\"")
-                                .foregroundColor(themeColors.accent)
-                            Image(systemName: "arrow.right")
-                                .foregroundColor(themeColors.mutedText)
-                            Text("\"\(projectReplacePreview.replacement)\"")
-                                .foregroundColor(themeColors.success)
-                        }
-                        .font(.system(size: 11, design: .monospaced))
-
-                        VStack(alignment: .leading, spacing: 4) {
-                            ForEach(projectReplacePreview.files.prefix(5)) { file in
-                                HStack(spacing: 6) {
-                                    Text(file.fileName)
-                                        .font(.system(size: 11, weight: .medium))
-                                        .foregroundColor(themeColors.foreground)
-                                    Text(file.displayPath)
-                                        .font(.system(size: 11))
-                                        .foregroundColor(themeColors.mutedText)
-                                        .lineLimit(1)
-                                    Spacer()
-                                    Text("\(file.matchCount)")
-                                        .font(.system(size: 11, design: .monospaced))
-                                        .foregroundColor(themeColors.warning)
-                                }
-                            }
-
-                            if projectReplacePreview.files.count > 5 {
-                                Text("+\(projectReplacePreview.files.count - 5) more file\(projectReplacePreview.files.count - 5 == 1 ? "" : "s")")
-                                    .font(.system(size: 11))
-                                    .foregroundColor(themeColors.mutedText)
-                            }
-                        }
-
-                        HStack(spacing: 8) {
-                            Button("Cancel") {
-                                projectViewModel.cancelProjectReplacePreview()
-                            }
-                            .buttonStyle(.borderless)
-                            .foregroundColor(themeColors.mutedText)
-                            .accessibilityIdentifier("project-replace-cancel")
-
-                            Button("Apply Replace") {
-                                projectViewModel.applyProjectReplacePreview()
-                            }
-                            .buttonStyle(.borderless)
-                            .foregroundColor(themeColors.warning)
-                            .disabled(!projectViewModel.canApplyProjectReplacePreview)
-                            .accessibilityIdentifier("project-replace-apply")
-                        }
-                    }
-                    .padding(10)
-                    .background(themeColors.elevatedBackground)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                    .accessibilityIdentifier("project-replace-preview")
-                }
             }
             .padding(12)
 
@@ -628,6 +853,14 @@ struct SearchSidebarView: View {
             }
         }
         .background(themeColors.panelBackground)
+        .onAppear {
+            if !projectViewModel.projectReplaceQuery.isEmpty || projectViewModel.projectReplacePreview != nil {
+                showsReplaceControls = true
+            }
+            DispatchQueue.main.async {
+                isSearchFieldFocused = true
+            }
+        }
         .onKeyPress { event in
             switch event.key {
             case .upArrow:
@@ -733,27 +966,54 @@ struct SearchSidebarView: View {
 }
 
 struct NewItemSheet: View {
+    @EnvironmentObject private var configService: ConfigurationService
     @Environment(\.dismiss) var dismiss
     let title: String
     let placeholder: String
     let onCreate: (String) -> Void
 
     @State private var name: String = ""
+    @FocusState private var isNameFieldFocused: Bool
+
+    private var themeColors: ThemeColors {
+        configService.currentThemeColors
+    }
 
     var body: some View {
-        VStack(spacing: 16) {
-            Text(title)
-                .font(.headline)
+        VStack(spacing: RosewoodUI.spacing6) {
+            HStack {
+                Text(title)
+                    .font(RosewoodType.title)
+                    .foregroundColor(themeColors.foreground)
+                Spacer()
+            }
 
-            TextField(placeholder, text: $name)
-                .textFieldStyle(.roundedBorder)
-                .frame(width: 250)
+            HStack(spacing: RosewoodUI.spacing3) {
+                Image(systemName: "square.and.pencil")
+                    .foregroundColor(themeColors.accent)
+
+                TextField(placeholder, text: $name)
+                    .focused($isNameFieldFocused)
+                    .textFieldStyle(.plain)
+                    .font(RosewoodType.body)
+                    .foregroundColor(themeColors.foreground)
+            }
+            .padding(.horizontal, RosewoodUI.spacing5)
+            .padding(.vertical, RosewoodUI.spacing4)
+            .background(themeColors.background)
+            .clipShape(RoundedRectangle(cornerRadius: RosewoodUI.radiusMedium))
+            .overlay(
+                RoundedRectangle(cornerRadius: RosewoodUI.radiusMedium)
+                    .stroke(themeColors.border.opacity(0.8), lineWidth: 1)
+            )
 
             HStack {
                 Button("Cancel") {
                     dismiss()
                 }
                 .keyboardShortcut(.cancelAction)
+
+                Spacer()
 
                 Button("Create") {
                     if !name.isEmpty {
@@ -763,34 +1023,74 @@ struct NewItemSheet: View {
                 }
                 .keyboardShortcut(.defaultAction)
                 .disabled(name.isEmpty)
+                .buttonStyle(.borderedProminent)
+                .tint(themeColors.accent)
             }
         }
-        .padding(20)
-        .frame(width: 320, height: 120)
+        .padding(RosewoodUI.spacing8)
+        .frame(width: 360)
+        .background(themeColors.panelBackground)
+        .onAppear {
+            DispatchQueue.main.async {
+                isNameFieldFocused = true
+            }
+        }
     }
 }
 
 struct RenameSheet: View {
+    @EnvironmentObject private var configService: ConfigurationService
     @Environment(\.dismiss) var dismiss
     let item: FileItem
     let onRename: (String) -> Void
 
     @State private var newName: String = ""
+    @FocusState private var isRenameFieldFocused: Bool
+
+    private var themeColors: ThemeColors {
+        configService.currentThemeColors
+    }
 
     var body: some View {
-        VStack(spacing: 16) {
-            Text("Rename")
-                .font(.headline)
+        VStack(spacing: RosewoodUI.spacing6) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Rename")
+                        .font(RosewoodType.title)
+                        .foregroundColor(themeColors.foreground)
+                    Text(item.name)
+                        .font(RosewoodType.caption)
+                        .foregroundColor(themeColors.mutedText)
+                }
+                Spacer()
+            }
 
-            TextField("New name", text: $newName)
-                .textFieldStyle(.roundedBorder)
-                .frame(width: 250)
+            HStack(spacing: RosewoodUI.spacing3) {
+                Image(systemName: "pencil")
+                    .foregroundColor(themeColors.accent)
+
+                TextField("New name", text: $newName)
+                    .focused($isRenameFieldFocused)
+                    .textFieldStyle(.plain)
+                    .font(RosewoodType.body)
+                    .foregroundColor(themeColors.foreground)
+            }
+            .padding(.horizontal, RosewoodUI.spacing5)
+            .padding(.vertical, RosewoodUI.spacing4)
+            .background(themeColors.background)
+            .clipShape(RoundedRectangle(cornerRadius: RosewoodUI.radiusMedium))
+            .overlay(
+                RoundedRectangle(cornerRadius: RosewoodUI.radiusMedium)
+                    .stroke(themeColors.border.opacity(0.8), lineWidth: 1)
+            )
 
             HStack {
                 Button("Cancel") {
                     dismiss()
                 }
                 .keyboardShortcut(.cancelAction)
+
+                Spacer()
 
                 Button("Rename") {
                     if !newName.isEmpty {
@@ -800,12 +1100,18 @@ struct RenameSheet: View {
                 }
                 .keyboardShortcut(.defaultAction)
                 .disabled(newName.isEmpty)
+                .buttonStyle(.borderedProminent)
+                .tint(themeColors.accent)
             }
         }
-        .padding(20)
-        .frame(width: 320, height: 120)
+        .padding(RosewoodUI.spacing8)
+        .frame(width: 360)
+        .background(themeColors.panelBackground)
         .onAppear {
             newName = item.name
+            DispatchQueue.main.async {
+                isRenameFieldFocused = true
+            }
         }
     }
 }

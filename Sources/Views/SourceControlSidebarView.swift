@@ -12,8 +12,7 @@ struct SourceControlSidebarView: View {
         VStack(spacing: 0) {
             headerView
 
-            Divider()
-                .overlay(themeColors.border)
+            ThemedDivider()
 
             contentView
         }

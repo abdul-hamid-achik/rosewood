@@ -12,8 +12,7 @@ struct ReferencesPanelView: View {
         VStack(spacing: 0) {
             headerView
 
-            Divider()
-                .overlay(themeColors.border)
+            ThemedDivider()
 
             if projectViewModel.referenceResults.isEmpty {
                 emptyStateView
@@ -59,7 +58,6 @@ struct ReferencesPanelView: View {
                 }
             }
         }
-        .frame(minHeight: 150, idealHeight: 180, maxHeight: 240)
         .background(themeColors.panelBackground)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("references-panel")
@@ -68,12 +66,12 @@ struct ReferencesPanelView: View {
     private var headerView: some View {
         HStack {
             Text("References")
-                .font(.system(size: 12, weight: .semibold))
+                .font(RosewoodType.subheadlineStrong)
                 .foregroundColor(themeColors.subduedText)
                 .accessibilityIdentifier("references-panel-title")
 
             Text("\(projectViewModel.referenceResults.count)")
-                .font(.system(size: 11, design: .monospaced))
+                .font(RosewoodType.monoCaption)
                 .foregroundColor(themeColors.mutedText)
 
             Spacer()
@@ -100,7 +98,7 @@ struct ReferencesPanelView: View {
                 .font(.system(size: 22))
                 .foregroundColor(themeColors.accent)
             Text("No references found.")
-                .font(.system(size: 12))
+                .font(RosewoodType.subheadline)
                 .foregroundColor(themeColors.subduedText)
             Spacer()
         }

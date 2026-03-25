@@ -139,6 +139,7 @@ struct EditorSupportTests {
             for: "(",
             selectedRange: NSRange(location: 4, length: 0),
             affectedRange: NSRange(location: 4, length: 0),
+            tabSize: 4,
             in: "func" as NSString
         )
 
@@ -151,6 +152,7 @@ struct EditorSupportTests {
             for: ")",
             selectedRange: NSRange(location: 1, length: 0),
             affectedRange: NSRange(location: 1, length: 0),
+            tabSize: 4,
             in: "()" as NSString
         )
 
@@ -158,15 +160,16 @@ struct EditorSupportTests {
     }
 
     @Test
-    func editorInputHandlerConvertsTabToSpaces() {
+    func editorInputHandlerConvertsTabToConfiguredSpaces() {
         let outcome = EditorInputHandler.outcome(
             for: "\t",
             selectedRange: NSRange(location: 0, length: 0),
             affectedRange: NSRange(location: 0, length: 0),
+            tabSize: 2,
             in: "" as NSString
         )
 
-        #expect(outcome == EditorInputOutcome(replacementText: "    ", selectedLocation: 4))
+        #expect(outcome == EditorInputOutcome(replacementText: "  ", selectedLocation: 2))
     }
 
     @Test
@@ -293,6 +296,7 @@ struct EditorSupportTests {
         let container = EditorContainerView(
             themeColors: .nord,
             font: NSFont.monospacedSystemFont(ofSize: 13, weight: .regular),
+            showMinimap: true,
             showLineNumbers: true,
             wordWrap: false
         )

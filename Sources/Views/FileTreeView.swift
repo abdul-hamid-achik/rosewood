@@ -111,8 +111,13 @@ private struct FileTreeRow: View {
         }
         .padding(.leading, CGFloat(depth) * 14 + 10)
         .padding(.trailing, 10)
-        .frame(height: 22)
+        .frame(height: 24)
         .background(rowBackground)
+        .overlay(alignment: .leading) {
+            Rectangle()
+                .fill(isSelected ? themeColors.accent : Color.clear)
+                .frame(width: 3)
+        }
         .opacity(isIgnored && !isSelected ? 0.58 : 1)
         .contentShape(Rectangle())
         .onTapGesture {
@@ -194,7 +199,7 @@ private struct FileTreeRow: View {
 
     private var rowBackground: Color {
         if isSelected {
-            return themeColors.accentStrong
+            return themeColors.rowSelection
         }
 
         if isHovering {

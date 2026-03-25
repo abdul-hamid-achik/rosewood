@@ -37,6 +37,41 @@ struct FileServiceTests {
     }
 
     @Test
+    func readDocumentCapturesEncodingAndLineEndings() throws {
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("txt")
+        let text = "alpha\r\nbeta\r\n"
+
+        try text.write(to: fileURL, atomically: true, encoding: .utf16)
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+
+        let document = try FileService.shared.readDocument(at: fileURL)
+
+        #expect(document.content == text)
+        #expect(document.metadata.encoding == .utf16)
+        #expect(document.metadata.lineEnding == .crlf)
+    }
+
+    @Test
+    func writeDocumentPreservesRequestedLineEndings() throws {
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("swift")
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+
+        try FileService.shared.writeDocument(
+            content: "let alpha = 1\nlet beta = 2\n",
+            metadata: FileDocumentMetadata(encoding: .utf8, lineEnding: .crlf),
+            to: fileURL
+        )
+
+        let rawContents = try String(contentsOf: fileURL, encoding: .utf8)
+        #expect(rawContents.contains("\r\n"))
+        #expect(!rawContents.contains("\nlet beta") || rawContents.contains("\r\nlet beta"))
+    }
+
+    @Test
     func loadDirectorySortsDirectoriesBeforeFilesRecursively() throws {
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

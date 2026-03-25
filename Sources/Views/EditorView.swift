@@ -1,9 +1,11 @@
 import AppKit
 import SwiftUI
+import Combine
 
 struct EditorView: View {
     @EnvironmentObject var projectViewModel: ProjectViewModel
     @EnvironmentObject private var configService: ConfigurationService
+    @EnvironmentObject private var commandDispatcher: AppCommandDispatcher
     @ObservedObject private var lspService = LSPService.shared
     let tab: EditorTab
 
@@ -16,7 +18,9 @@ struct EditorView: View {
             fontSize: configService.settings.editor.fontSize,
             fontFamily: configService.settings.editor.fontFamily,
             themeName: configService.currentThemeDefinition.id,
+            tabSize: configService.settings.editor.tabSize,
             showLineNumbers: configService.settings.editor.showLineNumbers,
+            showMinimap: configService.settings.editor.showMinimap,
             wordWrap: configService.settings.editor.wordWrap
         )
     }
@@ -32,6 +36,8 @@ struct EditorView: View {
                 }
             ),
             language: tab.language,
+            editorFont: configService.font,
+            commandDispatcher: commandDispatcher,
             pendingLineJump: Binding(
                 get: { projectViewModel.selectedTab?.pendingLineJump },
                 set: { newValue in
@@ -43,7 +49,9 @@ struct EditorView: View {
                 }
             ),
             themeColors: themeColors,
+            tabSize: configService.settings.editor.tabSize,
             showLineNumbers: configService.settings.editor.showLineNumbers,
+            showMinimap: configService.settings.editor.showMinimap,
             wordWrap: configService.settings.editor.wordWrap,
             diagnostics: projectViewModel.currentTabDiagnostics,
             breakpointLines: projectViewModel.currentTabBreakpointLines,
@@ -57,6 +65,11 @@ struct EditorView: View {
             onCursorChange: { line, column in
                 DispatchQueue.main.async {
                     projectViewModel.updateCursorPosition(line: line, column: column)
+                }
+            },
+            onViewportChange: { startLine, endLine in
+                DispatchQueue.main.async {
+                    projectViewModel.updateEditorVisibleLineRange(startLine: startLine, endLine: endLine)
                 }
             },
             onToggleBreakpoint: { line in
@@ -90,16 +103,22 @@ private struct ConfigIdentity: Hashable {
     let fontSize: CGFloat
     let fontFamily: String
     let themeName: String
+    let tabSize: Int
     let showLineNumbers: Bool
+    let showMinimap: Bool
     let wordWrap: Bool
 }
 
 private struct CodeEditorRepresentable: NSViewRepresentable {
     @Binding var text: String
     let language: String
+    let editorFont: NSFont
+    let commandDispatcher: AppCommandDispatcher
     @Binding var pendingLineJump: Int?
     let themeColors: ThemeColors
+    let tabSize: Int
     let showLineNumbers: Bool
+    let showMinimap: Bool
     let wordWrap: Bool
     let diagnostics: [LSPDiagnostic]
     let breakpointLines: Set<Int>
@@ -111,11 +130,11 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
     let documentURI: String?
     let lspService: LSPServiceProtocol?
     let onCursorChange: (Int, Int) -> Void
+    let onViewportChange: (Int, Int) -> Void
     let onToggleBreakpoint: (Int) -> Void
     let onNavigateToDefinition: ((URL, Int) -> Void)?
     let onShowReferences: (([LSPLocation]) -> Void)?
     let onRevealInFinder: ((URL) -> Void)?
-    @EnvironmentObject private var configService: ConfigurationService
 
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
@@ -124,17 +143,26 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
     func makeNSView(context: Context) -> EditorContainerView {
         let containerView = EditorContainerView(
             themeColors: themeColors,
-            font: configService.font,
+            font: editorFont,
+            showMinimap: showMinimap,
             showLineNumbers: showLineNumbers,
             wordWrap: wordWrap
         )
+        containerView.onViewportChange = onViewportChange
         context.coordinator.attach(to: containerView)
         return containerView
     }
 
     func updateNSView(_ nsView: EditorContainerView, context: Context) {
         context.coordinator.parent = self
-        nsView.applyTheme(themeColors, font: configService.font, showLineNumbers: showLineNumbers, wordWrap: wordWrap)
+        nsView.applyTheme(
+            themeColors,
+            font: editorFont,
+            showMinimap: showMinimap,
+            showLineNumbers: showLineNumbers,
+            wordWrap: wordWrap
+        )
+        nsView.onViewportChange = onViewportChange
         nsView.lineNumberView.breakpointLines = breakpointLines
         nsView.lineNumberView.currentExecutionLine = executionLine
         nsView.lineNumberView.onToggleBreakpoint = onToggleBreakpoint
@@ -158,13 +186,7 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
         private var currentFoldSnapshot = FoldedTextSnapshot.identity
         private var pendingSourceSelection: NSRange?
         private var mouseMonitor: Any?
-        private var findInFileObserver: NSObjectProtocol?
-        private var findNextObserver: NSObjectProtocol?
-        private var findPreviousObserver: NSObjectProtocol?
-        private var useSelectionForFindObserver: NSObjectProtocol?
-        private var showReplaceObserver: NSObjectProtocol?
-        private var goToDefinitionObserver: NSObjectProtocol?
-        private var findReferencesObserver: NSObjectProtocol?
+        private var commandCancellables: Set<AnyCancellable> = []
 
         init(parent: CodeEditorRepresentable) {
             self.parent = parent
@@ -178,27 +200,6 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
             if let mouseMonitor {
                 NSEvent.removeMonitor(mouseMonitor)
             }
-            if let findInFileObserver {
-                NotificationCenter.default.removeObserver(findInFileObserver)
-            }
-            if let findNextObserver {
-                NotificationCenter.default.removeObserver(findNextObserver)
-            }
-            if let findPreviousObserver {
-                NotificationCenter.default.removeObserver(findPreviousObserver)
-            }
-            if let useSelectionForFindObserver {
-                NotificationCenter.default.removeObserver(useSelectionForFindObserver)
-            }
-            if let showReplaceObserver {
-                NotificationCenter.default.removeObserver(showReplaceObserver)
-            }
-            if let goToDefinitionObserver {
-                NotificationCenter.default.removeObserver(goToDefinitionObserver)
-            }
-            if let findReferencesObserver {
-                NotificationCenter.default.removeObserver(findReferencesObserver)
-            }
             completionTask?.cancel()
             hoverTask?.cancel()
             referencesTask?.cancel()
@@ -208,13 +209,12 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
             self.containerView = containerView
             containerView.configure(delegate: self)
             containerView.textView.menuDelegate = self
+            applyPopupTheme()
             containerView.onLayout = { [weak self] in
                 self?.containerViewDidLayout()
             }
             setupMouseMonitor()
-            setupFindObservers()
-            setupGoToDefinitionObserver()
-            setupFindReferencesObserver()
+            setupCommandObservers()
         }
 
         func containerViewDidLayout() {
@@ -224,6 +224,7 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
 
         func applyExternalState(text: String, language: String) {
             guard let containerView else { return }
+            applyPopupTheme()
             let textView = containerView.textView
             if parent.pendingLineJump != nil {
                 foldedStartLines.removeAll()
@@ -275,6 +276,11 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
 
             refreshEditorDecorations(in: textView)
             updateCursorPosition(in: textView)
+        }
+
+        private func applyPopupTheme() {
+            completionPopup.applyTheme(parent.themeColors, font: parent.editorFont)
+            hoverPopup.applyTheme(parent.themeColors, font: parent.editorFont)
         }
 
         func textDidChange(_ notification: Notification) {
@@ -339,6 +345,7 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
                     for: replacementString,
                     selectedRange: textView.selectedRange(),
                     affectedRange: affectedCharRange,
+                    tabSize: parent.tabSize,
                     in: textView.string as NSString
                   ) else {
                 return true
@@ -362,6 +369,7 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
                 for: replacementString,
                 selectedRange: affectedCharRange,
                 affectedRange: affectedCharRange,
+                tabSize: parent.tabSize,
                 in: textView.string as NSString
             ) {
                 isApplyingExternalUpdate = true
@@ -595,68 +603,33 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
             }
         }
 
-        private func setupFindObservers() {
-            findInFileObserver = NotificationCenter.default.addObserver(
-                forName: .handleFindInFile,
-                object: nil,
-                queue: .main
-            ) { [weak self] _ in
-                self?.performTextFinderAction(.showFindInterface)
-            }
-
-            findNextObserver = NotificationCenter.default.addObserver(
-                forName: .handleFindNext,
-                object: nil,
-                queue: .main
-            ) { [weak self] _ in
-                guard self?.parent.prefersProjectSearchNavigation != true else { return }
-                self?.performTextFinderAction(.nextMatch)
-            }
-
-            findPreviousObserver = NotificationCenter.default.addObserver(
-                forName: .handleFindPrevious,
-                object: nil,
-                queue: .main
-            ) { [weak self] _ in
-                guard self?.parent.prefersProjectSearchNavigation != true else { return }
-                self?.performTextFinderAction(.previousMatch)
-            }
-
-            useSelectionForFindObserver = NotificationCenter.default.addObserver(
-                forName: .handleUseSelectionForFind,
-                object: nil,
-                queue: .main
-            ) { [weak self] _ in
-                self?.performTextFinderAction(.setSearchString)
-            }
-
-            showReplaceObserver = NotificationCenter.default.addObserver(
-                forName: .handleShowReplace,
-                object: nil,
-                queue: .main
-            ) { [weak self] _ in
-                self?.performTextFinderAction(.showReplaceInterface)
-            }
-        }
-
-        private func setupGoToDefinitionObserver() {
-            goToDefinitionObserver = NotificationCenter.default.addObserver(
-                forName: .handleGoToDefinition,
-                object: nil,
-                queue: .main
-            ) { [weak self] _ in
-                self?.handleGoToDefinitionFromCursor()
-            }
-        }
-
-        private func setupFindReferencesObserver() {
-            findReferencesObserver = NotificationCenter.default.addObserver(
-                forName: .handleFindReferences,
-                object: nil,
-                queue: .main
-            ) { [weak self] _ in
-                self?.handleFindReferencesFromCursor()
-            }
+        private func setupCommandObservers() {
+            parent.commandDispatcher.publisher
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] command in
+                    guard let self else { return }
+                    switch command {
+                    case .findInFile:
+                        performTextFinderAction(.showFindInterface)
+                    case .findNext:
+                        guard parent.prefersProjectSearchNavigation != true else { return }
+                        performTextFinderAction(.nextMatch)
+                    case .findPrevious:
+                        guard parent.prefersProjectSearchNavigation != true else { return }
+                        performTextFinderAction(.previousMatch)
+                    case .useSelectionForFind:
+                        performTextFinderAction(.setSearchString)
+                    case .showReplace:
+                        performTextFinderAction(.showReplaceInterface)
+                    case .goToDefinition:
+                        handleGoToDefinitionFromCursor()
+                    case .findReferences:
+                        handleFindReferencesFromCursor()
+                    default:
+                        break
+                    }
+                }
+                .store(in: &commandCancellables)
         }
 
         private func handleMouseEvent(_ event: NSEvent) -> NSEvent? {
@@ -1055,13 +1028,17 @@ final class EditorContainerView: NSView {
     fileprivate let lineNumberView: LineNumberRulerView
     fileprivate let minimapView: EditorMinimapView
     var onLayout: (() -> Void)?
+    var onViewportChange: ((Int, Int) -> Void)?
     var editorFont: NSFont
+    var showMinimap: Bool
     var showLineNumbers: Bool
     var wordWrap: Bool
     private var currentDisplayText = ""
+    private let minimapWidthConstraint: NSLayoutConstraint
 
-    init(themeColors: ThemeColors, font: NSFont, showLineNumbers: Bool, wordWrap: Bool) {
+    init(themeColors: ThemeColors, font: NSFont, showMinimap: Bool, showLineNumbers: Bool, wordWrap: Bool) {
         self.editorFont = font
+        self.showMinimap = showMinimap
         self.showLineNumbers = showLineNumbers
         self.wordWrap = wordWrap
         // Build an explicit TextKit 1 stack to avoid TextKit 2 rendering issues
@@ -1083,6 +1060,7 @@ final class EditorContainerView: NSView {
         scrollView = NSScrollView(frame: .zero)
         lineNumberView = LineNumberRulerView(textView: textView, themeColors: themeColors)
         minimapView = EditorMinimapView(scrollView: scrollView, themeColors: themeColors)
+        minimapWidthConstraint = minimapView.widthAnchor.constraint(equalToConstant: 96)
 
         super.init(frame: .zero)
 
@@ -1135,10 +1113,16 @@ final class EditorContainerView: NSView {
             minimapView.trailingAnchor.constraint(equalTo: trailingAnchor),
             minimapView.topAnchor.constraint(equalTo: topAnchor),
             minimapView.bottomAnchor.constraint(equalTo: bottomAnchor),
-            minimapView.widthAnchor.constraint(equalToConstant: 96)
+            minimapWidthConstraint
         ])
 
-        applyTheme(themeColors, font: editorFont, showLineNumbers: showLineNumbers, wordWrap: wordWrap)
+        applyTheme(
+            themeColors,
+            font: editorFont,
+            showMinimap: showMinimap,
+            showLineNumbers: showLineNumbers,
+            wordWrap: wordWrap
+        )
 
         NotificationCenter.default.addObserver(
             self,
@@ -1161,8 +1145,9 @@ final class EditorContainerView: NSView {
         textView.delegate = delegate
     }
 
-    func applyTheme(_ themeColors: ThemeColors, font: NSFont, showLineNumbers: Bool, wordWrap: Bool) {
+    func applyTheme(_ themeColors: ThemeColors, font: NSFont, showMinimap: Bool, showLineNumbers: Bool, wordWrap: Bool) {
         self.editorFont = font
+        self.showMinimap = showMinimap
         self.showLineNumbers = showLineNumbers
         self.wordWrap = wordWrap
         scrollView.backgroundColor = themeColors.nsBackground
@@ -1180,6 +1165,8 @@ final class EditorContainerView: NSView {
         lineNumberView.editorFont = editorFont
         lineNumberView.needsDisplay = true
         minimapView.themeColors = themeColors
+        minimapView.isHidden = !showMinimap
+        minimapWidthConstraint.constant = showMinimap ? 96 : 0
         minimapView.needsDisplay = true
         scrollView.hasVerticalRuler = showLineNumbers
         scrollView.rulersVisible = showLineNumbers
@@ -1205,7 +1192,8 @@ final class EditorContainerView: NSView {
         let highlighted = HighlightService.shared.highlightedAttributedString(
             text,
             language: language,
-            themeColors: themeColors
+            themeColors: themeColors,
+            font: editorFont
         )
 
         guard let textStorage = textView.textStorage else { return }
@@ -1293,6 +1281,7 @@ final class EditorContainerView: NSView {
             documentHeight: textView.bounds.height
         )
         minimapView.apply(snapshot: snapshot)
+        onViewportChange?(snapshot.visibleStartLine, snapshot.visibleEndLine)
     }
 }
 
@@ -2118,12 +2107,15 @@ enum EditorInputHandler {
         for replacementString: String,
         selectedRange: NSRange,
         affectedRange: NSRange,
+        tabSize: Int,
         in text: NSString
     ) -> EditorInputOutcome? {
         if replacementString == "\t" {
+            let normalizedTabSize = max(tabSize, 1)
+            let spaces = String(repeating: " ", count: normalizedTabSize)
             return EditorInputOutcome(
-                replacementText: "    ",
-                selectedLocation: affectedRange.location + 4
+                replacementText: spaces,
+                selectedLocation: affectedRange.location + normalizedTabSize
             )
         }
 

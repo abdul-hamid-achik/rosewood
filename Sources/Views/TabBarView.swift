@@ -27,7 +27,7 @@ struct TabBarView: View {
                 }
             }
         }
-        .frame(height: 36)
+        .frame(height: RosewoodUI.rowHeightRegular)
         .background(themeColors.panelBackground)
     }
 }
@@ -47,7 +47,7 @@ struct TabItemView: View {
     }
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 8) {
             Image(systemName: tab.filePath != nil ? iconForFile(tab.fileName) : "doc")
                 .font(.system(size: 12))
                 .foregroundColor(isSelected ? themeColors.accent : themeColors.mutedText)
@@ -57,9 +57,9 @@ struct TabItemView: View {
                 .foregroundColor(isSelected ? themeColors.foreground : themeColors.subduedText)
 
             if tab.isDirty {
-                Circle()
-                    .fill(themeColors.warning)
-                    .frame(width: 6, height: 6)
+                Image(systemName: "circle.fill")
+                    .font(.system(size: 7))
+                    .foregroundColor(themeColors.warning)
             }
 
             if isHovering || isSelected {
@@ -79,10 +79,15 @@ struct TabItemView: View {
         }
         .padding(.leading, 8)
         .padding(.trailing, 4)
-        .frame(height: 36)
+        .frame(height: RosewoodUI.rowHeightRegular)
         .background(
-            isSelected ? themeColors.background : (isHovering ? themeColors.hoverBackground.opacity(0.25) : Color.clear)
+            isSelected ? themeColors.background : (isHovering ? themeColors.hoverBackground.opacity(0.28) : themeColors.panelBackground)
         )
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(isSelected ? themeColors.accent : themeColors.border.opacity(0.35))
+                .frame(height: isSelected ? 2 : 1)
+        }
         .contentShape(Rectangle())
         .onTapGesture {
             onSelect()
@@ -131,6 +136,7 @@ struct TabItemView: View {
                 }
             }
         }
+        .help(tab.fileName)
     }
 
     private func iconForFile(_ name: String) -> String {

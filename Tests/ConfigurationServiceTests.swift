@@ -174,7 +174,7 @@ struct ConfigurationServiceTests {
     }
 
     @Test
-    func syntaxHighlightThemeRemainsNordAcrossUiThemeChanges() {
+    func syntaxHighlightThemeFollowsSelectedTheme() {
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let userConfigURL = rootURL.appendingPathComponent("user.toml")
@@ -188,7 +188,26 @@ struct ConfigurationServiceTests {
         service.updateSettings(updated)
 
         #expect(service.currentThemeDefinition.id == "dracula")
-        #expect(HighlightService.shared.currentHighlightrThemeName == HighlightService.defaultHighlightrThemeName)
+        #expect(HighlightService.shared.currentHighlightrThemeName == ThemeDefinition.dracula.highlightrTheme)
+    }
+
+    @Test
+    func configuredFontUsesRequestedFamilyWhenAvailable() {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let userConfigURL = rootURL.appendingPathComponent("user.toml")
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let service = ConfigurationService(userConfigURL: userConfigURL)
+        service.load()
+
+        var updated = service.settings
+        updated.editor.fontFamily = "Menlo"
+        updated.editor.fontSize = 15
+        service.updateSettings(updated)
+
+        #expect(service.font.pointSize == 15)
+        #expect(service.font.fontName.localizedCaseInsensitiveContains("Menlo"))
     }
 }
 
@@ -199,6 +218,7 @@ private func configuration(fontSize: Double, autoSaveDelay: Double, autoSaveEnab
     fontFamily = "SF Mono"
     tabSize = 4
     showLineNumbers = true
+    showMinimap = true
     wordWrap = false
     autoSaveDelay = \(autoSaveDelay)
     autoSaveEnabled = \(autoSaveEnabled ? "true" : "false")
