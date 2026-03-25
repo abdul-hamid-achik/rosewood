@@ -213,11 +213,12 @@ struct ContentView: View {
         switch projectViewModel.sidebarMode {
         case .explorer:
             if let rootDirectory = projectViewModel.rootDirectory {
-                return rootDirectory.lastPathComponent
+                return projectViewModel.showHiddenFiles ? "\(rootDirectory.lastPathComponent) • hidden visible" : rootDirectory.lastPathComponent
             }
             return "Open a folder to browse files"
         case .search:
-            return projectViewModel.projectSearchQuery.isEmpty ? "Find in the current workspace" : projectViewModel.projectSearchVisibilitySummary
+            let baseText = projectViewModel.projectSearchQuery.isEmpty ? "Find in the current workspace" : projectViewModel.projectSearchVisibilitySummary
+            return projectViewModel.showHiddenFiles ? "\(baseText) • hidden on" : baseText
         case .sourceControl:
             return projectViewModel.gitRepositoryStatus.isRepository ? "Review local changes" : "Review changes and commits"
         case .debug:
@@ -555,6 +556,32 @@ struct SearchSidebarView: View {
                         .padding(.vertical, 8)
                         .background(themeColors.elevatedBackground)
                         .clipShape(RoundedRectangle(cornerRadius: 8))
+                    }
+                    HStack(spacing: 8) {
+                        Button {
+                            projectViewModel.toggleShowHiddenFiles()
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: projectViewModel.showHiddenFiles ? "eye" : "eye.slash")
+                                Text(projectViewModel.showHiddenFiles ? "Hidden On" : "Hidden Off")
+                            }
+                            .font(RosewoodType.captionStrong)
+                            .foregroundColor(projectViewModel.showHiddenFiles ? themeColors.accentStrong : themeColors.subduedText)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 7)
+                            .background(
+                                Capsule()
+                                    .fill(projectViewModel.showHiddenFiles ? themeColors.selection : themeColors.hoverBackground.opacity(0.4))
+                            )
+                            .overlay(
+                                Capsule()
+                                    .stroke(projectViewModel.showHiddenFiles ? themeColors.accent.opacity(0.45) : themeColors.border.opacity(0.35), lineWidth: 1)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("project-search-hidden-files")
+
+                        Spacer()
                     }
                     .padding(.top, 8)
                 } label: {

@@ -385,6 +385,10 @@ final class ProjectViewModel: ObservableObject {
         debugStoppedFilePath != nil && debugStoppedLine != nil
     }
 
+    var canOpenCurrentDebugStopLocation: Bool {
+        hasCurrentDebugStopLocation
+    }
+
     var isDebugPanelVisible: Bool {
         bottomPanel == .debugConsole
     }
@@ -2724,6 +2728,11 @@ final class ProjectViewModel: ObservableObject {
         selectTab(at: selectedTabIndex)
     }
 
+    func openGitChangedFileInEditor(_ changedFile: GitChangedFile) {
+        openGitChangedFile(changedFile)
+        openSelectedGitChangeInEditor()
+    }
+
     func revealSelectedGitChangeInExplorer() {
         guard selectedGitChangedFile != nil else { return }
         sidebarMode = .explorer
@@ -2731,6 +2740,10 @@ final class ProjectViewModel: ObservableObject {
 
     func stageSelectedGitChange() {
         guard let changedFile = selectedGitChangedFile else { return }
+        stageGitChange(changedFile)
+    }
+
+    func stageGitChange(_ changedFile: GitChangedFile) {
         runGitMutation(
             task: { [gitService, rootDirectory] in
                 await gitService.stage(changedFile: changedFile, projectRoot: rootDirectory)
@@ -2740,6 +2753,10 @@ final class ProjectViewModel: ObservableObject {
 
     func unstageSelectedGitChange() {
         guard let changedFile = selectedGitChangedFile else { return }
+        unstageGitChange(changedFile)
+    }
+
+    func unstageGitChange(_ changedFile: GitChangedFile) {
         runGitMutation(
             task: { [gitService, rootDirectory] in
                 await gitService.unstage(changedFile: changedFile, projectRoot: rootDirectory)
@@ -2749,6 +2766,10 @@ final class ProjectViewModel: ObservableObject {
 
     func discardSelectedGitChange() {
         guard let changedFile = selectedGitChangedFile else { return }
+        discardGitChange(changedFile)
+    }
+
+    func discardGitChange(_ changedFile: GitChangedFile) {
 
         let title = changedFile.kind == .untracked ? "Discard New File?" : "Discard Working Tree Changes?"
         let message = changedFile.kind == .untracked

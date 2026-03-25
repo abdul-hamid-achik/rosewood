@@ -199,7 +199,9 @@ private struct SourceControlChangeRowView: View {
                             .foregroundColor(themeColors.foreground)
                             .lineLimit(1)
 
-                        stateBadge
+                        if !showInlineActions {
+                            stateBadge
+                        }
                     }
 
                     if let parentPath, !parentPath.isEmpty {
@@ -219,10 +221,14 @@ private struct SourceControlChangeRowView: View {
 
                 Spacer(minLength: 0)
 
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundColor(themeColors.mutedText.opacity(isSelected || isHovering ? 0.9 : 0.45))
-                    .padding(.top, 2)
+                if showInlineActions {
+                    inlineActions
+                } else {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundColor(themeColors.mutedText.opacity(isSelected || isHovering ? 0.9 : 0.45))
+                        .padding(.top, 2)
+                }
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 9)
@@ -273,6 +279,74 @@ private struct SourceControlChangeRowView: View {
         case .untracked:
             return themeColors.accent
         }
+    }
+
+    private var showInlineActions: Bool {
+        isHovering || isSelected
+    }
+
+    @ViewBuilder
+    private var inlineActions: some View {
+        HStack(spacing: 6) {
+            quickActionButton(
+                title: "Open In Editor",
+                systemImage: "doc.text",
+                tint: themeColors.accent
+            ) {
+                projectViewModel.openGitChangedFileInEditor(changedFile)
+            }
+
+            if changedFile.canStage {
+                quickActionButton(
+                    title: "Stage Change",
+                    systemImage: "square.and.arrow.down",
+                    tint: themeColors.success
+                ) {
+                    projectViewModel.stageGitChange(changedFile)
+                }
+            }
+
+            if changedFile.canUnstage {
+                quickActionButton(
+                    title: "Unstage Change",
+                    systemImage: "arrow.uturn.backward",
+                    tint: themeColors.warning
+                ) {
+                    projectViewModel.unstageGitChange(changedFile)
+                }
+            }
+
+            if changedFile.canDiscard {
+                quickActionButton(
+                    title: changedFile.kind == .untracked ? "Delete File" : "Discard Changes",
+                    systemImage: changedFile.kind == .untracked ? "trash" : "arrow.counterclockwise",
+                    tint: themeColors.danger
+                ) {
+                    projectViewModel.discardGitChange(changedFile)
+                }
+            }
+        }
+        .padding(.top, 1)
+    }
+
+    private func quickActionButton(
+        title: String,
+        systemImage: String,
+        tint: Color,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundColor(tint)
+                .frame(width: 20, height: 20)
+                .background(
+                    RoundedRectangle(cornerRadius: 7)
+                        .fill(tint.opacity(0.12))
+                )
+        }
+        .buttonStyle(.plain)
+        .help(title)
     }
 
     private var rowBackground: some View {

@@ -61,6 +61,10 @@ struct StatusBarView: View {
         configService.settings.editor.wordWrap ? "Wrap On" : "Wrap Off"
     }
 
+    private var shouldShowGitMetadata: Bool {
+        projectViewModel.sidebarMode != .sourceControl && !projectViewModel.isGitDiffWorkspaceVisible
+    }
+
     @ViewBuilder
     private var diagnosticsToggle: some View {
         let diagCount = projectViewModel.currentTabDiagnosticCount
@@ -153,7 +157,8 @@ struct StatusBarView: View {
 
                 statusText(tab.language.capitalized)
 
-                if let branchName = projectViewModel.gitRepositoryStatus.branchName {
+                if shouldShowGitMetadata,
+                   let branchName = projectViewModel.gitRepositoryStatus.branchName {
                     statusDivider
 
                     Label(branchName, systemImage: "arrow.triangle.branch")
@@ -164,7 +169,8 @@ struct StatusBarView: View {
                         .accessibilityIdentifier("statusbar-git-branch")
                 }
 
-                if let reviewLabel = projectViewModel.selectedGitChangeReviewLabel {
+                if shouldShowGitMetadata,
+                   let reviewLabel = projectViewModel.selectedGitChangeReviewLabel {
                     statusDivider
 
                     Label(reviewLabel, systemImage: "square.split.2x1")
@@ -217,8 +223,8 @@ struct StatusBarView: View {
 
                     if projectViewModel.workspaceDiagnosticCount.errors > 0
                         || projectViewModel.workspaceDiagnosticCount.warnings > 0
-                        || projectViewModel.gitRepositoryStatus.branchName != nil
-                        || projectViewModel.selectedGitChangeReviewLabel != nil {
+                        || (shouldShowGitMetadata && projectViewModel.gitRepositoryStatus.branchName != nil)
+                        || (shouldShowGitMetadata && projectViewModel.selectedGitChangeReviewLabel != nil) {
                         statusDivider
                     }
                 }
@@ -227,13 +233,15 @@ struct StatusBarView: View {
                     || projectViewModel.workspaceDiagnosticCount.warnings > 0 {
                     diagnosticsToggle
 
-                    if projectViewModel.gitRepositoryStatus.branchName != nil
-                        || projectViewModel.selectedGitChangeReviewLabel != nil {
+                    if shouldShowGitMetadata,
+                       (projectViewModel.gitRepositoryStatus.branchName != nil
+                        || projectViewModel.selectedGitChangeReviewLabel != nil) {
                         statusDivider
                     }
                 }
 
-                if let branchName = projectViewModel.gitRepositoryStatus.branchName {
+                if shouldShowGitMetadata,
+                   let branchName = projectViewModel.gitRepositoryStatus.branchName {
                     Label(branchName, systemImage: "arrow.triangle.branch")
                         .font(RosewoodType.caption)
                         .foregroundColor(themeColors.subduedText)
@@ -242,7 +250,8 @@ struct StatusBarView: View {
                         .accessibilityIdentifier("statusbar-git-branch")
                 }
 
-                if let reviewLabel = projectViewModel.selectedGitChangeReviewLabel {
+                if shouldShowGitMetadata,
+                   let reviewLabel = projectViewModel.selectedGitChangeReviewLabel {
                     statusDivider
 
                     Label(reviewLabel, systemImage: "square.split.2x1")

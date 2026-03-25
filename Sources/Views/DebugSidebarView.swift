@@ -55,10 +55,39 @@ struct DebugSidebarView: View {
             .buttonStyle(.borderless)
             .foregroundColor(themeColors.accent)
 
+            if projectViewModel.canOpenCurrentDebugStopLocation {
+                Button("Open Stop Location") {
+                    projectViewModel.openCurrentDebugStopLocation()
+                }
+                .buttonStyle(.borderless)
+                .foregroundColor(themeColors.warning)
+            }
+
             if let helperText = debugSessionHelperText {
                 Text(helperText)
                     .font(.system(size: 11))
                     .foregroundColor(themeColors.mutedText)
+            }
+
+            if let latestConsoleEntry = projectViewModel.debugConsoleEntries.last {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 8) {
+                        Text(latestConsoleEntry.kind.rawValue.uppercased())
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundColor(color(for: latestConsoleEntry.kind))
+
+                        Text(latestConsoleEntry.timestamp.formatted(date: .omitted, time: .shortened))
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundColor(themeColors.mutedText)
+                    }
+
+                    Text(latestConsoleEntry.message)
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundColor(themeColors.subduedText)
+                        .lineLimit(2)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, 4)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -183,6 +212,19 @@ struct DebugSidebarView: View {
         Text(title)
             .font(.system(size: 12, weight: .semibold))
             .foregroundColor(themeColors.subduedText)
+    }
+
+    private func color(for kind: DebugConsoleEntry.Kind) -> Color {
+        switch kind {
+        case .info:
+            return themeColors.accent
+        case .success:
+            return themeColors.success
+        case .warning:
+            return themeColors.warning
+        case .error:
+            return themeColors.danger
+        }
     }
 
     private var debugSessionSummary: String {

@@ -730,7 +730,6 @@ final class RosewoodUITests: XCTestCase {
         let revealButton = app.descendants(matching: .any).matching(identifier: "git-diff-reveal-explorer").firstMatch
         let editorButton = app.descendants(matching: .any).matching(identifier: "git-diff-open-editor").firstMatch
         let hunkLabel = app.descendants(matching: .any).matching(identifier: "git-diff-hunk-label").firstMatch
-        let reviewLabel = app.descendants(matching: .any).matching(identifier: "statusbar-git-review").firstMatch
         XCTAssertTrue(diffWorkspace.waitForExistence(timeout: 5))
         XCTAssertTrue(splitView.waitForExistence(timeout: 5))
         XCTAssertTrue(beforeColumn.exists)
@@ -740,7 +739,6 @@ final class RosewoodUITests: XCTestCase {
         XCTAssertTrue(revealButton.exists)
         XCTAssertTrue(editorButton.exists)
         XCTAssertTrue(hunkLabel.exists)
-        XCTAssertTrue(reviewLabel.exists)
 
         revealButton.click()
 

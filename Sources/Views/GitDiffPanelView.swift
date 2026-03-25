@@ -80,18 +80,11 @@ struct GitDiffPanelView: View {
                         .padding(.top, 1)
 
                     VStack(alignment: .leading, spacing: 3) {
-                        HStack(alignment: .firstTextBaseline, spacing: 8) {
-                            Text(diffTitle)
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundColor(themeColors.foreground)
-                                .lineLimit(1)
-                                .accessibilityIdentifier("git-diff-panel-title")
-
-                            if let changedFile = selectedChangedFile {
-                                changeBadge(changedFile.kind.displayName, tint: badgeColor(for: changedFile.kind))
-                                changeBadge(changedFile.stateSummary, tint: stateBadgeColor(for: changedFile))
-                            }
-                        }
+                        Text(diffTitle)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(themeColors.foreground)
+                            .lineLimit(1)
+                            .accessibilityIdentifier("git-diff-panel-title")
 
                         Text(diffDirectory)
                             .font(.system(size: 11))
@@ -657,44 +650,6 @@ struct GitDiffPanelView: View {
         default:
             return themeColors.foreground
         }
-    }
-
-    private func badgeColor(for kind: GitChangeKind) -> Color {
-        switch kind {
-        case .modified:
-            return themeColors.warning
-        case .added, .copied:
-            return themeColors.success
-        case .deleted, .conflicted:
-            return themeColors.danger
-        case .renamed, .untracked:
-            return themeColors.accent
-        }
-    }
-
-    private func stateBadgeColor(for changedFile: GitChangedFile) -> Color {
-        switch changedFile.section {
-        case .conflicted:
-            return themeColors.danger
-        case .staged:
-            return themeColors.success
-        case .changes:
-            return themeColors.warning
-        case .untracked:
-            return themeColors.accent
-        }
-    }
-
-    private func changeBadge(_ text: String, tint: Color) -> some View {
-        Text(text)
-            .font(.system(size: 10, weight: .semibold))
-            .foregroundColor(tint)
-            .padding(.horizontal, 7)
-            .padding(.vertical, 4)
-            .background(
-                Capsule()
-                    .fill(tint.opacity(0.12))
-            )
     }
 
     private func highlightedDiffText(text: String?, counterpart: String?, kind: GitDiffLineKind) -> Text {
