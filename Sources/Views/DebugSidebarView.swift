@@ -22,11 +22,17 @@ struct DebugSidebarView: View {
 
     private var sessionSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            sectionTitle("Debugger")
+            sectionTitle("Session")
 
-            Text(projectViewModel.debugSessionState.statusText)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundColor(themeColors.foreground)
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(projectViewModel.debugSessionState == .idle ? themeColors.mutedText : themeColors.accent)
+                    .frame(width: 8, height: 8)
+
+                Text(debugSessionSummary)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(themeColors.foreground)
+            }
 
             HStack(spacing: 8) {
                 Button(projectViewModel.debugPrimaryActionTitle) {
@@ -36,7 +42,7 @@ struct DebugSidebarView: View {
                 .tint(themeColors.accentStrong)
                 .disabled(!projectViewModel.canStartDebugging)
 
-                Button("Reset") {
+                Button("Stop") {
                     projectViewModel.stopDebugging()
                 }
                 .buttonStyle(.bordered)
@@ -48,6 +54,12 @@ struct DebugSidebarView: View {
             }
             .buttonStyle(.borderless)
             .foregroundColor(themeColors.accent)
+
+            if let helperText = debugSessionHelperText {
+                Text(helperText)
+                    .font(.system(size: 11))
+                    .foregroundColor(themeColors.mutedText)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
@@ -69,7 +81,7 @@ struct DebugSidebarView: View {
                     .foregroundColor(themeColors.danger)
             } else if projectViewModel.debugConfigurations.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("No debug configurations were found in `.rosewood.toml`.")
+                    Text("Add a launch config to `.rosewood.toml` to run or attach here.")
                         .font(.system(size: 12))
                         .foregroundColor(themeColors.subduedText)
 
@@ -171,6 +183,32 @@ struct DebugSidebarView: View {
         Text(title)
             .font(.system(size: 12, weight: .semibold))
             .foregroundColor(themeColors.subduedText)
+    }
+
+    private var debugSessionSummary: String {
+        if projectViewModel.debugSessionState != .idle {
+            return projectViewModel.debugSessionState.statusText
+        }
+
+        if let selectedDebugConfigurationName = projectViewModel.selectedDebugConfigurationName {
+            return selectedDebugConfigurationName
+        }
+
+        return "Not Configured"
+    }
+
+    private var debugSessionHelperText: String? {
+        guard projectViewModel.debugSessionState == .idle else { return nil }
+
+        if projectViewModel.rootDirectory == nil {
+            return "Open a folder to enable launch configurations and breakpoints."
+        }
+
+        if projectViewModel.debugConfigurations.isEmpty {
+            return "Create a `.rosewood.toml` file to define a launch configuration."
+        }
+
+        return "Start the selected configuration or inspect breakpoints below."
     }
 
     private func debugMetadata(label: String, value: String) -> some View {

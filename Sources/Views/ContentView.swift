@@ -84,8 +84,6 @@ struct ContentView: View {
 
     private var shellView: some View {
         VStack(spacing: 0) {
-            ToolbarView()
-
             HSplitView {
                 HStack(spacing: 0) {
                     ActivitySidebarView()
@@ -179,23 +177,16 @@ struct ContentView: View {
                     Button("New Folder") {
                         projectViewModel.showNewFolderSheet = true
                     }
+                    Divider()
+                    Button(projectViewModel.showHiddenFiles ? "Hide Hidden Files" : "Show Hidden Files") {
+                        projectViewModel.toggleShowHiddenFiles()
+                    }
                 } label: {
                     Image(systemName: "ellipsis.circle")
                         .font(.system(size: 12))
                         .foregroundColor(themeColors.mutedText)
                 }
                 .menuStyle(.borderlessButton)
-            }
-
-            if projectViewModel.sidebarMode == .sourceControl {
-                Button {
-                    projectViewModel.refreshGitState()
-                } label: {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(themeColors.mutedText)
-                }
-                .buttonStyle(.plain)
             }
 
             Spacer()
@@ -228,9 +219,15 @@ struct ContentView: View {
         case .search:
             return projectViewModel.projectSearchQuery.isEmpty ? "Find in the current workspace" : projectViewModel.projectSearchVisibilitySummary
         case .sourceControl:
-            return projectViewModel.gitRepositoryStatus.branchName ?? "Review changes and commits"
+            return projectViewModel.gitRepositoryStatus.isRepository ? "Review local changes" : "Review changes and commits"
         case .debug:
-            return projectViewModel.selectedDebugConfigurationName ?? "Choose a configuration to start debugging"
+            if projectViewModel.debugSessionState != .idle {
+                return projectViewModel.debugSessionState.statusText
+            }
+            if let selectedDebugConfigurationName = projectViewModel.selectedDebugConfigurationName {
+                return "Ready: \(selectedDebugConfigurationName)"
+            }
+            return "Set up launch configs and breakpoints"
         }
     }
 
@@ -466,7 +463,7 @@ struct SearchSidebarView: View {
         VStack(spacing: 0) {
             VStack(spacing: 8) {
                 HStack(spacing: 8) {
-                    HStack(spacing: 6) {
+                    HStack(spacing: 8) {
                         Image(systemName: "magnifyingglass")
                             .foregroundColor(themeColors.mutedText)
 
@@ -496,36 +493,37 @@ struct SearchSidebarView: View {
                                     return .ignored
                                 }
                             }
+
+                        Spacer(minLength: 0)
+
+                        searchModeToggle(
+                            label: "Aa",
+                            isOn: projectViewModel.projectSearchCaseSensitive,
+                            accessibilityIdentifier: "project-search-case-sensitive"
+                        ) {
+                            projectViewModel.projectSearchCaseSensitive.toggle()
+                        }
+
+                        searchModeToggle(
+                            label: "W",
+                            isOn: projectViewModel.projectSearchWholeWord,
+                            accessibilityIdentifier: "project-search-whole-word"
+                        ) {
+                            projectViewModel.projectSearchWholeWord.toggle()
+                        }
+
+                        searchModeToggle(
+                            label: ".*",
+                            isOn: projectViewModel.projectSearchUseRegex,
+                            accessibilityIdentifier: "project-search-regex"
+                        ) {
+                            projectViewModel.projectSearchUseRegex.toggle()
+                        }
                     }
                     .padding(.horizontal, 10)
                     .padding(.vertical, 8)
                     .background(themeColors.elevatedBackground)
                     .clipShape(RoundedRectangle(cornerRadius: 8))
-
-                    Button("Find") {
-                        projectViewModel.performProjectSearch()
-                    }
-                    .buttonStyle(.borderless)
-                    .foregroundColor(themeColors.accent)
-                }
-
-                HStack(spacing: 8) {
-                    Toggle("Case", isOn: $projectViewModel.projectSearchCaseSensitive)
-                        .toggleStyle(.button)
-                        .controlSize(.small)
-                        .accessibilityIdentifier("project-search-case-sensitive")
-
-                    Toggle("Word", isOn: $projectViewModel.projectSearchWholeWord)
-                        .toggleStyle(.button)
-                        .controlSize(.small)
-                        .accessibilityIdentifier("project-search-whole-word")
-
-                    Toggle("Regex", isOn: $projectViewModel.projectSearchUseRegex)
-                        .toggleStyle(.button)
-                        .controlSize(.small)
-                        .accessibilityIdentifier("project-search-regex")
-
-                    Spacer()
                 }
 
                 DisclosureGroup(isExpanded: $showsFilterControls) {
@@ -688,9 +686,10 @@ struct SearchSidebarView: View {
 
                 if !projectViewModel.projectSearchResults.isEmpty {
                     Text(projectViewModel.projectSearchVisibilitySummary)
-                        .font(.system(size: 11))
-                        .foregroundColor(themeColors.mutedText)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .font(.system(size: 1))
+                        .foregroundColor(.clear)
+                        .opacity(0.01)
+                        .frame(height: 1)
                         .accessibilityIdentifier("project-search-visible-summary")
 
                     HStack(spacing: 8) {
@@ -916,6 +915,31 @@ struct SearchSidebarView: View {
             baseColor: themeColors.subduedText,
             highlightColor: themeColors.success
         )
+    }
+
+    private func searchModeToggle(
+        label: String,
+        isOn: Bool,
+        accessibilityIdentifier: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Text(label)
+                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .foregroundColor(isOn ? themeColors.accentStrong : themeColors.subduedText)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 4)
+                .background(
+                    Capsule()
+                        .fill(isOn ? themeColors.selection : themeColors.hoverBackground.opacity(0.45))
+                )
+                .overlay(
+                    Capsule()
+                        .stroke(isOn ? themeColors.accent.opacity(0.45) : themeColors.border.opacity(0.35), lineWidth: 1)
+                )
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(accessibilityIdentifier)
     }
 
     private func highlightedLineText(for result: ProjectSearchResult) -> Text {

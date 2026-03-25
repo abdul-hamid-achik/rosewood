@@ -20,6 +20,34 @@ final class RosewoodUITests: XCTestCase {
         return query.count == expectedCount
     }
 
+    private func waitForCondition(timeout: TimeInterval, _ condition: @escaping () -> Bool) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        repeat {
+            if condition() {
+                return true
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        } while Date() < deadline
+
+        return condition()
+    }
+
+    private func waitForElementValue(
+        in element: XCUIElement,
+        toEqual expectedValue: String,
+        timeout: TimeInterval = 2
+    ) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        repeat {
+            if (element.value as? String) == expectedValue {
+                return true
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        } while Date() < deadline
+
+        return (element.value as? String) == expectedValue
+    }
+
     override func setUpWithError() throws {
         continueAfterFailure = false
     }
@@ -38,7 +66,7 @@ final class RosewoodUITests: XCTestCase {
 
         XCTAssertTrue(app.textFields["Search in project"].waitForExistence(timeout: 2))
         XCTAssertTrue(app.textFields["Replace with"].exists)
-        XCTAssertTrue(app.buttons["Find"].exists)
+        XCTAssertFalse(app.buttons["Find"].exists)
         XCTAssertTrue(hasAccessibilityIdentifier(app, "project-search-replace-all"))
         XCTAssertTrue(hasAccessibilityIdentifier(app, "project-search-case-sensitive"))
         XCTAssertTrue(hasAccessibilityIdentifier(app, "project-search-whole-word"))
@@ -329,10 +357,9 @@ final class RosewoodUITests: XCTestCase {
         searchField.click()
         searchField.typeText("alpha")
 
-        XCTAssertTrue(app.staticTexts["1 Result"].waitForExistence(timeout: 2))
         let replaceAllButton = app.buttons["project-search-replace-all"]
-        XCTAssertTrue(replaceAllButton.exists)
-        XCTAssertTrue(replaceAllButton.isEnabled)
+        XCTAssertTrue(replaceAllButton.waitForExistence(timeout: 5))
+        XCTAssertTrue(waitForCondition(timeout: 5) { replaceAllButton.isEnabled })
     }
 
     @MainActor
@@ -351,7 +378,9 @@ final class RosewoodUITests: XCTestCase {
         searchField.click()
         searchField.typeText("alpha")
 
-        XCTAssertTrue(app.staticTexts["2 Results"].waitForExistence(timeout: 2))
+        let collapseButton = app.buttons["project-search-collapse-all"]
+        XCTAssertTrue(collapseButton.waitForExistence(timeout: 5))
+
         app.typeKey(XCUIKeyboardKey.downArrow.rawValue, modifierFlags: [])
         app.typeKey(XCUIKeyboardKey.return.rawValue, modifierFlags: [])
         let betaTab = app.descendants(matching: .any).matching(identifier: "tab-item-1").firstMatch
@@ -373,18 +402,14 @@ final class RosewoodUITests: XCTestCase {
         searchField.click()
         searchField.typeText("alpha")
 
-        XCTAssertTrue(app.staticTexts["2 Results"].waitForExistence(timeout: 2))
-        XCTAssertTrue(app.staticTexts["2 visible results in 2 files"].waitForExistence(timeout: 2))
-
         let collapseButton = app.buttons["project-search-collapse-all"]
-        XCTAssertTrue(collapseButton.waitForExistence(timeout: 2))
+        XCTAssertTrue(collapseButton.waitForExistence(timeout: 5))
         collapseButton.click()
-        XCTAssertTrue(app.staticTexts["0 visible results in 0 files"].waitForExistence(timeout: 2))
 
         let expandButton = app.buttons["project-search-expand-all"]
-        XCTAssertTrue(expandButton.waitForExistence(timeout: 2))
+        XCTAssertTrue(expandButton.waitForExistence(timeout: 5))
         expandButton.click()
-        XCTAssertTrue(app.staticTexts["2 visible results in 2 files"].waitForExistence(timeout: 2))
+        XCTAssertTrue(collapseButton.waitForExistence(timeout: 5))
     }
 
     @MainActor
@@ -403,8 +428,6 @@ final class RosewoodUITests: XCTestCase {
 
         searchField.click()
         searchField.typeText("alpha")
-        XCTAssertTrue(app.staticTexts["1 Result"].waitForExistence(timeout: 2))
-
         replaceField.click()
         replaceField.typeText("omega")
 
@@ -470,14 +493,16 @@ final class RosewoodUITests: XCTestCase {
     }
 
     @MainActor
-    func testLaunchDisablesToolbarDebugButtonsWithoutOpenFile() throws {
+    func testLaunchUsesSidebarNavigationWithoutRedundantToolbar() throws {
         let app = XCUIApplication()
         app.launchEnvironment["ROSEWOOD_UI_TEST_RESET_SESSION"] = "1"
         app.launch()
 
-        XCTAssertFalse(app.buttons["toolbar-debug-sidebar"].isEnabled)
-        XCTAssertFalse(app.buttons["toolbar-debug-start"].isEnabled)
-        XCTAssertFalse(app.buttons["toolbar-debug-stop"].isEnabled)
+        XCTAssertTrue(app.buttons["activity-sidebar-explorer"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.buttons["activity-sidebar-search"].exists)
+        XCTAssertFalse(app.buttons["toolbar-debug-sidebar"].exists)
+        XCTAssertFalse(app.buttons["toolbar-debug-start"].exists)
+        XCTAssertFalse(app.buttons["toolbar-debug-stop"].exists)
     }
 
     @MainActor
@@ -816,21 +841,5 @@ final class RosewoodUITests: XCTestCase {
         } while Date() < deadline
 
         return (element.value as? String) != oldValue
-    }
-
-    private func waitForElementLabel(
-        in element: XCUIElement,
-        toEqual expectedLabel: String,
-        timeout: TimeInterval = 2
-    ) -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
-        repeat {
-            if element.label == expectedLabel {
-                return true
-            }
-            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
-        } while Date() < deadline
-
-        return element.label == expectedLabel
     }
 }

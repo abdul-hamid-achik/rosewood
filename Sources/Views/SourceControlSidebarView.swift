@@ -25,11 +25,11 @@ struct SourceControlSidebarView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
                 Label(projectViewModel.gitRepositoryStatus.branchName ?? "No Repository", systemImage: "arrow.triangle.branch")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundColor(themeColors.foreground)
-                .labelStyle(.titleAndIcon)
-                .accessibilityLabel(projectViewModel.gitRepositoryStatus.branchName ?? "No Repository")
-                .accessibilityIdentifier("git-branch-label")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(themeColors.foreground)
+                    .labelStyle(.titleAndIcon)
+                    .accessibilityLabel(projectViewModel.gitRepositoryStatus.branchName ?? "No Repository")
+                    .accessibilityIdentifier("git-branch-label")
 
                 Spacer()
 
@@ -46,14 +46,10 @@ struct SourceControlSidebarView: View {
             }
 
             if projectViewModel.gitRepositoryStatus.isRepository {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("\(projectViewModel.gitRepositoryStatus.changedFiles.count) local change\(projectViewModel.gitRepositoryStatus.changedFiles.count == 1 ? "" : "s")")
-                        .font(.system(size: 11))
-                        .foregroundColor(themeColors.mutedText)
-
-                    headerSummary
-                        .accessibilityIdentifier("git-change-summary")
-                }
+                Text(changeSummaryText)
+                    .font(.system(size: 11))
+                    .foregroundColor(themeColors.mutedText)
+                    .accessibilityIdentifier("git-change-summary")
             } else if projectViewModel.rootDirectory != nil {
                 Text("Git is available when the open folder is a repository.")
                     .font(.system(size: 11))
@@ -64,24 +60,14 @@ struct SourceControlSidebarView: View {
         .padding(.vertical, 10)
     }
 
-    @ViewBuilder
-    private var headerSummary: some View {
+    private var changeSummaryText: String {
         let status = projectViewModel.gitRepositoryStatus
 
-        HStack(spacing: 6) {
-            if status.conflictedCount > 0 {
-                summaryChip(title: "Conflicts", count: status.conflictedCount, tint: themeColors.danger)
-            }
-            if status.stagedCount > 0 {
-                summaryChip(title: "Staged", count: status.stagedCount, tint: themeColors.success)
-            }
-            if status.unstagedCount > 0 {
-                summaryChip(title: "Changes", count: status.unstagedCount, tint: themeColors.warning)
-            }
-            if status.untrackedCount > 0 {
-                summaryChip(title: "Untracked", count: status.untrackedCount, tint: themeColors.accent)
-            }
+        if status.changedFiles.isEmpty {
+            return "Working tree clean"
         }
+
+        return "\(status.changedFiles.count) changed file\(status.changedFiles.count == 1 ? "" : "s")"
     }
 
     @ViewBuilder
@@ -125,22 +111,6 @@ struct SourceControlSidebarView: View {
                 .padding(12)
             }
         }
-    }
-
-    private func summaryChip(title: String, count: Int, tint: Color) -> some View {
-        HStack(spacing: 4) {
-            Text(title)
-            Text("\(count)")
-                .fontWeight(.bold)
-        }
-        .font(.system(size: 10, weight: .medium))
-        .foregroundColor(tint)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 5)
-        .background(
-            Capsule()
-                .fill(tint.opacity(0.12))
-        )
     }
 }
 

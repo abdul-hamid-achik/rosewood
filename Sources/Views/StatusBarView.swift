@@ -53,11 +53,6 @@ struct StatusBarView: View {
         return "\(blame.shortCommitHash) \(blame.author): \(blame.summary)"
     }
 
-    private var searchResultsLabel: String {
-        let count = projectViewModel.projectSearchMatchCount
-        return "\(count) Result\(count == 1 ? "" : "s")"
-    }
-
     private var indentLabel: String {
         "Spaces: \(configService.settings.editor.tabSize)"
     }
@@ -189,14 +184,6 @@ struct StatusBarView: View {
                         .labelStyle(.titleAndIcon)
                 }
 
-                if projectViewModel.sidebarMode == .search, !projectViewModel.projectSearchQuery.isEmpty {
-                    statusDivider
-
-                    statusText(searchResultsLabel)
-                        .accessibilityLabel(searchResultsLabel)
-                        .accessibilityIdentifier("statusbar-search-results")
-                }
-
                 if projectViewModel.currentTabDiagnosticCount.errors > 0
                     || projectViewModel.currentTabDiagnosticCount.warnings > 0
                     || projectViewModel.workspaceDiagnosticCount.errors > 0
@@ -223,23 +210,7 @@ struct StatusBarView: View {
                         .accessibilityIdentifier("statusbar-git-blame")
                 }
             } else {
-                statusText("Rosewood")
-
                 Spacer()
-
-                if projectViewModel.sidebarMode == .search, !projectViewModel.projectSearchQuery.isEmpty {
-                    statusText(searchResultsLabel)
-                        .accessibilityLabel(searchResultsLabel)
-                        .accessibilityIdentifier("statusbar-search-results")
-
-                    if projectViewModel.debugSessionState != .idle
-                        || projectViewModel.workspaceDiagnosticCount.errors > 0
-                        || projectViewModel.workspaceDiagnosticCount.warnings > 0
-                        || projectViewModel.gitRepositoryStatus.branchName != nil
-                        || projectViewModel.selectedGitChangeReviewLabel != nil {
-                        statusDivider
-                    }
-                }
 
                 if projectViewModel.debugSessionState != .idle {
                     statusText(projectViewModel.debugSessionState.statusText, color: themeColors.accent)

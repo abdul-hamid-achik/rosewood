@@ -102,6 +102,25 @@ struct FileServiceTests {
     }
 
     @Test
+    func loadDirectoryCanIncludeHiddenFilesWhenRequested() throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let hiddenFile = rootURL.appendingPathComponent(".env")
+        let visibleFile = rootURL.appendingPathComponent("README.md")
+
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        try "API_KEY=test\n".write(to: hiddenFile, atomically: true, encoding: .utf8)
+        try "# Rosewood\n".write(to: visibleFile, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let defaultTree = FileService.shared.loadDirectory(at: rootURL)
+        let inclusiveTree = FileService.shared.loadDirectory(at: rootURL, includeHidden: true)
+
+        #expect(defaultTree.map(\.name) == ["README.md"])
+        #expect(inclusiveTree.map(\.name) == [".env", "README.md"])
+    }
+
+    @Test
     func searchProjectFindsMatchesAcrossNestedFiles() throws {
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -218,6 +237,26 @@ struct FileServiceTests {
 
         #expect(filteredResults.count == 1)
         #expect(filteredResults.first?.filePath.standardizedFileURL == sourceFile.standardizedFileURL)
+    }
+
+    @Test
+    func searchProjectCanIncludeHiddenFilesWhenRequested() throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let hiddenFile = rootURL.appendingPathComponent(".secret.swift")
+        let visibleFile = rootURL.appendingPathComponent("Visible.swift")
+
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        try "let rosewoodHidden = true\n".write(to: hiddenFile, atomically: true, encoding: .utf8)
+        try "let rosewoodVisible = true\n".write(to: visibleFile, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let defaultResults = FileService.shared.searchProject(at: rootURL, query: "rosewood")
+        let inclusiveResults = FileService.shared.searchProject(at: rootURL, query: "rosewood", includeHidden: true)
+
+        #expect(defaultResults.count == 1)
+        #expect(defaultResults.first?.filePath.standardizedFileURL == visibleFile.standardizedFileURL)
+        #expect(inclusiveResults.count == 2)
     }
 
     @Test

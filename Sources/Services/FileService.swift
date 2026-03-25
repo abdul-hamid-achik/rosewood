@@ -215,11 +215,15 @@ final class FileService {
         return !prefix.contains(0)
     }
 
-    private func projectFiles(at rootURL: URL, isCancelled: () -> Bool = { false }) -> [URL] {
+    private func projectFiles(
+        at rootURL: URL,
+        includeHidden: Bool = false,
+        isCancelled: () -> Bool = { false }
+    ) -> [URL] {
         guard let enumerator = FileManager.default.enumerator(
             at: rootURL,
             includingPropertiesForKeys: [.isDirectoryKey, .isRegularFileKey, .nameKey],
-            options: [.skipsHiddenFiles]
+            options: includeHidden ? [] : [.skipsHiddenFiles]
         ) else {
             return []
         }
@@ -242,6 +246,7 @@ final class FileService {
     func loadDirectory(
         at url: URL,
         expandedPaths: Set<String> = [],
+        includeHidden: Bool = false,
         isCancelled: () -> Bool = { false }
     ) -> [FileItem] {
         if isCancelled() {
@@ -252,7 +257,7 @@ final class FileService {
         guard let contents = try? fileManager.contentsOfDirectory(
             at: url,
             includingPropertiesForKeys: [.isDirectoryKey, .nameKey],
-            options: [.skipsHiddenFiles]
+            options: includeHidden ? [] : [.skipsHiddenFiles]
         ) else {
             return []
         }
@@ -276,6 +281,7 @@ final class FileService {
                 let children = loadDirectory(
                     at: itemURL,
                     expandedPaths: expandedPaths,
+                    includeHidden: includeHidden,
                     isCancelled: isCancelled
                 )
                 return FileItem(
@@ -302,10 +308,19 @@ final class FileService {
         }
     }
 
-    func loadDirectoryAsync(at url: URL, expandedPaths: Set<String> = []) async throws -> [FileItem] {
+    func loadDirectoryAsync(
+        at url: URL,
+        expandedPaths: Set<String> = [],
+        includeHidden: Bool = false
+    ) async throws -> [FileItem] {
         try Task.checkCancellation()
         return try await Task.detached(priority: .utility) { [self] in
-            let tree = loadDirectory(at: url, expandedPaths: expandedPaths, isCancelled: { Task.isCancelled })
+            let tree = loadDirectory(
+                at: url,
+                expandedPaths: expandedPaths,
+                includeHidden: includeHidden,
+                isCancelled: { Task.isCancelled }
+            )
             try Task.checkCancellation()
             return tree
         }.value
@@ -395,6 +410,7 @@ final class FileService {
         at rootURL: URL,
         query: String,
         options: ProjectSearchOptions = ProjectSearchOptions(),
+        includeHidden: Bool = false,
         isCancelled: () -> Bool = { false }
     ) -> [ProjectSearchResult] {
         let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -407,7 +423,7 @@ final class FileService {
 
         var results: [ProjectSearchResult] = []
 
-        for fileURL in projectFiles(at: rootURL, isCancelled: isCancelled) {
+        for fileURL in projectFiles(at: rootURL, includeHidden: includeHidden, isCancelled: isCancelled) {
             if isCancelled() {
                 break
             }
@@ -472,11 +488,18 @@ final class FileService {
     func searchProjectAsync(
         at rootURL: URL,
         query: String,
-        options: ProjectSearchOptions = ProjectSearchOptions()
+        options: ProjectSearchOptions = ProjectSearchOptions(),
+        includeHidden: Bool = false
     ) async throws -> [ProjectSearchResult] {
         try Task.checkCancellation()
         return try await Task.detached(priority: .utility) { [self] in
-            let results = searchProject(at: rootURL, query: query, options: options, isCancelled: { Task.isCancelled })
+            let results = searchProject(
+                at: rootURL,
+                query: query,
+                options: options,
+                includeHidden: includeHidden,
+                isCancelled: { Task.isCancelled }
+            )
             try Task.checkCancellation()
             return results
         }.value
@@ -486,10 +509,11 @@ final class FileService {
         at rootURL: URL,
         searchQuery: String,
         replacement: String,
-        options: ProjectSearchOptions = ProjectSearchOptions()
+        options: ProjectSearchOptions = ProjectSearchOptions(),
+        includeHidden: Bool = false
     ) throws -> ProjectReplaceSummary {
         try replaceMatches(
-            in: projectFiles(at: rootURL).filter { shouldSearchFile($0, rootURL: rootURL, options: options) },
+            in: projectFiles(at: rootURL, includeHidden: includeHidden).filter { shouldSearchFile($0, rootURL: rootURL, options: options) },
             searchQuery: searchQuery,
             replacement: replacement,
             options: options

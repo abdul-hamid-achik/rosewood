@@ -105,32 +105,6 @@ struct WorkspaceDiagnosticItem: Identifiable, Hashable {
     }
 }
 
-private struct WorkspaceSymbolExtractorPattern {
-    let regularExpression: NSRegularExpression
-    let indexedExtensions: Set<String>?
-    let kindGroup: Int?
-    let nameGroup: Int
-    let fixedKind: String?
-
-    init(
-        pattern: String,
-        indexedExtensions: Set<String>? = nil,
-        kindGroup: Int? = 1,
-        nameGroup: Int = 2,
-        fixedKind: String? = nil
-    ) {
-        self.regularExpression = try! NSRegularExpression(pattern: pattern, options: [])
-        self.indexedExtensions = indexedExtensions
-        self.kindGroup = kindGroup
-        self.nameGroup = nameGroup
-        self.fixedKind = fixedKind
-    }
-
-    func matches(fileExtension: String) -> Bool {
-        indexedExtensions?.contains(fileExtension) ?? true
-    }
-}
-
 private enum NavigableProblem {
     case current(LSPDiagnostic)
     case workspace(WorkspaceDiagnosticItem)
@@ -218,27 +192,32 @@ final class ProjectViewModel: ObservableObject {
             handleProjectSearchFilterChange(from: oldValue, to: projectSearchExcludeGlob)
         }
     }
+    @Published var showHiddenFiles: Bool = false {
+        didSet {
+            handleShowHiddenFilesChange(from: oldValue)
+        }
+    }
     @Published var projectSearchResults: [ProjectSearchResult] = []
-    @Published private(set) var activeProjectSearchResultID: String?
-    @Published private(set) var collapsedProjectSearchGroupIDs: Set<String> = []
-    @Published private(set) var selectedProjectSearchResultIDs: Set<String> = []
-    @Published private(set) var projectReplacePreview: ProjectReplacePreview?
-    @Published private(set) var lastProjectReplaceTransaction: ProjectReplaceTransaction?
+    @Published var activeProjectSearchResultID: String?
+    @Published var collapsedProjectSearchGroupIDs: Set<String> = []
+    @Published var selectedProjectSearchResultIDs: Set<String> = []
+    @Published var projectReplacePreview: ProjectReplacePreview?
+    @Published var lastProjectReplaceTransaction: ProjectReplaceTransaction?
     @Published var showSettings: Bool = false
     @Published private(set) var editorVisibleLineRange: ClosedRange<Int>?
     @Published var debugConfigurations: [DebugConfiguration] = []
     @Published var selectedDebugConfigurationName: String?
     @Published var debugConfigurationError: String?
-    @Published private(set) var bottomPanel: BottomPanelKind?
+    @Published var bottomPanel: BottomPanelKind?
     @Published private(set) var isLoadingFileTree: Bool = false
-    @Published private(set) var isSearchingProject: Bool = false
-    @Published private(set) var isReplacingInProject: Bool = false
-    @Published private(set) var breakpoints: [Breakpoint] = []
+    @Published var isSearchingProject: Bool = false
+    @Published var isReplacingInProject: Bool = false
+    @Published var breakpoints: [Breakpoint] = []
     @Published private(set) var debugSessionState: DebugSessionState = .idle
     @Published private(set) var debugConsoleEntries: [DebugConsoleEntry] = []
-    @Published private(set) var debugStoppedFilePath: String?
-    @Published private(set) var debugStoppedLine: Int?
-    @Published private(set) var referenceResults: [ReferenceResult] = []
+    @Published var debugStoppedFilePath: String?
+    @Published var debugStoppedLine: Int?
+    @Published var referenceResults: [ReferenceResult] = []
     @Published private(set) var gitRepositoryStatus: GitRepositoryStatus = .empty
     @Published private(set) var selectedGitDiff: GitDiffResult?
     @Published private(set) var selectedGitDiffPath: String?
@@ -536,100 +515,45 @@ final class ProjectViewModel: ObservableObject {
         return false
     }
 
-    private let fileService: FileService
+    let fileService: FileService
     private let sessionStore: UserDefaults
     private let sessionKey: String
     private let projectConfigPromptedRootsKey: String
     private let debugSelectedConfigurationsKey: String
     private let debugPanelVisibilityKey: String
-    private var expandedDirectoryPaths: Set<String> = []
+    var expandedDirectoryPaths: Set<String> = []
     private var autoSaveTask: Task<Void, Never>?
     private var reloadFileTreeTask: Task<Void, Never>?
-    private var projectSearchTask: Task<Void, Never>?
-    private var projectSearchDebounceTask: Task<Void, Never>?
-    private var replaceInProjectTask: Task<Void, Never>?
-    private let configService: ConfigurationService
-    private let fileWatcher: FileWatcherService
+    var projectSearchTask: Task<Void, Never>?
+    var projectSearchDebounceTask: Task<Void, Never>?
+    var replaceInProjectTask: Task<Void, Never>?
+    let configService: ConfigurationService
+    let fileWatcher: FileWatcherService
     private let notificationCenter: NotificationCenter
     private let commandDispatcher: AppCommandDispatcher
-    private let ui: ProjectViewModelUI
-    private let lspService: LSPServiceProtocol
+    let ui: ProjectViewModelUI
+    let lspService: LSPServiceProtocol
     private let breakpointStore: BreakpointStore
     private let debugConfigurationService: DebugConfigurationService
     private let debugSessionService: DebugSessionServiceProtocol
     private let gitService: GitServiceProtocol
     private var settingsCommandCancellable: AnyCancellable?
     private var fileTreeLoadToken = UUID()
-    private var projectSearchToken = UUID()
-    private var replaceInProjectToken = UUID()
-    private var projectSearchResultsQuery = ""
-    private var projectSearchResultsOptions = ProjectSearchOptions()
+    var projectSearchToken = UUID()
+    var replaceInProjectToken = UUID()
+    var projectSearchResultsQuery = ""
+    var projectSearchResultsOptions = ProjectSearchOptions()
     private var gitStatusTask: Task<Void, Never>?
     private var gitDiffTask: Task<Void, Never>?
     private var gitBlameTask: Task<Void, Never>?
     private var gitStatusToken = UUID()
     private var gitDiffToken = UUID()
     private var gitBlameToken = UUID()
-    private let projectSearchDebounceNanoseconds: UInt64
+    let projectSearchDebounceNanoseconds: UInt64
     private var quickOpenAccessSequence = 0
     private var quickOpenRecentAccessByPath: [String: Int] = [:]
-    private var cachedWorkspaceSymbols: [WorkspaceSymbolMatch]?
-    private var cachedWorkspaceSymbolRootPath: String?
-    private static let workspaceSymbolPatterns: [WorkspaceSymbolExtractorPattern] = [
-        WorkspaceSymbolExtractorPattern(
-            pattern: #"^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*(?::[^=]+)?=\s*(?:async\s*)?(?:\([^)]*\)|[A-Za-z_$][A-Za-z0-9_$]*)\s*=>"#,
-            indexedExtensions: ["js", "jsx", "ts", "tsx"],
-            kindGroup: nil,
-            nameGroup: 1,
-            fixedKind: "function"
-        ),
-        WorkspaceSymbolExtractorPattern(
-            pattern: #"^\s*func\s*\([^)]*\)\s+([A-Za-z_][A-Za-z0-9_]*)\s*\("#,
-            indexedExtensions: ["go"],
-            kindGroup: nil,
-            nameGroup: 1,
-            fixedKind: "func"
-        ),
-        WorkspaceSymbolExtractorPattern(
-            pattern: #"^\s*(?:@\w+(?:\([^)]*\))?\s+)*(?:(?:public|private|internal|fileprivate|open|final|indirect|async|static|class|override|mutating|nonmutating|required|convenience|prefix|postfix|infix)\s+)*(class|struct|enum|protocol|actor|extension|func|typealias|macro)\s+([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)"#,
-            indexedExtensions: ["swift"]
-        ),
-        WorkspaceSymbolExtractorPattern(
-            pattern: #"^\s*(?:@\w+(?:\([^)]*\))?\s+)*(?:(?:public|private|internal|fileprivate|open|final|indirect|async|static|class|override|mutating|nonmutating|required|convenience)\s+)*(var|let)\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?::[^=]+)?=\s*(?:\{|\([^)]*\)\s*(?:async\s*)?(?:throws\s*)?->)"#,
-            indexedExtensions: ["swift"]
-        ),
-        WorkspaceSymbolExtractorPattern(
-            pattern: #"^\s*(?:export\s+)?(?:default\s+)?(?:abstract\s+)?(class|interface|enum|type)\s+([A-Za-z_$][A-Za-z0-9_$]*)"#,
-            indexedExtensions: ["js", "jsx", "ts", "tsx"]
-        ),
-        WorkspaceSymbolExtractorPattern(
-            pattern: #"^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?(function)\s+([A-Za-z_$][A-Za-z0-9_$]*)"#,
-            indexedExtensions: ["js", "jsx", "ts", "tsx"]
-        ),
-        WorkspaceSymbolExtractorPattern(
-            pattern: #"^\s*(?:async\s+)?(def|class)\s+([A-Za-z_][A-Za-z0-9_]*)"#,
-            indexedExtensions: ["py"]
-        ),
-        WorkspaceSymbolExtractorPattern(
-            pattern: #"^\s*(type|const|var)\s+([A-Za-z_][A-Za-z0-9_]*)"#,
-            indexedExtensions: ["go"]
-        ),
-        WorkspaceSymbolExtractorPattern(
-            pattern: #"^\s*(?:(?:pub|pub\(crate\)|crate|unsafe|async|const|default)\s+)*(struct|enum|trait|type|fn|const|static)\s+([A-Za-z_][A-Za-z0-9_]*)"#,
-            indexedExtensions: ["rs"]
-        ),
-        WorkspaceSymbolExtractorPattern(
-            pattern: #"^\s*(?:(?:public|private|protected|internal|open|final|sealed|abstract|data|async|static|const)\s+)*(class|struct|enum|interface|trait|namespace|module|type|func|function|def|fn|let|var|const|object|fun)\s+([A-Za-z_][A-Za-z0-9_]*)"#,
-            indexedExtensions: nil
-        )
-    ]
-    private static let workspaceSymbolIndexedExtensions: Set<String> = [
-        "swift", "m", "mm", "h", "hpp", "hh", "c", "cc", "cpp", "cxx",
-        "go", "rs", "py", "rb", "js", "jsx", "ts", "tsx",
-        "java", "kt", "kts", "scala", "sc", "zig", "lua"
-    ]
-    private static let workspaceSymbolFileSizeLimit = 512_000
-
+    var cachedWorkspaceSymbols: [WorkspaceSymbolMatch]?
+    var cachedWorkspaceSymbolRootPath: String?
     convenience init() {
         self.init(
             fileService: .shared,
@@ -733,313 +657,6 @@ final class ProjectViewModel: ObservableObject {
             }
     }
 
-    private func installUITestEditorFixturesIfNeeded() {
-        let environment = ProcessInfo.processInfo.environment
-        let shouldInstallContextMenuFixture = environment["ROSEWOOD_UI_TEST_CONTEXT_MENU_FIXTURE"] == "1"
-        let shouldInstallSearchFixture = environment["ROSEWOOD_UI_TEST_SEARCH_FIXTURE"] == "1"
-        let shouldInstallDiagnosticsFixture = environment["ROSEWOOD_UI_TEST_DIAGNOSTICS_FIXTURE"] == "1"
-        let shouldOpenDiagnosticsPanel = environment["ROSEWOOD_UI_TEST_OPEN_DIAGNOSTICS_PANEL"] == "1"
-        let shouldInstallReferencesFixture = environment["ROSEWOOD_UI_TEST_REFERENCES_FIXTURE"] == "1"
-        let shouldOpenReferencesPanel = environment["ROSEWOOD_UI_TEST_OPEN_REFERENCES_PANEL"] == "1"
-        let shouldInstallFoldingFixture = environment["ROSEWOOD_UI_TEST_FOLDING_FIXTURE"] == "1"
-        let shouldInstallMinimapFixture = environment["ROSEWOOD_UI_TEST_MINIMAP_FIXTURE"] == "1"
-        let shouldInstallGitFixture = environment["ROSEWOOD_UI_TEST_GIT_FIXTURE"] == "1"
-        let shouldInstallNavigationFixture = environment["ROSEWOOD_UI_TEST_NAVIGATION_FIXTURE"] == "1"
-        let shouldInstallExplorerFixture = environment["ROSEWOOD_UI_TEST_EXPLORER_FIXTURE"] == "1"
-        let shouldInstallDebugCommandsFixture = environment["ROSEWOOD_UI_TEST_DEBUG_COMMANDS_FIXTURE"] == "1"
-        let shouldInstallGoCommandsFixture = environment["ROSEWOOD_UI_TEST_GO_COMMANDS_FIXTURE"] == "1"
-        guard shouldInstallContextMenuFixture
-            || shouldInstallSearchFixture
-            || shouldInstallDiagnosticsFixture
-            || shouldInstallReferencesFixture
-            || shouldInstallFoldingFixture
-            || shouldInstallMinimapFixture
-            || shouldInstallGitFixture
-            || shouldInstallNavigationFixture
-            || shouldInstallExplorerFixture
-            || shouldInstallDebugCommandsFixture
-            || shouldInstallGoCommandsFixture else {
-            return
-        }
-
-        let fileManager = FileManager.default
-        let fixtureFileName: String
-        if shouldInstallDiagnosticsFixture {
-            fixtureFileName = "Alpha.swift"
-        } else if shouldInstallGitFixture {
-            fixtureFileName = "Tracked.swift"
-        } else {
-            fixtureFileName = "Alpha.swift"
-        }
-        let rootURL = fileManager.temporaryDirectory.appendingPathComponent(
-            "rosewood-ui-context-menu-\(UUID().uuidString)",
-            isDirectory: true
-        )
-        let alphaURL = rootURL.appendingPathComponent(fixtureFileName)
-        let betaURL = rootURL.appendingPathComponent("Beta.swift")
-
-        do {
-            try fileManager.createDirectory(at: rootURL, withIntermediateDirectories: true)
-            let alphaContents: String
-            if shouldInstallSearchFixture {
-                alphaContents = "let alpha = 1\n"
-            } else if shouldInstallDiagnosticsFixture {
-                alphaContents = """
-                let alpha = 1
-                let beta = alpha + 1
-                let gamma = beta + 1
-                """
-            } else if shouldInstallNavigationFixture {
-                alphaContents = """
-                struct AlphaSymbol {
-                    func alphaHelper() {
-                        let alphaValue = 1
-                    }
-                }
-                """
-            } else if shouldInstallExplorerFixture {
-                alphaContents = """
-                struct ExplorerFeature {
-                    func firstThing() {}
-                    func secondThing() {}
-                }
-                """
-            } else if shouldInstallGoCommandsFixture {
-                alphaContents = """
-                let alpha = 1
-                let beta = alpha + 1
-                let gamma = beta + 1
-                """
-            } else if shouldInstallFoldingFixture {
-                alphaContents = """
-                struct Example {
-                    func greet() {
-                        print("hi")
-                    }
-                }
-                let done = true
-                """
-            } else if shouldInstallMinimapFixture {
-                alphaContents = (1...240)
-                    .map { line in
-                        if line.isMultiple(of: 24) {
-                            return "let minimapLine\(line) = \"This line is intentionally longer so the minimap widths vary \(line)\""
-                        }
-                        return "let minimapLine\(line) = \(line)"
-                    }
-                    .joined(separator: "\n")
-            } else if shouldInstallGitFixture {
-                alphaContents = "let tracked = 1\n"
-            } else {
-                alphaContents = "let alpha = 1\n"
-            }
-            try alphaContents.write(to: alphaURL, atomically: true, encoding: .utf8)
-
-            if shouldInstallSearchFixture {
-                try "let beta = alpha\n".write(to: betaURL, atomically: true, encoding: .utf8)
-            } else if shouldInstallDiagnosticsFixture {
-                try """
-                struct BetaFixture {
-                    let value = alpha
-                }
-                """.write(to: betaURL, atomically: true, encoding: .utf8)
-            } else if shouldInstallNavigationFixture {
-                try """
-                func betaHelper() {
-                    let betaValue = 2
-                }
-
-                func alphaWorkspaceHelper() {
-                    let alphaCopy = 1
-                }
-                """.write(to: betaURL, atomically: true, encoding: .utf8)
-            } else if shouldInstallExplorerFixture {
-                let sourcesURL = rootURL.appendingPathComponent("Sources", isDirectory: true)
-                let featuresURL = sourcesURL.appendingPathComponent("Features", isDirectory: true)
-                let nestedAlphaURL = featuresURL.appendingPathComponent("Alpha.swift")
-                let nestedBetaURL = sourcesURL.appendingPathComponent("Beta.swift")
-
-                try fileManager.createDirectory(at: featuresURL, withIntermediateDirectories: true)
-                try alphaContents.write(to: nestedAlphaURL, atomically: true, encoding: .utf8)
-                try "func betaThing() {}\n".write(to: nestedBetaURL, atomically: true, encoding: .utf8)
-                try? fileManager.removeItem(at: alphaURL)
-            }
-
-            if shouldInstallGitFixture {
-                try installGitFixture(at: rootURL, trackedFileURL: alphaURL)
-            } else if shouldInstallDebugCommandsFixture {
-                let configURL = rootURL.appendingPathComponent(".rosewood.toml")
-                try """
-                [debug]
-                defaultConfiguration = "App"
-
-                [[debug.configurations]]
-                name = "App"
-                adapter = "lldb"
-                program = ".build/debug/App"
-                cwd = "."
-                args = []
-                stopOnEntry = false
-
-                [[debug.configurations]]
-                name = "Tests"
-                adapter = "lldb"
-                program = ".build/debug/Tests"
-                cwd = "."
-                args = ["--filter", "smoke"]
-                stopOnEntry = false
-                """.write(to: configURL, atomically: true, encoding: .utf8)
-            }
-        } catch {
-            return
-        }
-
-        fileWatcher.unwatchAll()
-        rootDirectory = rootURL
-        expandedDirectoryPaths = []
-        openTabs = []
-        selectedTabIndex = nil
-        referenceResults = []
-        pendingNewItemDirectory = nil
-        clearProjectSearchResults()
-
-        configService.setProjectRoot(rootURL)
-        lspService.setProjectRoot(rootURL)
-        reloadDebuggerState(resetConsole: true)
-        reloadFileTree()
-
-        if !shouldInstallExplorerFixture {
-            openFile(at: alphaURL)
-        }
-        if shouldInstallContextMenuFixture {
-            openTabs.append(EditorTab())
-            selectedTabIndex = 0
-        }
-
-        if shouldInstallDiagnosticsFixture, let uri = openTabs.first?.documentURI {
-            lspService.injectDiagnosticsForTesting(
-                uri: uri,
-                diagnostics: [
-                    LSPDiagnostic(
-                        range: LSPRange(
-                            start: LSPPosition(line: 0, character: 4),
-                            end: LSPPosition(line: 0, character: 9)
-                        ),
-                        severity: .error,
-                        source: "sourcekit-lsp",
-                        message: "Cannot find 'alpha' in scope"
-                    ),
-                    LSPDiagnostic(
-                        range: LSPRange(
-                            start: LSPPosition(line: 2, character: 4),
-                            end: LSPPosition(line: 2, character: 9)
-                        ),
-                        severity: .warning,
-                        source: "sourcekit-lsp",
-                        message: "Unused variable declaration"
-                    )
-                ]
-            )
-
-            lspService.injectDiagnosticsForTesting(
-                uri: betaURL.absoluteString,
-                diagnostics: [
-                    LSPDiagnostic(
-                        range: LSPRange(
-                            start: LSPPosition(line: 1, character: 16),
-                            end: LSPPosition(line: 1, character: 21)
-                        ),
-                        severity: .error,
-                        source: "sourcekit-lsp",
-                        message: "Cannot find 'alpha' in scope"
-                    )
-                ]
-            )
-
-            if shouldOpenDiagnosticsPanel {
-                bottomPanel = .diagnostics
-            }
-        }
-
-        if shouldInstallGoCommandsFixture, let uri = openTabs.first?.documentURI {
-            lspService.injectDiagnosticsForTesting(
-                uri: uri,
-                diagnostics: [
-                    LSPDiagnostic(
-                        range: LSPRange(
-                            start: LSPPosition(line: 0, character: 4),
-                            end: LSPPosition(line: 0, character: 9)
-                        ),
-                        severity: .error,
-                        source: "sourcekit-lsp",
-                        message: "Cannot find 'alpha' in scope"
-                    ),
-                    LSPDiagnostic(
-                        range: LSPRange(
-                            start: LSPPosition(line: 2, character: 4),
-                            end: LSPPosition(line: 2, character: 9)
-                        ),
-                        severity: .warning,
-                        source: "sourcekit-lsp",
-                        message: "Unused variable declaration"
-                    )
-                ]
-            )
-            breakpoints = [
-                Breakpoint(filePath: normalizedPath(for: alphaURL), line: 1),
-                Breakpoint(filePath: normalizedPath(for: alphaURL), line: 3)
-            ]
-            debugStoppedFilePath = normalizedPath(for: alphaURL)
-            debugStoppedLine = 2
-        }
-
-        if shouldInstallReferencesFixture {
-            let betaURL = rootURL.appendingPathComponent("Beta.txt")
-            try? "let beta = alpha\n".write(to: betaURL, atomically: true, encoding: .utf8)
-            referenceResults = [
-                ReferenceResult(
-                    location: LSPLocation(
-                        uri: alphaURL.absoluteString,
-                        range: LSPRange(
-                            start: LSPPosition(line: 0, character: 4),
-                            end: LSPPosition(line: 0, character: 9)
-                        )
-                    ),
-                    fileURL: alphaURL,
-                    path: relativeDisplayPath(for: alphaURL),
-                    line: 1,
-                    column: 5,
-                    lineText: "let alpha = 1"
-                ),
-                ReferenceResult(
-                    location: LSPLocation(
-                        uri: betaURL.absoluteString,
-                        range: LSPRange(
-                            start: LSPPosition(line: 0, character: 11),
-                            end: LSPPosition(line: 0, character: 16)
-                        )
-                    ),
-                    fileURL: betaURL,
-                    path: relativeDisplayPath(for: betaURL),
-                    line: 1,
-                    column: 12,
-                    lineText: "let beta = alpha"
-                )
-            ]
-
-            if shouldOpenReferencesPanel {
-                bottomPanel = .references
-            }
-        }
-
-        if shouldInstallGitFixture {
-            sidebarMode = environment["ROSEWOOD_UI_TEST_GIT_EXPLORER"] == "1" ? .explorer : .sourceControl
-        }
-
-        persistSession()
-        refreshGitState()
-    }
-
     var selectedTab: EditorTab? {
         guard let index = selectedTabIndex, openTabs.indices.contains(index) else { return nil }
         return openTabs[index]
@@ -1073,24 +690,6 @@ final class ProjectViewModel: ObservableObject {
             visibleTopLine: editorVisibleLineRange?.lowerBound ?? 1,
             cursorLine: selectedTab.cursorPosition.line
         )
-    }
-
-    var currentFileSymbols: [WorkspaceSymbolMatch] {
-        guard let selectedFileURL = selectedTab?.filePath else { return [] }
-        let selectedPath = normalizedPath(for: selectedFileURL)
-        return workspaceSymbols()
-            .filter { normalizedPath(for: $0.fileURL) == selectedPath }
-            .sorted { lhs, rhs in
-                if lhs.line == rhs.line {
-                    return lhs.column < rhs.column
-                }
-                return lhs.line < rhs.line
-            }
-    }
-
-    var activeCurrentFileSymbolID: String? {
-        guard let cursorLine = selectedTab?.cursorPosition.line else { return nil }
-        return currentFileSymbols.last(where: { $0.line <= cursorLine })?.id
     }
 
     var hasUnsavedChanges: Bool {
@@ -2464,16 +2063,6 @@ final class ProjectViewModel: ObservableObject {
         return "Undo Last Replace (\(lastProjectReplaceTransaction.replacementCount))"
     }
 
-    private var currentProjectSearchOptions: ProjectSearchOptions {
-        ProjectSearchOptions(
-            isCaseSensitive: projectSearchCaseSensitive,
-            isWholeWord: projectSearchWholeWord,
-            isRegularExpression: projectSearchUseRegex,
-            includeGlob: projectSearchIncludeGlob.trimmingCharacters(in: .whitespacesAndNewlines),
-            excludeGlob: projectSearchExcludeGlob.trimmingCharacters(in: .whitespacesAndNewlines)
-        )
-    }
-
     func isProjectSearchResultSelected(_ result: ProjectSearchResult) -> Bool {
         selectedProjectSearchResultIDs.contains(result.id)
     }
@@ -2675,7 +2264,11 @@ final class ProjectViewModel: ObservableObject {
             guard let self else { return }
 
             do {
-                let tree = try await fileService.loadDirectoryAsync(at: rootDirectory, expandedPaths: expandedPaths)
+                let tree = try await fileService.loadDirectoryAsync(
+                    at: rootDirectory,
+                    expandedPaths: expandedPaths,
+                    includeHidden: self.showHiddenFiles
+                )
                 guard !Task.isCancelled,
                       self.fileTreeLoadToken == token,
                       self.rootDirectory.map(self.normalizedPath(for:)) == normalizedRootPath else {
@@ -2917,17 +2510,6 @@ final class ProjectViewModel: ObservableObject {
         openTabs[selectedTabIndex].pendingLineJump = targetLine
     }
 
-    func openWorkspaceSymbol(_ symbol: WorkspaceSymbolMatch) {
-        if let selectedFilePath = selectedTab?.filePath,
-           normalizedPath(for: selectedFilePath) == normalizedPath(for: symbol.fileURL) {
-            jumpToLineInSelectedTab(symbol.line)
-            return
-        }
-
-        openFile(at: symbol.fileURL)
-        jumpToLineInSelectedTab(symbol.line)
-    }
-
     func toggleQuickOpen() {
         if activePalette == .quickOpen {
             activePalette = nil
@@ -3019,6 +2601,10 @@ final class ProjectViewModel: ObservableObject {
 
     func showDebugSidebar() {
         sidebarMode = .debug
+    }
+
+    func toggleShowHiddenFiles() {
+        showHiddenFiles.toggle()
     }
 
     func selectDebugConfiguration(named name: String) {
@@ -3474,172 +3060,6 @@ final class ProjectViewModel: ObservableObject {
         syncActiveDebugBreakpoints()
     }
 
-    func performProjectSearch() {
-        projectSearchDebounceTask?.cancel()
-        projectSearchTask?.cancel()
-        projectSearchToken = UUID()
-        let token = projectSearchToken
-        let searchOptions = currentProjectSearchOptions
-
-        guard let rootDirectory else {
-            isSearchingProject = false
-            clearProjectSearchResults()
-            return
-        }
-
-        let trimmedQuery = projectSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedQuery.isEmpty else {
-            isSearchingProject = false
-            clearProjectSearchResults()
-            return
-        }
-
-        let normalizedRootPath = normalizedPath(for: rootDirectory)
-        isSearchingProject = true
-
-        projectSearchTask = Task { [weak self, fileService] in
-            guard let self else { return }
-
-            do {
-                let results = try await fileService.searchProjectAsync(
-                    at: rootDirectory,
-                    query: trimmedQuery,
-                    options: searchOptions
-                )
-                guard !Task.isCancelled,
-                      self.projectSearchToken == token,
-                      self.rootDirectory.map(self.normalizedPath(for:)) == normalizedRootPath,
-                      self.projectSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines) == trimmedQuery,
-                      self.currentProjectSearchOptions == searchOptions else {
-                    return
-                }
-                self.updateProjectSearchResults(results, query: trimmedQuery, options: searchOptions)
-                self.isSearchingProject = false
-            } catch is CancellationError {
-                guard self.projectSearchToken == token else { return }
-                self.clearProjectSearchResults()
-                self.isSearchingProject = false
-            } catch {
-                guard self.projectSearchToken == token else { return }
-                self.clearProjectSearchResults()
-                self.isSearchingProject = false
-            }
-        }
-    }
-
-    func replaceAllProjectResults() {
-        let trimmedQuery = projectSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedQuery.isEmpty, canReplaceSelectedProjectSearchResults else { return }
-        let selectedResults = selectedProjectSearchResults
-        guard !selectedResults.isEmpty else { return }
-        projectReplacePreview = makeProjectReplacePreview(
-            results: selectedResults,
-            title: "Replace Preview",
-            summary: "Replace \(selectedProjectSearchMatchCount) selected match\(selectedProjectSearchMatchCount == 1 ? "" : "es") across \(selectedProjectSearchFileCount) file\(selectedProjectSearchFileCount == 1 ? "" : "s").",
-            searchQuery: trimmedQuery,
-            searchOptions: currentProjectSearchOptions,
-            replacement: projectReplaceQuery
-        )
-    }
-
-    func replaceProjectSearchFileGroup(_ group: ProjectSearchFileGroup) {
-        let trimmedQuery = projectSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedQuery.isEmpty,
-              canReplaceProjectSearchResults,
-              groupedProjectSearchResults.contains(group) else { return }
-        projectReplacePreview = makeProjectReplacePreview(
-            results: group.results,
-            title: "Replace Preview",
-            summary: "Replace \(group.matchCount) current match\(group.matchCount == 1 ? "" : "es") in \(group.fileName).",
-            searchQuery: trimmedQuery,
-            searchOptions: currentProjectSearchOptions,
-            replacement: projectReplaceQuery
-        )
-    }
-
-    func cancelProjectReplacePreview() {
-        clearProjectReplacePreview()
-    }
-
-    func applyProjectReplacePreview() {
-        guard let projectReplacePreview else { return }
-
-        guard resolveUnsavedChangesForProjectReplace(
-            affecting: projectReplacePreview.affectedFileURLs,
-            title: "Replace in Project",
-            message: "Do you want to save affected files before applying this replace preview?"
-        ) else {
-            return
-        }
-
-        let snapshots = snapshotFiles(at: projectReplacePreview.affectedFileURLs)
-        clearProjectReplacePreview()
-
-        performProjectReplace(
-            preview: projectReplacePreview,
-            snapshots: snapshots
-        )
-    }
-
-    func undoLastProjectReplace() {
-        guard let lastProjectReplaceTransaction else { return }
-
-        guard resolveUnsavedChangesForProjectReplace(
-            affecting: lastProjectReplaceTransaction.affectedFileURLs,
-            title: "Undo Project Replace",
-            message: "Do you want to save affected files before restoring the previous contents?"
-        ) else {
-            return
-        }
-
-        replaceInProjectTask?.cancel()
-        replaceInProjectToken = UUID()
-        let token = replaceInProjectToken
-        let normalizedRootPath = rootDirectory.map(normalizedPath(for:))
-        let fileSnapshots = lastProjectReplaceTransaction.fileSnapshots
-        isReplacingInProject = true
-
-        replaceInProjectTask = Task { [weak self, fileService] in
-            guard let self else { return }
-
-            do {
-                try await Task.detached(priority: .utility) {
-                    for snapshot in fileSnapshots {
-                        try fileService.writeFile(content: snapshot.originalContent, to: snapshot.fileURL)
-                    }
-                }.value
-                guard self.replaceInProjectToken == token,
-                      self.rootDirectory.map(self.normalizedPath(for:)) == normalizedRootPath else {
-                    return
-                }
-
-                self.syncOpenTabs(with: fileSnapshots.map(\.fileURL))
-                self.isReplacingInProject = false
-                self.lastProjectReplaceTransaction = nil
-                self.performProjectSearch()
-                self.refreshGitState()
-                self.ui.alert(
-                    "Replace Undone",
-                    "Restored \(lastProjectReplaceTransaction.replacementCount) match\(lastProjectReplaceTransaction.replacementCount == 1 ? "" : "es") across \(lastProjectReplaceTransaction.fileCount) file\(lastProjectReplaceTransaction.fileCount == 1 ? "" : "s").",
-                    .informational
-                )
-            } catch {
-                guard self.replaceInProjectToken == token else { return }
-                self.isReplacingInProject = false
-                self.ui.alert("Error", "Could not undo replace: \(error.localizedDescription)", .warning)
-            }
-        }
-    }
-
-    func openSearchResult(_ result: ProjectSearchResult) {
-        activeProjectSearchResultID = result.id
-        openFile(at: result.filePath)
-        if let selectedTabIndex, openTabs.indices.contains(selectedTabIndex) {
-            openTabs[selectedTabIndex].cursorPosition = CursorPosition(line: result.lineNumber, column: result.columnNumber)
-            openTabs[selectedTabIndex].pendingLineJump = result.lineNumber
-        }
-    }
-
     func clearPendingLineJump() {
         guard let selectedTabIndex, openTabs.indices.contains(selectedTabIndex) else { return }
         openTabs[selectedTabIndex].pendingLineJump = nil
@@ -3800,50 +3220,6 @@ final class ProjectViewModel: ObservableObject {
         return result
     }
 
-    private func handleProjectSearchQueryChange(from oldValue: String) {
-        let previousQuery = oldValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        let currentQuery = projectSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard previousQuery != currentQuery else { return }
-
-        projectSearchDebounceTask?.cancel()
-        projectSearchTask?.cancel()
-        projectSearchToken = UUID()
-        isSearchingProject = false
-        clearProjectSearchResults()
-
-        guard sidebarMode == .search, rootDirectory != nil, !currentQuery.isEmpty else { return }
-        scheduleProjectSearch()
-    }
-
-    private func handleProjectReplaceQueryChange(from oldValue: String) {
-        guard oldValue != projectReplaceQuery else { return }
-        clearProjectReplacePreview()
-    }
-
-    private func handleProjectSearchOptionsChange<T: Equatable>(from oldValue: T, to newValue: T) {
-        guard oldValue != newValue else { return }
-        invalidateProjectSearchState()
-    }
-
-    private func handleProjectSearchFilterChange(from oldValue: String, to newValue: String) {
-        guard oldValue.trimmingCharacters(in: .whitespacesAndNewlines) != newValue.trimmingCharacters(in: .whitespacesAndNewlines) else {
-            return
-        }
-        invalidateProjectSearchState()
-    }
-
-    private func invalidateProjectSearchState() {
-        projectSearchDebounceTask?.cancel()
-        projectSearchTask?.cancel()
-        projectSearchToken = UUID()
-        isSearchingProject = false
-        clearProjectSearchResults()
-
-        let currentQuery = projectSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard sidebarMode == .search, rootDirectory != nil, !currentQuery.isEmpty else { return }
-        scheduleProjectSearch()
-    }
-
     private func handleSidebarModeChange(from oldValue: SidebarMode) {
         guard oldValue != sidebarMode else { return }
 
@@ -3855,30 +3231,6 @@ final class ProjectViewModel: ObservableObject {
         let trimmedQuery = projectSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         guard rootDirectory != nil, !trimmedQuery.isEmpty else { return }
         performProjectSearch()
-    }
-
-    private func scheduleProjectSearch() {
-        projectSearchDebounceTask?.cancel()
-        let query = projectSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return }
-
-        projectSearchDebounceTask = Task { [weak self] in
-            do {
-                try await Task.sleep(nanoseconds: self?.projectSearchDebounceNanoseconds ?? 0)
-            } catch {
-                return
-            }
-
-            guard !Task.isCancelled,
-                  let self,
-                  self.sidebarMode == .search,
-                  self.rootDirectory != nil,
-                  self.projectSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines) == query else {
-                return
-            }
-
-            self.performProjectSearch()
-        }
     }
 
     private func quickOpenLineJumpItems(for query: String) -> [QuickOpenItem] {
@@ -4454,123 +3806,6 @@ final class ProjectViewModel: ObservableObject {
         quickOpenRecentAccessByPath[normalizedPath(for: fileURL)] = quickOpenAccessSequence
     }
 
-    private func invalidateWorkspaceSymbolCache() {
-        cachedWorkspaceSymbols = nil
-        cachedWorkspaceSymbolRootPath = nil
-    }
-
-    private func workspaceSymbols() -> [WorkspaceSymbolMatch] {
-        guard let rootDirectory else { return [] }
-        let normalizedRootPath = normalizedPath(for: rootDirectory)
-
-        if let cachedWorkspaceSymbols, cachedWorkspaceSymbolRootPath == normalizedRootPath {
-            return cachedWorkspaceSymbols
-        }
-
-        var symbols: [WorkspaceSymbolMatch] = []
-        symbols.reserveCapacity(flatFileList.count * 2)
-
-        for (index, item) in flatFileList.enumerated() where !item.isDirectory {
-            let fileURL = item.path
-            guard shouldIndexWorkspaceSymbols(in: fileURL),
-                  let contents = workspaceSymbolContents(for: fileURL) else {
-                continue
-            }
-
-            symbols.append(
-                contentsOf: extractWorkspaceSymbols(
-                    from: contents,
-                    fileURL: fileURL,
-                    displayPath: relativeDisplayPath(for: fileURL),
-                    originalIndex: index
-                )
-            )
-        }
-
-        cachedWorkspaceSymbols = symbols
-        cachedWorkspaceSymbolRootPath = normalizedRootPath
-        return symbols
-    }
-
-    private func shouldIndexWorkspaceSymbols(in fileURL: URL) -> Bool {
-        let pathExtension = fileURL.pathExtension.lowercased()
-        guard Self.workspaceSymbolIndexedExtensions.contains(pathExtension) else { return false }
-
-        let resourceValues = try? fileURL.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey])
-        guard resourceValues?.isRegularFile != false else { return false }
-        let fileSize = resourceValues?.fileSize ?? 0
-        return fileSize <= Self.workspaceSymbolFileSizeLimit
-    }
-
-    private func workspaceSymbolContents(for fileURL: URL) -> String? {
-        if let openTab = openTabs.first(where: {
-            guard let path = $0.filePath else { return false }
-            return normalizedPath(for: path) == normalizedPath(for: fileURL)
-        }) {
-            return openTab.content
-        }
-
-        return try? fileService.readFile(at: fileURL)
-    }
-
-    private func extractWorkspaceSymbols(
-        from contents: String,
-        fileURL: URL,
-        displayPath: String,
-        originalIndex: Int
-    ) -> [WorkspaceSymbolMatch] {
-        let lines = contents.components(separatedBy: .newlines)
-        let fileExtension = fileURL.pathExtension.lowercased()
-
-        return lines.enumerated().compactMap { offset, line in
-            guard let match = firstWorkspaceSymbolMatch(in: line, fileExtension: fileExtension) else { return nil }
-
-            return WorkspaceSymbolMatch(
-                name: match.name,
-                kind: match.kind,
-                fileURL: fileURL,
-                displayPath: displayPath,
-                line: offset + 1,
-                column: match.column,
-                lineText: line.trimmingCharacters(in: .whitespaces),
-                originalIndex: originalIndex
-            )
-        }
-    }
-
-    private func firstWorkspaceSymbolMatch(
-        in line: String,
-        fileExtension: String
-    ) -> (kind: String, name: String, column: Int)? {
-        let fullRange = NSRange(line.startIndex..<line.endIndex, in: line)
-
-        for pattern in Self.workspaceSymbolPatterns where pattern.matches(fileExtension: fileExtension) {
-            guard let match = pattern.regularExpression.firstMatch(in: line, options: [], range: fullRange) else {
-                continue
-            }
-
-            guard let nameRange = Range(match.range(at: pattern.nameGroup), in: line) else {
-                continue
-            }
-
-            let kind: String
-            if let fixedKind = pattern.fixedKind {
-                kind = fixedKind
-            } else if let kindGroup = pattern.kindGroup,
-                      let kindRange = Range(match.range(at: kindGroup), in: line) {
-                kind = String(line[kindRange])
-            } else {
-                continue
-            }
-
-            let name = String(line[nameRange])
-            let column = line.distance(from: line.startIndex, to: nameRange.lowerBound) + 1
-            return (kind, name, column)
-        }
-
-        return nil
-    }
-
     private func compareQuickOpenItems(_ lhs: QuickOpenItem, _ rhs: QuickOpenItem) -> Bool {
         if lhs.score != rhs.score {
             return lhs.score > rhs.score
@@ -4634,7 +3869,7 @@ final class ProjectViewModel: ObservableObject {
         }
     }
 
-    private func resolveUnsavedChanges(for indices: [Int], title: String, message: String) -> Bool {
+    func resolveUnsavedChanges(for indices: [Int], title: String, message: String) -> Bool {
         let dirtyIndices = indices.filter { openTabs.indices.contains($0) && openTabs[$0].isDirty }
         guard !dirtyIndices.isEmpty else { return true }
 
@@ -4705,97 +3940,7 @@ final class ProjectViewModel: ObservableObject {
         return String(filePath.dropFirst(rootPath.count + 1))
     }
 
-    private func clearProjectSearchResults() {
-        projectSearchResults = []
-        projectSearchResultsQuery = ""
-        projectSearchResultsOptions = ProjectSearchOptions()
-        activeProjectSearchResultID = nil
-        collapsedProjectSearchGroupIDs = []
-        selectedProjectSearchResultIDs = []
-        clearProjectReplacePreview()
-    }
-
-    private func updateProjectSearchResults(_ results: [ProjectSearchResult], query: String, options: ProjectSearchOptions) {
-        projectSearchResults = results
-        projectSearchResultsQuery = query
-        projectSearchResultsOptions = options
-        let validGroupIDs = Set(groupedProjectSearchResults.map(\.id))
-        collapsedProjectSearchGroupIDs = collapsedProjectSearchGroupIDs.intersection(validGroupIDs)
-        normalizeProjectSearchVisibilityState()
-        selectedProjectSearchResultIDs = Set(results.map(\.id))
-        clearProjectReplacePreview()
-    }
-
-    private func normalizeProjectSearchVisibilityState() {
-        let visibleResults = orderedProjectSearchResults
-        if let activeProjectSearchResultID,
-           visibleResults.contains(where: { $0.id == activeProjectSearchResultID }) {
-            return
-        }
-
-        activeProjectSearchResultID = visibleResults.first?.id
-    }
-
-    private func clearProjectReplacePreview() {
-        projectReplacePreview = nil
-    }
-
-    private func makeProjectReplacePreview(
-        results: [ProjectSearchResult],
-        title: String,
-        summary: String,
-        searchQuery: String,
-        searchOptions: ProjectSearchOptions,
-        replacement: String
-    ) -> ProjectReplacePreview? {
-        guard !results.isEmpty else { return nil }
-
-        let files = Dictionary(grouping: results, by: { normalizedPath(for: $0.filePath) })
-            .values
-            .compactMap { groupedResults -> ProjectReplacePreviewFile? in
-                guard let firstResult = groupedResults.first else { return nil }
-                let fileURL = firstResult.filePath
-                let matchCount = groupedResults.reduce(0) { partialResult, result in
-                    partialResult + result.matchCount
-                }
-                return ProjectReplacePreviewFile(
-                    fileURL: fileURL,
-                    fileName: fileURL.lastPathComponent,
-                    displayPath: relativeDisplayPath(for: fileURL),
-                    matchCount: matchCount
-                )
-            }
-            .sorted { lhs, rhs in
-                lhs.displayPath.localizedStandardCompare(rhs.displayPath) == .orderedAscending
-            }
-
-        return ProjectReplacePreview(
-            title: title,
-            summary: summary,
-            searchQuery: searchQuery,
-            searchOptions: searchOptions,
-            replacement: replacement,
-            results: results,
-            files: files
-        )
-    }
-
-    private func snapshotFiles(at fileURLs: [URL]) -> [ProjectReplaceFileSnapshot] {
-        let uniqueFiles = Array(
-            Dictionary(
-                fileURLs.map { (normalizedPath(for: $0), $0.standardizedFileURL) },
-                uniquingKeysWith: { current, _ in current }
-            ).values
-        )
-        .sorted { normalizedPath(for: $0).localizedStandardCompare(normalizedPath(for: $1)) == .orderedAscending }
-
-        return uniqueFiles.compactMap { fileURL in
-            guard let originalContent = try? fileService.readFile(at: fileURL) else { return nil }
-            return ProjectReplaceFileSnapshot(fileURL: fileURL, originalContent: originalContent)
-        }
-    }
-
-    private func makeProjectReplaceTransaction(
+    func makeProjectReplaceTransaction(
         preview: ProjectReplacePreview,
         summary: ProjectReplaceSummary,
         snapshots: [ProjectReplaceFileSnapshot]
@@ -4857,97 +4002,12 @@ final class ProjectViewModel: ObservableObject {
         return lines[max(lineNumber - 1, 0)].trimmingCharacters(in: .whitespaces)
     }
 
-    private func relativeDisplayPath(for fileURL: URL) -> String {
+    func relativeDisplayPath(for fileURL: URL) -> String {
         guard let rootDirectory else { return fileURL.lastPathComponent }
         let filePath = fileURL.path
         let rootPath = rootDirectory.path
         guard filePath.hasPrefix(rootPath + "/") else { return fileURL.path }
         return String(filePath.dropFirst(rootPath.count + 1))
-    }
-
-    private func resolveUnsavedChangesForProjectReplace(
-        affecting fileURLs: [URL],
-        title: String,
-        message: String
-    ) -> Bool {
-        let normalizedPaths = Set(fileURLs.map(normalizedPath(for:)))
-        let affectedDirtyIndices = openTabs.indices.filter { index in
-            guard openTabs[index].isDirty, let filePath = openTabs[index].filePath else {
-                return false
-            }
-            return normalizedPaths.contains(normalizedPath(for: filePath))
-        }
-
-        return resolveUnsavedChanges(for: affectedDirtyIndices, title: title, message: message)
-    }
-
-    private func performProjectReplace(
-        preview: ProjectReplacePreview,
-        snapshots: [ProjectReplaceFileSnapshot]
-    ) {
-        guard !preview.results.isEmpty else { return }
-
-        replaceInProjectTask?.cancel()
-        replaceInProjectToken = UUID()
-        let token = replaceInProjectToken
-        let normalizedRootPath = rootDirectory.map(normalizedPath(for:))
-        isReplacingInProject = true
-
-        replaceInProjectTask = Task { [weak self, fileService] in
-            guard let self else { return }
-
-            do {
-                let summary = try await fileService.replaceSearchResultsAsync(
-                    preview.results,
-                    searchQuery: preview.searchQuery,
-                    replacement: preview.replacement,
-                    options: preview.searchOptions
-                )
-                guard self.replaceInProjectToken == token,
-                      self.rootDirectory.map(self.normalizedPath(for:)) == normalizedRootPath else {
-                    return
-                }
-
-                self.syncOpenTabs(with: summary.modifiedFiles)
-                self.isReplacingInProject = false
-                self.lastProjectReplaceTransaction = self.makeProjectReplaceTransaction(
-                    preview: preview,
-                    summary: summary,
-                    snapshots: snapshots
-                )
-                self.performProjectSearch()
-                self.refreshGitState()
-                if summary.replacementCount > 0 {
-                    self.ui.alert(
-                        "Replace Complete",
-                        "Replaced \(summary.replacementCount) match\(summary.replacementCount == 1 ? "" : "es") in \(summary.modifiedFiles.count) file\(summary.modifiedFiles.count == 1 ? "" : "s").",
-                        .informational
-                    )
-                }
-            } catch {
-                guard self.replaceInProjectToken == token else { return }
-                self.isReplacingInProject = false
-                self.ui.alert("Error", "Could not replace matches: \(error.localizedDescription)", .warning)
-            }
-        }
-    }
-
-    private func syncOpenTabs(with fileURLs: [URL]) {
-        let normalizedPaths = Set(fileURLs.map(normalizedPath(for:)))
-        guard !normalizedPaths.isEmpty else { return }
-        invalidateWorkspaceSymbolCache()
-
-        for index in openTabs.indices {
-            guard let filePath = openTabs[index].filePath,
-                  normalizedPaths.contains(normalizedPath(for: filePath)),
-                  let content = try? fileService.readFile(at: filePath) else {
-                continue
-            }
-
-            openTabs[index].content = content
-            openTabs[index].originalContent = content
-            openTabs[index].isDirty = false
-        }
     }
 
     private func updateOpenTabPaths(moving oldURL: URL, to newURL: URL, includeDescendants: Bool) {
@@ -5017,7 +4077,7 @@ final class ProjectViewModel: ObservableObject {
         reloadFileTree()
     }
 
-    private func persistSession() {
+    func persistSession() {
         let session = ProjectSessionState(
             rootDirectoryPath: rootDirectory.map(normalizedPath(for:)),
             expandedDirectoryPaths: Array(expandedDirectoryPaths).sorted(),
@@ -5095,7 +4155,7 @@ final class ProjectViewModel: ObservableObject {
         refreshGitState()
     }
 
-    private func reloadDebuggerState(resetConsole: Bool) {
+    func reloadDebuggerState(resetConsole: Bool) {
         Task { @MainActor [weak self] in
             await self?.debugSessionService.stop()
         }
@@ -5178,39 +4238,6 @@ final class ProjectViewModel: ObservableObject {
             guard let self else { return }
             await self.debugSessionService.updateBreakpoints(self.breakpoints, projectRoot: self.rootDirectory)
         }
-    }
-
-    private func installGitFixture(at rootURL: URL, trackedFileURL: URL) throws {
-        let gitignoreURL = rootURL.appendingPathComponent(".gitignore")
-        let ignoredFileURL = rootURL.appendingPathComponent("Ignored.log")
-        try "Ignored.log\nIgnoredDir/\n".write(to: gitignoreURL, atomically: true, encoding: .utf8)
-
-        func run(_ arguments: [String]) throws {
-            let process = Process()
-            let stderrPipe = Pipe()
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-            process.arguments = ["git"] + arguments
-            process.currentDirectoryURL = rootURL
-            process.standardError = stderrPipe
-            try process.run()
-            process.waitUntilExit()
-
-            if process.terminationStatus != 0 {
-                let stderr = String(
-                    data: stderrPipe.fileHandleForReading.readDataToEndOfFile(),
-                    encoding: .utf8
-                ) ?? ""
-                throw GitServiceError.commandFailed(stderr.trimmingCharacters(in: .whitespacesAndNewlines))
-            }
-        }
-
-        try run(["init", "--initial-branch=main"])
-        try run(["config", "user.name", "Rosewood UITests"])
-        try run(["config", "user.email", "rosewood-ui@example.com"])
-        try run(["add", trackedFileURL.lastPathComponent, gitignoreURL.lastPathComponent])
-        try run(["commit", "-m", "Initial commit"])
-        try "let tracked = 2\n".write(to: trackedFileURL, atomically: true, encoding: .utf8)
-        try "ignore me\n".write(to: ignoredFileURL, atomically: true, encoding: .utf8)
     }
 
     func refreshGitState() {
@@ -5361,7 +4388,7 @@ final class ProjectViewModel: ObservableObject {
         return String(filePath.dropFirst(rootPath.count + 1))
     }
 
-    private func normalizedPath(for url: URL) -> String {
+    func normalizedPath(for url: URL) -> String {
         url.standardizedFileURL.path
     }
 
