@@ -1757,6 +1757,103 @@ struct ProjectViewModelTests {
     }
 
     @Test
+    func currentFileSymbolsTrackCursorAndOpenOutlineSelection() throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let sourcesURL = rootURL.appendingPathComponent("Sources", isDirectory: true)
+        let alphaURL = sourcesURL.appendingPathComponent("Alpha.swift")
+
+        try FileManager.default.createDirectory(at: sourcesURL, withIntermediateDirectories: true)
+        try """
+        func firstThing() {}
+        func secondThing() {}
+        """.write(to: alphaURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let configURL = tempConfigURL()
+        defer { try? FileManager.default.removeItem(at: configURL) }
+
+        let viewModel = makeViewModel(
+            sessionStore: makeDefaults(),
+            sessionKey: "outline-symbols-test",
+            configService: ConfigurationService(userConfigURL: configURL),
+            fileWatcher: FileWatcherService(),
+            ui: TestProjectUI()
+        )
+
+        viewModel.rootDirectory = rootURL
+        viewModel.fileTree = [
+            FileItem(
+                name: "Sources",
+                path: sourcesURL,
+                isDirectory: true,
+                children: [
+                    FileItem(name: "Alpha.swift", path: alphaURL, isDirectory: false)
+                ]
+            )
+        ]
+
+        viewModel.openFile(at: alphaURL)
+
+        let symbols = viewModel.currentFileSymbols
+        #expect(symbols.map(\.name) == ["firstThing", "secondThing"])
+
+        viewModel.updateCursorPosition(line: 2, column: 1)
+        let activeSymbol = try #require(symbols.last)
+        #expect(viewModel.activeCurrentFileSymbolID == activeSymbol.id)
+
+        viewModel.openWorkspaceSymbol(activeSymbol)
+        #expect(viewModel.selectedTab?.pendingLineJump == 2)
+    }
+
+    @Test
+    func openFileRevealsActiveFileAncestorsInExplorer() async throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let sourcesURL = rootURL.appendingPathComponent("Sources", isDirectory: true)
+        let featuresURL = sourcesURL.appendingPathComponent("Features", isDirectory: true)
+        let alphaURL = featuresURL.appendingPathComponent("Alpha.swift")
+
+        try FileManager.default.createDirectory(at: featuresURL, withIntermediateDirectories: true)
+        try "func alpha() {}\n".write(to: alphaURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let configURL = tempConfigURL()
+        defer { try? FileManager.default.removeItem(at: configURL) }
+
+        let viewModel = makeViewModel(
+            sessionStore: makeDefaults(),
+            sessionKey: "reveal-active-file-test",
+            configService: ConfigurationService(userConfigURL: configURL),
+            fileWatcher: FileWatcherService(),
+            ui: TestProjectUI()
+        )
+
+        viewModel.rootDirectory = rootURL
+        viewModel.reloadFileTree()
+
+        while viewModel.isLoadingFileTree {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+
+        #expect(viewModel.fileTree.first?.isExpanded == false)
+
+        viewModel.openFile(at: alphaURL)
+
+        while viewModel.isLoadingFileTree {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+
+        let sourcesFolder = try #require(viewModel.fileTree.first)
+        #expect(sourcesFolder.name == "Sources")
+        #expect(sourcesFolder.isExpanded == true)
+
+        let featuresFolder = try #require(sourcesFolder.children.first)
+        #expect(featuresFolder.name == "Features")
+        #expect(featuresFolder.isExpanded == true)
+    }
+
+    @Test
     func quickOpenWorkspaceProblemSearchShowsCurrentFileAndWorkspaceSectionsAndOpensSelectedProblem() throws {
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

@@ -745,6 +745,7 @@ final class ProjectViewModel: ObservableObject {
         let shouldInstallMinimapFixture = environment["ROSEWOOD_UI_TEST_MINIMAP_FIXTURE"] == "1"
         let shouldInstallGitFixture = environment["ROSEWOOD_UI_TEST_GIT_FIXTURE"] == "1"
         let shouldInstallNavigationFixture = environment["ROSEWOOD_UI_TEST_NAVIGATION_FIXTURE"] == "1"
+        let shouldInstallExplorerFixture = environment["ROSEWOOD_UI_TEST_EXPLORER_FIXTURE"] == "1"
         let shouldInstallDebugCommandsFixture = environment["ROSEWOOD_UI_TEST_DEBUG_COMMANDS_FIXTURE"] == "1"
         let shouldInstallGoCommandsFixture = environment["ROSEWOOD_UI_TEST_GO_COMMANDS_FIXTURE"] == "1"
         guard shouldInstallContextMenuFixture
@@ -755,6 +756,7 @@ final class ProjectViewModel: ObservableObject {
             || shouldInstallMinimapFixture
             || shouldInstallGitFixture
             || shouldInstallNavigationFixture
+            || shouldInstallExplorerFixture
             || shouldInstallDebugCommandsFixture
             || shouldInstallGoCommandsFixture else {
             return
@@ -793,6 +795,13 @@ final class ProjectViewModel: ObservableObject {
                     func alphaHelper() {
                         let alphaValue = 1
                     }
+                }
+                """
+            } else if shouldInstallExplorerFixture {
+                alphaContents = """
+                struct ExplorerFeature {
+                    func firstThing() {}
+                    func secondThing() {}
                 }
                 """
             } else if shouldInstallGoCommandsFixture {
@@ -844,6 +853,16 @@ final class ProjectViewModel: ObservableObject {
                     let alphaCopy = 1
                 }
                 """.write(to: betaURL, atomically: true, encoding: .utf8)
+            } else if shouldInstallExplorerFixture {
+                let sourcesURL = rootURL.appendingPathComponent("Sources", isDirectory: true)
+                let featuresURL = sourcesURL.appendingPathComponent("Features", isDirectory: true)
+                let nestedAlphaURL = featuresURL.appendingPathComponent("Alpha.swift")
+                let nestedBetaURL = sourcesURL.appendingPathComponent("Beta.swift")
+
+                try fileManager.createDirectory(at: featuresURL, withIntermediateDirectories: true)
+                try alphaContents.write(to: nestedAlphaURL, atomically: true, encoding: .utf8)
+                try "func betaThing() {}\n".write(to: nestedBetaURL, atomically: true, encoding: .utf8)
+                try? fileManager.removeItem(at: alphaURL)
             }
 
             if shouldInstallGitFixture {
@@ -889,7 +908,9 @@ final class ProjectViewModel: ObservableObject {
         reloadDebuggerState(resetConsole: true)
         reloadFileTree()
 
-        openFile(at: alphaURL)
+        if !shouldInstallExplorerFixture {
+            openFile(at: alphaURL)
+        }
         if shouldInstallContextMenuFixture {
             openTabs.append(EditorTab())
             selectedTabIndex = 0
@@ -1052,6 +1073,24 @@ final class ProjectViewModel: ObservableObject {
             visibleTopLine: editorVisibleLineRange?.lowerBound ?? 1,
             cursorLine: selectedTab.cursorPosition.line
         )
+    }
+
+    var currentFileSymbols: [WorkspaceSymbolMatch] {
+        guard let selectedFileURL = selectedTab?.filePath else { return [] }
+        let selectedPath = normalizedPath(for: selectedFileURL)
+        return workspaceSymbols()
+            .filter { normalizedPath(for: $0.fileURL) == selectedPath }
+            .sorted { lhs, rhs in
+                if lhs.line == rhs.line {
+                    return lhs.column < rhs.column
+                }
+                return lhs.line < rhs.line
+            }
+    }
+
+    var activeCurrentFileSymbolID: String? {
+        guard let cursorLine = selectedTab?.cursorPosition.line else { return nil }
+        return currentFileSymbols.last(where: { $0.line <= cursorLine })?.id
     }
 
     var hasUnsavedChanges: Bool {
@@ -2873,7 +2912,20 @@ final class ProjectViewModel: ObservableObject {
 
     func jumpToLineInSelectedTab(_ line: Int) {
         guard let selectedTabIndex, openTabs.indices.contains(selectedTabIndex) else { return }
-        openTabs[selectedTabIndex].pendingLineJump = max(line, 1)
+        let targetLine = max(line, 1)
+        updateCursorPosition(line: targetLine, column: 1)
+        openTabs[selectedTabIndex].pendingLineJump = targetLine
+    }
+
+    func openWorkspaceSymbol(_ symbol: WorkspaceSymbolMatch) {
+        if let selectedFilePath = selectedTab?.filePath,
+           normalizedPath(for: selectedFilePath) == normalizedPath(for: symbol.fileURL) {
+            jumpToLineInSelectedTab(symbol.line)
+            return
+        }
+
+        openFile(at: symbol.fileURL)
+        jumpToLineInSelectedTab(symbol.line)
     }
 
     func toggleQuickOpen() {
@@ -5355,44 +5407,6 @@ final class ProjectViewModel: ObservableObject {
     }
 }
 
-struct ProjectSessionState: Codable, Equatable {
-    let rootDirectoryPath: String?
-    let expandedDirectoryPaths: [String]
-    let openTabs: [ProjectSessionTabState]
-    let selectedTabPath: String?
-}
-
-struct ProjectSessionTabState: Codable, Equatable {
-    let filePath: String
-    let fileName: String
-    let content: String
-    let originalContent: String
-    let isDirty: Bool
-    let encodingRawValue: UInt?
-    let encodingLabel: String?
-    let lineEndingRawValue: String?
-
-    init(
-        filePath: String,
-        fileName: String,
-        content: String,
-        originalContent: String,
-        isDirty: Bool,
-        encodingRawValue: UInt? = nil,
-        encodingLabel: String? = nil,
-        lineEndingRawValue: String? = nil
-    ) {
-        self.filePath = filePath
-        self.fileName = fileName
-        self.content = content
-        self.originalContent = originalContent
-        self.isDirty = isDirty
-        self.encodingRawValue = encodingRawValue
-        self.encodingLabel = encodingLabel
-        self.lineEndingRawValue = lineEndingRawValue
-    }
-}
-
 struct ReferenceResult: Identifiable, Equatable {
     let location: LSPLocation
     let fileURL: URL
@@ -5498,69 +5512,6 @@ struct QuickOpenSection: Identifiable, Hashable {
 
     var id: String {
         title
-    }
-}
-
-struct WorkspaceSymbolMatch: Identifiable, Hashable {
-    let name: String
-    let kind: String
-    let fileURL: URL
-    let displayPath: String
-    let line: Int
-    let column: Int
-    let lineText: String
-    let originalIndex: Int
-
-    var id: String {
-        "\(fileURL.standardizedFileURL.path):\(line):\(column):\(name)"
-    }
-
-    var kindDisplayName: String {
-        switch kind.lowercased() {
-        case "func", "function", "def", "fn", "fun":
-            return "Function"
-        case "class":
-            return "Class"
-        case "struct":
-            return "Struct"
-        case "enum":
-            return "Enum"
-        case "protocol", "interface":
-            return "Protocol"
-        case "actor":
-            return "Actor"
-        case "macro":
-            return "Macro"
-        case "var", "let", "const":
-            return "Variable"
-        case "typealias", "type":
-            return "Type"
-        case "extension":
-            return "Extension"
-        case "object":
-            return "Object"
-        default:
-            return kind.capitalized
-        }
-    }
-
-    var iconName: String {
-        switch kind.lowercased() {
-        case "func", "function", "def", "fn", "fun":
-            return "function"
-        case "class", "actor":
-            return "shippingbox"
-        case "struct", "protocol", "interface", "enum", "typealias", "type", "object":
-            return "cube.box"
-        case "var", "let", "const":
-            return "character.cursor.ibeam"
-        case "extension":
-            return "square.stack.3d.up"
-        case "macro":
-            return "wand.and.stars"
-        default:
-            return "number"
-        }
     }
 }
 

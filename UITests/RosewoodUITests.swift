@@ -743,6 +743,53 @@ final class RosewoodUITests: XCTestCase {
         XCTAssertEqual(ignoredRow.value as? String, "Ignored")
     }
 
+    @MainActor
+    func testExplorerSupportsKeyboardNavigationIntoNestedFiles() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["ROSEWOOD_UI_TEST_RESET_SESSION"] = "1"
+        app.launchEnvironment["ROSEWOOD_UI_TEST_EXPLORER_FIXTURE"] = "1"
+        app.launch()
+        app.activate()
+
+        let sourcesRow = app.descendants(matching: .any).matching(identifier: "file-tree-row-Sources").firstMatch
+        XCTAssertTrue(sourcesRow.waitForExistence(timeout: 5))
+
+        sourcesRow.click()
+
+        let featuresRow = app.descendants(matching: .any).matching(identifier: "file-tree-row-Features").firstMatch
+        XCTAssertTrue(featuresRow.waitForExistence(timeout: 2))
+
+        app.typeKey(XCUIKeyboardKey.rightArrow.rawValue, modifierFlags: [])
+        app.typeKey(XCUIKeyboardKey.rightArrow.rawValue, modifierFlags: [])
+
+        let alphaRow = app.descendants(matching: .any).matching(identifier: "file-tree-row-Alpha.swift").firstMatch
+        XCTAssertTrue(alphaRow.waitForExistence(timeout: 2))
+
+        app.typeKey(XCUIKeyboardKey.rightArrow.rawValue, modifierFlags: [])
+        app.typeKey(XCUIKeyboardKey.return.rawValue, modifierFlags: [])
+
+        let outlineSidebar = app.descendants(matching: .any).matching(identifier: "outline-sidebar").firstMatch
+        XCTAssertTrue(outlineSidebar.waitForExistence(timeout: 2))
+        XCTAssertTrue(app.staticTexts["Line 1, Col 1"].waitForExistence(timeout: 2))
+    }
+
+    @MainActor
+    func testOutlineSidebarShowsCurrentFileSymbols() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["ROSEWOOD_UI_TEST_RESET_SESSION"] = "1"
+        app.launchEnvironment["ROSEWOOD_UI_TEST_NAVIGATION_FIXTURE"] = "1"
+        app.launch()
+        app.activate()
+
+        let outlineSidebar = app.descendants(matching: .any).matching(identifier: "outline-sidebar").firstMatch
+        XCTAssertTrue(outlineSidebar.waitForExistence(timeout: 5))
+
+        let typeRow = app.buttons["outline-symbol-row-AlphaSymbol"]
+        let helperRow = app.buttons["outline-symbol-row-alphaHelper"]
+        XCTAssertTrue(typeRow.waitForExistence(timeout: 2))
+        XCTAssertTrue(helperRow.waitForExistence(timeout: 2))
+    }
+
     private func currentEditorText(in textView: XCUIElement) -> String {
         textView.value as? String ?? ""
     }
@@ -769,5 +816,21 @@ final class RosewoodUITests: XCTestCase {
         } while Date() < deadline
 
         return (element.value as? String) != oldValue
+    }
+
+    private func waitForElementLabel(
+        in element: XCUIElement,
+        toEqual expectedLabel: String,
+        timeout: TimeInterval = 2
+    ) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        repeat {
+            if element.label == expectedLabel {
+                return true
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        } while Date() < deadline
+
+        return element.label == expectedLabel
     }
 }

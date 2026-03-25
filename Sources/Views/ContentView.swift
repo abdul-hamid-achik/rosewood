@@ -132,7 +132,16 @@ struct ContentView: View {
             } else if projectViewModel.fileTree.isEmpty {
                 emptyStateView
             } else {
-                FileTreeView(items: projectViewModel.fileTree)
+                VStack(spacing: 0) {
+                    FileTreeView(items: projectViewModel.fileTree)
+
+                    if projectViewModel.selectedTab?.filePath != nil {
+                        ThemedDivider()
+
+                        OutlineSidebarView()
+                            .frame(minHeight: 120, idealHeight: 180, maxHeight: 220)
+                    }
+                }
             }
         }
         .background(themeColors.panelBackground)

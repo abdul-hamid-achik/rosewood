@@ -127,6 +127,7 @@ struct StatusBarView: View {
             if let tab = projectViewModel.selectedTab {
                 statusMonospaceText(tab.cursorPosition.description)
                     .accessibilityLabel(tab.cursorPosition.description)
+                    .accessibilityValue(tab.cursorPosition.description)
                     .accessibilityIdentifier("statusbar-cursor-position")
 
                 Spacer()
