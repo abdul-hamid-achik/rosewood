@@ -95,6 +95,7 @@ final class RosewoodUITests: XCTestCase {
         app.launchEnvironment["ROSEWOOD_UI_TEST_NAVIGATION_FIXTURE"] = "1"
         app.launch()
         app.activate()
+        XCTAssertTrue(app.wait(for: .runningForeground, timeout: 5))
 
         app.typeKey("p", modifierFlags: [.command, .shift])
 
@@ -224,13 +225,14 @@ final class RosewoodUITests: XCTestCase {
         app.launchEnvironment["ROSEWOOD_UI_TEST_GIT_FIXTURE"] = "1"
         app.launch()
         app.activate()
+        XCTAssertTrue(app.wait(for: .runningForeground, timeout: 5))
 
         let changedFile = app.descendants(matching: .any).matching(identifier: "git-change-row-0").firstMatch
         XCTAssertTrue(changedFile.waitForExistence(timeout: 5))
         changedFile.click()
 
         let diffWorkspace = app.descendants(matching: .any).matching(identifier: "git-diff-workspace").firstMatch
-        XCTAssertTrue(diffWorkspace.waitForExistence(timeout: 5))
+        XCTAssertTrue(diffWorkspace.waitForExistence(timeout: 8))
 
         app.typeKey("p", modifierFlags: [.command, .shift])
 

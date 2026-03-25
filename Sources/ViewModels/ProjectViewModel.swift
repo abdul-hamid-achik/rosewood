@@ -213,18 +213,18 @@ final class ProjectViewModel: ObservableObject {
     @Published var isSearchingProject: Bool = false
     @Published var isReplacingInProject: Bool = false
     @Published var breakpoints: [Breakpoint] = []
-    @Published private(set) var debugSessionState: DebugSessionState = .idle
-    @Published private(set) var debugConsoleEntries: [DebugConsoleEntry] = []
+    @Published var debugSessionState: DebugSessionState = .idle
+    @Published var debugConsoleEntries: [DebugConsoleEntry] = []
     @Published var debugStoppedFilePath: String?
     @Published var debugStoppedLine: Int?
     @Published var referenceResults: [ReferenceResult] = []
-    @Published private(set) var gitRepositoryStatus: GitRepositoryStatus = .empty
-    @Published private(set) var selectedGitDiff: GitDiffResult?
-    @Published private(set) var selectedGitDiffPath: String?
-    @Published private(set) var isGitDiffWorkspaceVisible: Bool = false
-    @Published private(set) var currentLineBlame: GitBlameInfo?
-    @Published private(set) var isRefreshingGitStatus: Bool = false
-    @Published private(set) var isLoadingGitDiff: Bool = false
+    @Published var gitRepositoryStatus: GitRepositoryStatus = .empty
+    @Published var selectedGitDiff: GitDiffResult?
+    @Published var selectedGitDiffPath: String?
+    @Published var isGitDiffWorkspaceVisible: Bool = false
+    @Published var currentLineBlame: GitBlameInfo?
+    @Published var isRefreshingGitStatus: Bool = false
+    @Published var isLoadingGitDiff: Bool = false
     @Published private(set) var activeCurrentDiagnosticID: String?
     @Published private(set) var activeWorkspaceDiagnosticID: String?
     @Published private(set) var diagnosticsPanelScope: DiagnosticsPanelScope = .currentFile
@@ -520,11 +520,11 @@ final class ProjectViewModel: ObservableObject {
     }
 
     let fileService: FileService
-    private let sessionStore: UserDefaults
+    let sessionStore: UserDefaults
     private let sessionKey: String
     private let projectConfigPromptedRootsKey: String
-    private let debugSelectedConfigurationsKey: String
-    private let debugPanelVisibilityKey: String
+    let debugSelectedConfigurationsKey: String
+    let debugPanelVisibilityKey: String
     var expandedDirectoryPaths: Set<String> = []
     private var autoSaveTask: Task<Void, Never>?
     private var reloadFileTreeTask: Task<Void, Never>?
@@ -537,22 +537,22 @@ final class ProjectViewModel: ObservableObject {
     private let commandDispatcher: AppCommandDispatcher
     let ui: ProjectViewModelUI
     let lspService: LSPServiceProtocol
-    private let breakpointStore: BreakpointStore
-    private let debugConfigurationService: DebugConfigurationService
-    private let debugSessionService: DebugSessionServiceProtocol
-    private let gitService: GitServiceProtocol
+    let breakpointStore: BreakpointStore
+    let debugConfigurationService: DebugConfigurationService
+    let debugSessionService: DebugSessionServiceProtocol
+    let gitService: GitServiceProtocol
     private var settingsCommandCancellable: AnyCancellable?
     private var fileTreeLoadToken = UUID()
     var projectSearchToken = UUID()
     var replaceInProjectToken = UUID()
     var projectSearchResultsQuery = ""
     var projectSearchResultsOptions = ProjectSearchOptions()
-    private var gitStatusTask: Task<Void, Never>?
-    private var gitDiffTask: Task<Void, Never>?
-    private var gitBlameTask: Task<Void, Never>?
-    private var gitStatusToken = UUID()
-    private var gitDiffToken = UUID()
-    private var gitBlameToken = UUID()
+    var gitStatusTask: Task<Void, Never>?
+    var gitDiffTask: Task<Void, Never>?
+    var gitBlameTask: Task<Void, Never>?
+    var gitStatusToken = UUID()
+    var gitDiffToken = UUID()
+    var gitBlameToken = UUID()
     let projectSearchDebounceNanoseconds: UInt64
     private var quickOpenAccessSequence = 0
     private var quickOpenRecentAccessByPath: [String: Int] = [:]
@@ -2700,112 +2700,6 @@ final class ProjectViewModel: ObservableObject {
         pasteboard.setString(value, forType: .string)
     }
 
-    func openGitChangedFile(_ changedFile: GitChangedFile) {
-        if let repositoryRoot = gitRepositoryStatus.repositoryRoot {
-            let fileURL = repositoryRoot.appendingPathComponent(changedFile.path)
-            if FileManager.default.fileExists(atPath: fileURL.path) {
-                openFile(at: fileURL, preservingGitDiffWorkspace: true)
-            }
-        }
-        sidebarMode = .sourceControl
-        isGitDiffWorkspaceVisible = true
-        bottomPanel = nil
-        loadGitDiff(for: changedFile)
-    }
-
-    func showPreviousGitChange() {
-        guard let selectedGitChangeIndex, selectedGitChangeIndex > 0 else { return }
-        openGitChangedFile(gitRepositoryStatus.changedFiles[selectedGitChangeIndex - 1])
-    }
-
-    func showNextGitChange() {
-        guard let selectedGitChangeIndex, selectedGitChangeIndex < gitRepositoryStatus.changedFiles.count - 1 else { return }
-        openGitChangedFile(gitRepositoryStatus.changedFiles[selectedGitChangeIndex + 1])
-    }
-
-    func openSelectedGitChangeInEditor() {
-        guard let selectedTabIndex else { return }
-        selectTab(at: selectedTabIndex)
-    }
-
-    func openGitChangedFileInEditor(_ changedFile: GitChangedFile) {
-        openGitChangedFile(changedFile)
-        openSelectedGitChangeInEditor()
-    }
-
-    func revealSelectedGitChangeInExplorer() {
-        guard selectedGitChangedFile != nil else { return }
-        sidebarMode = .explorer
-    }
-
-    func stageSelectedGitChange() {
-        guard let changedFile = selectedGitChangedFile else { return }
-        stageGitChange(changedFile)
-    }
-
-    func stageGitChange(_ changedFile: GitChangedFile) {
-        runGitMutation(
-            task: { [gitService, rootDirectory] in
-                await gitService.stage(changedFile: changedFile, projectRoot: rootDirectory)
-            }
-        )
-    }
-
-    func unstageSelectedGitChange() {
-        guard let changedFile = selectedGitChangedFile else { return }
-        unstageGitChange(changedFile)
-    }
-
-    func unstageGitChange(_ changedFile: GitChangedFile) {
-        runGitMutation(
-            task: { [gitService, rootDirectory] in
-                await gitService.unstage(changedFile: changedFile, projectRoot: rootDirectory)
-            }
-        )
-    }
-
-    func discardSelectedGitChange() {
-        guard let changedFile = selectedGitChangedFile else { return }
-        discardGitChange(changedFile)
-    }
-
-    func discardGitChange(_ changedFile: GitChangedFile) {
-
-        let title = changedFile.kind == .untracked ? "Discard New File?" : "Discard Working Tree Changes?"
-        let message = changedFile.kind == .untracked
-            ? "This will permanently delete \(changedFile.path)."
-            : "This will restore \(changedFile.path) to the last committed version."
-        let response = ui.confirm(title, message, .warning, ["Discard", "Cancel"])
-        guard response == .alertFirstButtonReturn else { return }
-
-        runGitMutation(
-            task: { [gitService, rootDirectory] in
-                await gitService.discard(changedFile: changedFile, projectRoot: rootDirectory)
-            },
-            onSuccess: { [weak self] in
-                guard let self else { return }
-                if changedFile.kind == .untracked,
-                   let selectedTabIndex = self.selectedTabIndex,
-                   self.openTabs.indices.contains(selectedTabIndex),
-                   let filePath = self.openTabs[selectedTabIndex].filePath,
-                   let repositoryRoot = self.gitRepositoryStatus.repositoryRoot,
-                   self.normalizedPath(for: filePath) == self.normalizedPath(for: repositoryRoot.appendingPathComponent(changedFile.path)) {
-                    _ = self.closeTab(at: selectedTabIndex, confirmUnsavedChanges: false)
-                }
-            }
-        )
-    }
-
-    func closeGitDiffPanel() {
-        dismissGitDiffWorkspace()
-        selectedGitDiff = nil
-        selectedGitDiffPath = nil
-        isLoadingGitDiff = false
-        if isGitDiffPanelVisible {
-            bottomPanel = nil
-        }
-    }
-
     func openReferenceResult(_ result: ReferenceResult) {
         openFile(at: result.fileURL)
         guard let selectedTabIndex, openTabs.indices.contains(selectedTabIndex) else { return }
@@ -2814,99 +2708,6 @@ final class ProjectViewModel: ObservableObject {
             return
         }
         openTabs[selectedTabIndex].pendingLineJump = result.line
-    }
-
-    func clearDebugConsole() {
-        debugConsoleEntries = []
-    }
-
-    func openCurrentDebugStopLocation() {
-        guard let debugStoppedFilePath, let debugStoppedLine else { return }
-        let fileURL = URL(fileURLWithPath: debugStoppedFilePath)
-        openFile(at: fileURL)
-        guard let selectedTabIndex, openTabs.indices.contains(selectedTabIndex) else { return }
-        openTabs[selectedTabIndex].pendingLineJump = debugStoppedLine
-    }
-
-    func startDebugging() {
-        guard let rootDirectory else {
-            ui.alert("No Folder Open", "Please open a folder first.", .warning)
-            return
-        }
-
-        reloadDebugConfigurations()
-        guard let configuration = selectedDebugConfiguration else {
-            showDebugSidebar()
-            ui.alert("No Debug Configuration", "Add a [debug] configuration to .rosewood.toml first.", .warning)
-            return
-        }
-
-        guard prepareForSessionTransition(
-            title: "Start Debugger",
-            message: "Do you want to save changes before starting the debug session?"
-        ) else {
-            return
-        }
-
-        showDebugSidebar()
-        bottomPanel = .debugConsole
-        persistDebugPreferences()
-        clearStoppedLocation()
-        debugSessionState = .starting
-        appendDebugConsole("Starting \"\(configuration.name)\"...", kind: .info)
-
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            do {
-                let result = try await self.debugSessionService.start(
-                    configuration: configuration,
-                    projectRoot: rootDirectory,
-                    breakpoints: self.breakpoints
-                )
-                if result.executedPreLaunchTask {
-                    self.appendDebugConsole("preLaunchTask completed successfully.", kind: .success)
-                }
-                self.appendDebugConsole("Found lldb-dap at \(result.adapterPath)", kind: .success)
-                self.appendDebugConsole("Program ready at \(result.programPath)", kind: .success)
-            } catch {
-                let message = error.localizedDescription
-                self.debugSessionState = .failed(message)
-                self.clearStoppedLocation()
-                self.appendDebugConsole(message, kind: .error)
-                self.ui.alert("Debug Start Failed", message, .warning)
-            }
-        }
-    }
-
-    func stopDebugging() {
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            await self.debugSessionService.stop()
-        }
-    }
-
-    func toggleBreakpoint(line: Int) {
-        guard let rootDirectory, let fileURL = selectedTab?.filePath else { return }
-        breakpoints = breakpointStore.toggleBreakpoint(fileURL: fileURL, line: line, projectRoot: rootDirectory)
-        syncActiveDebugBreakpoints()
-    }
-
-    func openBreakpoint(_ breakpoint: Breakpoint) {
-        let fileURL = URL(fileURLWithPath: breakpoint.filePath)
-        openFile(at: fileURL)
-        if let selectedTabIndex, openTabs.indices.contains(selectedTabIndex) {
-            openTabs[selectedTabIndex].pendingLineJump = breakpoint.line
-        }
-    }
-
-    func openNextBreakpoint() {
-        guard let breakpoint = navigatedBreakpoint(step: 1) else { return }
-        openBreakpoint(breakpoint)
-    }
-
-    func openPreviousBreakpoint() {
-        guard let breakpoint = navigatedBreakpoint(step: -1) else { return }
-        openBreakpoint(breakpoint)
     }
 
     private func navigatedProblem(step: Int) -> NavigableProblem? {
@@ -3869,7 +3670,7 @@ final class ProjectViewModel: ObservableObject {
         }
     }
 
-    private func prepareForSessionTransition(title: String, message: String) -> Bool {
+    func prepareForSessionTransition(title: String, message: String) -> Bool {
         let dirtyIndices = openTabs.indices.filter { openTabs[$0].isDirty }
         guard !dirtyIndices.isEmpty else { return true }
 
@@ -4176,225 +3977,6 @@ final class ProjectViewModel: ObservableObject {
         refreshGitState()
     }
 
-    func reloadDebuggerState(resetConsole: Bool) {
-        Task { @MainActor [weak self] in
-            await self?.debugSessionService.stop()
-        }
-        loadBreakpoints()
-        reloadDebugConfigurations()
-        clearStoppedLocation()
-        debugSessionState = .idle
-        if resetConsole {
-            debugConsoleEntries = []
-        }
-    }
-
-    private func loadBreakpoints() {
-        breakpoints = breakpointStore.breakpoints(for: rootDirectory)
-    }
-
-    private func reloadDebugConfigurations() {
-        do {
-            let configuration = try debugConfigurationService.loadProjectConfiguration(for: rootDirectory)
-            debugConfigurationError = nil
-            debugConfigurations = configuration.configurations
-
-            let resolvedSelection = [
-                selectedDebugConfigurationName,
-                storedSelectedDebugConfigurationName(for: rootDirectory),
-                configuration.defaultConfiguration,
-                configuration.configurations.first?.name
-            ]
-                .compactMap { $0 }
-                .first { candidate in
-                    configuration.configurations.contains(where: { $0.name == candidate })
-                }
-
-            selectedDebugConfigurationName = resolvedSelection
-            persistDebugPreferences()
-        } catch {
-            debugConfigurations = []
-            selectedDebugConfigurationName = nil
-            debugConfigurationError = error.localizedDescription
-        }
-    }
-
-    private func appendDebugConsole(_ message: String, kind: DebugConsoleEntry.Kind) {
-        debugConsoleEntries.append(DebugConsoleEntry(kind: kind, message: message))
-    }
-
-    private func handleDebugSessionEvent(_ event: DebugSessionEvent) {
-        switch event {
-        case let .output(kind, message):
-            appendDebugConsole(message, kind: kind)
-        case let .state(state):
-            debugSessionState = state
-            if case .idle = state {
-                clearStoppedLocation()
-            }
-        case let .stopped(filePath, line, reason):
-            debugStoppedFilePath = filePath.map { normalizedPath(for: URL(fileURLWithPath: $0)) }
-            debugStoppedLine = line
-            appendDebugConsole("Paused: \(reason)", kind: .warning)
-
-            guard let filePath, let line else { return }
-            let fileURL = URL(fileURLWithPath: filePath)
-            openFile(at: fileURL)
-            if let selectedTabIndex, openTabs.indices.contains(selectedTabIndex) {
-                openTabs[selectedTabIndex].pendingLineJump = line
-            }
-        case .terminated:
-            clearStoppedLocation()
-            appendDebugConsole("Debug session terminated.", kind: .info)
-        }
-    }
-
-    private func clearStoppedLocation() {
-        debugStoppedFilePath = nil
-        debugStoppedLine = nil
-    }
-
-    private func syncActiveDebugBreakpoints() {
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            await self.debugSessionService.updateBreakpoints(self.breakpoints, projectRoot: self.rootDirectory)
-        }
-    }
-
-    func refreshGitState() {
-        gitStatusTask?.cancel()
-        gitStatusToken = UUID()
-        let token = gitStatusToken
-
-        guard let rootDirectory else {
-            resetGitState()
-            return
-        }
-
-        let normalizedRootPath = normalizedPath(for: rootDirectory)
-        isRefreshingGitStatus = true
-
-        gitStatusTask = Task { [weak self] in
-            guard let self else { return }
-            let status = await self.gitService.repositoryStatus(for: rootDirectory)
-            guard !Task.isCancelled,
-                  self.gitStatusToken == token,
-                  self.rootDirectory.map(self.normalizedPath(for:)) == normalizedRootPath else {
-                return
-            }
-
-            self.gitRepositoryStatus = status
-            self.isRefreshingGitStatus = false
-            self.refreshSelectedGitDiffIfNeeded()
-            self.refreshCurrentLineBlame()
-        }
-    }
-
-    private func loadGitDiff(for changedFile: GitChangedFile) {
-        gitDiffTask?.cancel()
-        gitDiffToken = UUID()
-        let token = gitDiffToken
-        selectedGitDiffPath = changedFile.path
-        selectedGitDiff = nil
-        isLoadingGitDiff = true
-
-        let normalizedRootPath = rootDirectory.map(normalizedPath(for:))
-        gitDiffTask = Task { [weak self] in
-            guard let self else { return }
-            let diff = await self.gitService.diff(for: changedFile, projectRoot: self.rootDirectory)
-            guard !Task.isCancelled,
-                  self.gitDiffToken == token,
-                  self.selectedGitDiffPath == changedFile.path,
-                  self.rootDirectory.map(self.normalizedPath(for:)) == normalizedRootPath else {
-                return
-            }
-
-            self.selectedGitDiff = diff
-            self.isLoadingGitDiff = false
-        }
-    }
-
-    private func refreshSelectedGitDiffIfNeeded() {
-        guard let selectedGitDiffPath else {
-            selectedGitDiff = nil
-            isLoadingGitDiff = false
-            return
-        }
-
-        guard let changedFile = gitRepositoryStatus.changedFiles.first(where: { $0.path == selectedGitDiffPath }) else {
-            closeGitDiffPanel()
-            return
-        }
-
-        if isGitDiffVisible {
-            loadGitDiff(for: changedFile)
-        }
-    }
-
-    private func refreshCurrentLineBlame() {
-        gitBlameTask?.cancel()
-        gitBlameToken = UUID()
-        let token = gitBlameToken
-
-        guard let selectedTab, let fileURL = selectedTab.filePath, !selectedTab.isDirty else {
-            currentLineBlame = nil
-            return
-        }
-
-        currentLineBlame = nil
-        let selectedPath = normalizedPath(for: fileURL)
-        let selectedLine = selectedTab.cursorPosition.line
-        let normalizedRootPath = rootDirectory.map(normalizedPath(for:))
-
-        gitBlameTask = Task { [weak self] in
-            guard let self else { return }
-            let blame = await self.gitService.blame(
-                for: fileURL,
-                line: selectedLine,
-                projectRoot: self.rootDirectory
-            )
-            guard !Task.isCancelled,
-                  self.gitBlameToken == token,
-                  self.selectedTab?.filePath.map(self.normalizedPath(for:)) == selectedPath,
-                  self.selectedTab?.cursorPosition.line == selectedLine,
-                  self.rootDirectory.map(self.normalizedPath(for:)) == normalizedRootPath else {
-                return
-            }
-
-            self.currentLineBlame = blame
-        }
-    }
-
-    private func runGitMutation(
-        task: @escaping @Sendable () async -> GitOperationResult,
-        onSuccess: (() -> Void)? = nil
-    ) {
-        Task { [weak self] in
-            guard let self else { return }
-            let result = await task()
-            guard !Task.isCancelled else { return }
-
-            if result.isSuccess {
-                onSuccess?()
-                self.refreshGitState()
-            } else {
-                self.ui.alert("Git Action Failed", result.message ?? "Git action failed.", .warning)
-            }
-        }
-    }
-
-    private func resetGitState() {
-        gitRepositoryStatus = .empty
-        selectedGitDiff = nil
-        selectedGitDiffPath = nil
-        currentLineBlame = nil
-        isRefreshingGitStatus = false
-        isLoadingGitDiff = false
-        if isGitDiffPanelVisible {
-            bottomPanel = nil
-        }
-    }
-
     private var normalizedIgnoredGitPaths: [String] {
         gitRepositoryStatus.ignoredPaths.map { ignoredPath in
             ignoredPath.hasSuffix("/") ? String(ignoredPath.dropLast()) : ignoredPath
@@ -4428,26 +4010,6 @@ final class ProjectViewModel: ObservableObject {
         var promptedRoots = projectConfigPromptedRoots
         promptedRoots.insert(normalizedPath(for: url))
         sessionStore.set(Array(promptedRoots).sorted(), forKey: projectConfigPromptedRootsKey)
-    }
-
-    private func storedSelectedDebugConfigurationName(for projectRoot: URL?) -> String? {
-        guard let projectRoot else { return nil }
-        let selections = sessionStore.dictionary(forKey: debugSelectedConfigurationsKey) as? [String: String] ?? [:]
-        return selections[normalizedPath(for: projectRoot)]
-    }
-
-    private func persistDebugPreferences() {
-        sessionStore.set(isDebugPanelVisible, forKey: debugPanelVisibilityKey)
-
-        guard let rootDirectory, let selectedDebugConfigurationName else { return }
-
-        var selections = sessionStore.dictionary(forKey: debugSelectedConfigurationsKey) as? [String: String] ?? [:]
-        selections[normalizedPath(for: rootDirectory)] = selectedDebugConfigurationName
-        sessionStore.set(selections, forKey: debugSelectedConfigurationsKey)
-    }
-
-    private func dismissGitDiffWorkspace() {
-        isGitDiffWorkspaceVisible = false
     }
 
     private var projectConfigPromptedRoots: Set<String> {
