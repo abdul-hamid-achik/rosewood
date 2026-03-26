@@ -103,88 +103,69 @@ struct ProblemsPanelView: View {
     }
 
     private var headerView: some View {
-        HStack {
-            Text("Problems")
-                .font(RosewoodType.subheadlineStrong)
-                .foregroundColor(themeColors.subduedText)
-                .accessibilityIdentifier("problems-panel-title")
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 8) {
+                    Text("Problems")
+                        .font(RosewoodType.subheadlineStrong)
+                        .foregroundColor(themeColors.subduedText)
+                        .accessibilityIdentifier("problems-panel-title")
 
-            Text("\(visibleProblemCount)")
-                .font(RosewoodType.monoCaption)
-                .foregroundColor(themeColors.mutedText)
+                    if let scopeSummaryText {
+                        RosewoodHeaderChip(text: scopeSummaryText, tint: themeColors.mutedText)
+                            .accessibilityIdentifier("problems-panel-scope-summary")
+                    }
 
-            Text(summaryText)
-                .font(RosewoodType.caption)
-                .foregroundColor(themeColors.mutedText)
-                .accessibilityIdentifier("problems-panel-summary")
+                    if let currentProblemPositionText = projectViewModel.currentProblemPositionText {
+                        RosewoodHeaderChip(text: currentProblemPositionText, tint: themeColors.accent)
+                            .accessibilityLabel(currentProblemPositionText)
+                            .accessibilityValue(currentProblemPositionText)
+                            .accessibilityIdentifier("problems-panel-position")
+                    }
+                }
 
-            if let scopeSummaryText {
-                Text(scopeSummaryText)
+                Text(summaryText)
                     .font(RosewoodType.caption)
                     .foregroundColor(themeColors.mutedText)
-                    .accessibilityIdentifier("problems-panel-scope-summary")
+                    .accessibilityIdentifier("problems-panel-summary")
             }
 
-            if let currentProblemPositionText = projectViewModel.currentProblemPositionText {
-                Text(currentProblemPositionText)
-                    .font(RosewoodType.monoCaption)
-                    .foregroundColor(themeColors.accent)
-                    .accessibilityLabel(currentProblemPositionText)
-                    .accessibilityValue(currentProblemPositionText)
-                    .accessibilityIdentifier("problems-panel-position")
-            }
+            Spacer(minLength: 12)
 
-            Spacer()
+            HStack(spacing: 8) {
+                if showsWorkspaceScope {
+                    scopeButton(
+                        title: "File",
+                        isSelected: projectViewModel.diagnosticsPanelScope == .currentFile,
+                        accessibilityIdentifier: "problems-scope-current-file"
+                    ) {
+                        projectViewModel.setDiagnosticsPanelScope(.currentFile)
+                    }
 
-            if showsWorkspaceScope {
-                scopeButton(
-                    title: "File",
-                    isSelected: projectViewModel.diagnosticsPanelScope == .currentFile,
-                    accessibilityIdentifier: "problems-scope-current-file"
-                ) {
-                    projectViewModel.setDiagnosticsPanelScope(.currentFile)
+                    scopeButton(
+                        title: "Workspace",
+                        isSelected: projectViewModel.diagnosticsPanelScope == .workspace,
+                        accessibilityIdentifier: "problems-scope-workspace"
+                    ) {
+                        projectViewModel.setDiagnosticsPanelScope(.workspace)
+                    }
                 }
 
-                scopeButton(
-                    title: "Workspace",
-                    isSelected: projectViewModel.diagnosticsPanelScope == .workspace,
-                    accessibilityIdentifier: "problems-scope-workspace"
-                ) {
-                    projectViewModel.setDiagnosticsPanelScope(.workspace)
+                RosewoodPanelIconButton(systemImage: "chevron.up", tint: themeColors.mutedText, isEnabled: projectViewModel.canNavigateProblems) {
+                    projectViewModel.openPreviousProblem()
                 }
-            }
+                .accessibilityIdentifier("problems-panel-previous")
 
-            Button {
-                projectViewModel.openPreviousProblem()
-            } label: {
-                Image(systemName: "chevron.up")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundColor(themeColors.mutedText)
-            }
-            .buttonStyle(.borderless)
-            .disabled(!projectViewModel.canNavigateProblems)
-            .accessibilityIdentifier("problems-panel-previous")
+                RosewoodPanelIconButton(systemImage: "chevron.down", tint: themeColors.mutedText, isEnabled: projectViewModel.canNavigateProblems) {
+                    projectViewModel.openNextProblem()
+                }
+                .accessibilityIdentifier("problems-panel-next")
 
-            Button {
-                projectViewModel.openNextProblem()
-            } label: {
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundColor(themeColors.mutedText)
+                RosewoodPanelIconButton(systemImage: "xmark", tint: themeColors.mutedText, isEnabled: true) {
+                    projectViewModel.toggleDiagnosticsPanel()
+                }
+                .accessibilityIdentifier("problems-panel-close")
             }
-            .buttonStyle(.borderless)
-            .disabled(!projectViewModel.canNavigateProblems)
-            .accessibilityIdentifier("problems-panel-next")
-
-            Button {
-                projectViewModel.toggleDiagnosticsPanel()
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundColor(themeColors.mutedText)
-            }
-            .buttonStyle(.borderless)
-            .accessibilityIdentifier("problems-panel-close")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)

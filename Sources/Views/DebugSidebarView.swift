@@ -21,60 +21,82 @@ struct DebugSidebarView: View {
     }
 
     private var sessionSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        RosewoodSidebarCard {
             sectionTitle("Session")
 
+            HStack(alignment: .center, spacing: 10) {
+                ZStack {
+                    Circle()
+                        .fill(sessionAccentColor.opacity(0.14))
+                        .frame(width: 26, height: 26)
+
+                    Image(systemName: sessionStatusIcon)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(sessionAccentColor)
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(debugSessionSummary)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(themeColors.foreground)
+
+                    if let sessionSecondaryText {
+                        Text(sessionSecondaryText)
+                            .font(.system(size: 11))
+                            .foregroundColor(themeColors.mutedText)
+                    }
+                }
+
+                Spacer(minLength: 0)
+
+                if sessionStateChipText != nil {
+                    headerChip(sessionStateChipText!, tint: sessionAccentColor)
+                }
+            }
+
+            Button {
+                performPrimaryDebugAction()
+            } label: {
+                Label(primaryDebugActionTitle, systemImage: primaryDebugActionIcon)
+                    .font(.system(size: 12, weight: .semibold))
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(primaryDebugActionTint)
+            .disabled(!canPerformPrimaryDebugAction)
+
             HStack(spacing: 8) {
-                Circle()
-                    .fill(projectViewModel.debugSessionState == .idle ? themeColors.mutedText : themeColors.accent)
-                    .frame(width: 8, height: 8)
-
-                Text(debugSessionSummary)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(themeColors.foreground)
-            }
-
-            HStack(spacing: 8) {
-                Button(projectViewModel.debugPrimaryActionTitle) {
-                    projectViewModel.startDebugging()
+                sessionInlineAction(
+                    title: projectViewModel.isDebugPanelVisible ? "Hide Console" : "Show Console",
+                    systemImage: projectViewModel.isDebugPanelVisible ? "rectangle.bottomthird.inset.filled" : "terminal",
+                    tint: themeColors.accent
+                ) {
+                    projectViewModel.toggleDebugPanel()
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(themeColors.accentStrong)
-                .disabled(!projectViewModel.canStartDebugging)
 
-                Button("Stop") {
-                    projectViewModel.stopDebugging()
+                sessionInlineAction(
+                    title: projectViewModel.hasProjectConfigFile ? "Open Config" : "Create Config",
+                    systemImage: projectViewModel.hasProjectConfigFile ? "doc.text" : "plus.square",
+                    tint: themeColors.subduedText
+                ) {
+                    projectViewModel.openProjectConfig(createIfNeeded: !projectViewModel.hasProjectConfigFile)
                 }
-                .buttonStyle(.bordered)
-                .disabled(!projectViewModel.canStopDebugging)
-            }
 
-            Button(projectViewModel.isDebugPanelVisible ? "Hide Console" : "Show Console") {
-                projectViewModel.toggleDebugPanel()
-            }
-            .buttonStyle(.borderless)
-            .foregroundColor(themeColors.accent)
-
-            if projectViewModel.canOpenCurrentDebugStopLocation {
-                Button("Open Stop Location") {
-                    projectViewModel.openCurrentDebugStopLocation()
+                if projectViewModel.canOpenCurrentDebugStopLocation {
+                    sessionInlineAction(
+                        title: "Open Stop Location",
+                        systemImage: "location",
+                        tint: themeColors.warning
+                    ) {
+                        projectViewModel.openCurrentDebugStopLocation()
+                    }
                 }
-                .buttonStyle(.borderless)
-                .foregroundColor(themeColors.warning)
-            }
-
-            if let helperText = debugSessionHelperText {
-                Text(helperText)
-                    .font(.system(size: 11))
-                    .foregroundColor(themeColors.mutedText)
             }
 
             if let latestConsoleEntry = projectViewModel.debugConsoleEntries.last {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 8) {
-                        Text(latestConsoleEntry.kind.rawValue.uppercased())
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundColor(color(for: latestConsoleEntry.kind))
+                        headerChip(latestConsoleEntry.kind.rawValue.uppercased(), tint: color(for: latestConsoleEntry.kind))
 
                         Text(latestConsoleEntry.timestamp.formatted(date: .omitted, time: .shortened))
                             .font(.system(size: 10, design: .monospaced))
@@ -87,18 +109,30 @@ struct DebugSidebarView: View {
                         .lineLimit(2)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.top, 4)
+                .padding(.top, 2)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(themeColors.elevatedBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
     private var configurationSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        RosewoodSidebarCard {
             sectionTitle("Configuration")
+
+            HStack(spacing: 8) {
+                Text(configurationStatusTitle)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(themeColors.foreground)
+
+                Spacer()
+
+                if projectViewModel.rootDirectory != nil {
+                    Button(projectViewModel.hasProjectConfigFile ? "Open Config" : "Create & Open") {
+                        projectViewModel.openProjectConfig(createIfNeeded: !projectViewModel.hasProjectConfigFile)
+                    }
+                    .buttonStyle(.borderless)
+                    .foregroundColor(themeColors.accent)
+                }
+            }
 
             if projectViewModel.rootDirectory == nil {
                 Text("Open a folder to configure debugging.")
@@ -109,17 +143,10 @@ struct DebugSidebarView: View {
                     .font(.system(size: 12))
                     .foregroundColor(themeColors.danger)
             } else if projectViewModel.debugConfigurations.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Add a launch config to `.rosewood.toml` to run or attach here.")
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(projectViewModel.hasProjectConfigFile ? "Add a launch configuration to `.rosewood.toml`." : "Create `.rosewood.toml` to define launch configurations.")
                         .font(.system(size: 12))
                         .foregroundColor(themeColors.subduedText)
-
-                    if !projectViewModel.hasProjectConfigFile {
-                        Button("Create Project Config") {
-                            projectViewModel.createProjectConfig()
-                        }
-                        .buttonStyle(.bordered)
-                    }
                 }
             } else {
                 Picker(
@@ -136,30 +163,29 @@ struct DebugSidebarView: View {
                 .pickerStyle(.menu)
 
                 if let configuration = projectViewModel.selectedDebugConfiguration {
-                    VStack(alignment: .leading, spacing: 4) {
-                        debugMetadata(label: "Adapter", value: configuration.adapter)
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(spacing: 6) {
+                            headerChip(configuration.adapter.uppercased(), tint: themeColors.accent)
+                            if let preLaunchTask = configuration.preLaunchTask, !preLaunchTask.isEmpty {
+                                headerChip("preLaunchTask", tint: themeColors.warning)
+                            }
+                        }
+
                         debugMetadata(label: "Program", value: configuration.program)
                         debugMetadata(label: "Working Dir", value: configuration.cwd ?? ".")
-                        if let preLaunchTask = configuration.preLaunchTask, !preLaunchTask.isEmpty {
-                            debugMetadata(label: "preLaunchTask", value: preLaunchTask)
-                        }
                     }
                     .padding(.top, 4)
                 }
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(themeColors.elevatedBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
     private var breakpointSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        RosewoodSidebarCard {
             sectionTitle("Breakpoints")
 
             if projectViewModel.breakpoints.isEmpty {
-                Text("Click the editor gutter to add a breakpoint.")
+                Text("No breakpoints yet. Use the editor gutter to add one.")
                     .font(.system(size: 12))
                     .foregroundColor(themeColors.subduedText)
             } else {
@@ -202,16 +228,30 @@ struct DebugSidebarView: View {
                 }
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(themeColors.elevatedBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
     private func sectionTitle(_ title: String) -> some View {
         Text(title)
             .font(.system(size: 12, weight: .semibold))
             .foregroundColor(themeColors.subduedText)
+    }
+
+    private func headerChip(_ text: String, tint: Color) -> some View {
+        RosewoodHeaderChip(text: text, tint: tint)
+    }
+
+    private func sessionInlineAction(
+        title: String,
+        systemImage: String,
+        tint: Color,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: systemImage)
+                .font(.system(size: 11, weight: .medium))
+        }
+        .buttonStyle(.borderless)
+        .foregroundColor(tint)
     }
 
     private func color(for kind: DebugConsoleEntry.Kind) -> Color {
@@ -228,29 +268,149 @@ struct DebugSidebarView: View {
     }
 
     private var debugSessionSummary: String {
-        if projectViewModel.debugSessionState != .idle {
-            return projectViewModel.debugSessionState.statusText
+        switch projectViewModel.debugSessionState {
+        case .idle:
+            return projectViewModel.selectedDebugConfigurationName == nil ? "Ready to Configure" : "Ready to Run"
+        case .starting:
+            return "Starting Session"
+        case .running:
+            return "Debug Session Running"
+        case .paused:
+            return "Paused on Breakpoint"
+        case .stopping:
+            return "Stopping Session"
+        case .failed:
+            return "Debug Start Failed"
         }
-
-        if let selectedDebugConfigurationName = projectViewModel.selectedDebugConfigurationName {
-            return selectedDebugConfigurationName
-        }
-
-        return "Not Configured"
     }
 
-    private var debugSessionHelperText: String? {
-        guard projectViewModel.debugSessionState == .idle else { return nil }
+    private var sessionSecondaryText: String? {
+        switch projectViewModel.debugSessionState {
+        case .idle, .failed:
+            return projectViewModel.selectedDebugConfigurationName
+        case .starting, .running, .paused, .stopping:
+            return projectViewModel.selectedDebugConfigurationName
+        }
+    }
 
+    private var configurationStatusTitle: String {
         if projectViewModel.rootDirectory == nil {
-            return "Open a folder to enable launch configurations and breakpoints."
+            return "No Workspace"
+        }
+
+        if projectViewModel.debugConfigurationError != nil {
+            return "Config Error"
         }
 
         if projectViewModel.debugConfigurations.isEmpty {
-            return "Create a `.rosewood.toml` file to define a launch configuration."
+            return projectViewModel.hasProjectConfigFile ? "No Launch Configurations" : "No Project Config"
         }
 
-        return "Start the selected configuration or inspect breakpoints below."
+        return projectViewModel.selectedDebugConfigurationName ?? "Configuration"
+    }
+
+    private var sessionAccentColor: Color {
+        switch projectViewModel.debugSessionState {
+        case .idle:
+            return themeColors.mutedText
+        case .starting:
+            return themeColors.accent
+        case .running:
+            return themeColors.success
+        case .paused:
+            return themeColors.warning
+        case .stopping:
+            return themeColors.warning
+        case .failed:
+            return themeColors.danger
+        }
+    }
+
+    private var sessionStatusIcon: String {
+        switch projectViewModel.debugSessionState {
+        case .idle:
+            return "circle.dashed"
+        case .starting:
+            return "arrow.triangle.2.circlepath"
+        case .running:
+            return "play.fill"
+        case .paused:
+            return "pause.fill"
+        case .stopping:
+            return "stop.fill"
+        case .failed:
+            return "exclamationmark.triangle.fill"
+        }
+    }
+
+    private var sessionStateChipText: String? {
+        switch projectViewModel.debugSessionState {
+        case .running:
+            return "Running"
+        case .paused:
+            return "Paused"
+        case .failed:
+            return "Failed"
+        default:
+            return nil
+        }
+    }
+
+    private var primaryDebugActionTitle: String {
+        switch projectViewModel.debugSessionState {
+        case .idle, .failed:
+            return "Start"
+        case .starting:
+            return "Starting..."
+        case .running, .paused:
+            return "Stop"
+        case .stopping:
+            return "Stopping..."
+        }
+    }
+
+    private var primaryDebugActionIcon: String {
+        switch projectViewModel.debugSessionState {
+        case .idle, .failed:
+            return "play.fill"
+        case .starting:
+            return "arrow.triangle.2.circlepath"
+        case .running, .paused, .stopping:
+            return "stop.fill"
+        }
+    }
+
+    private var primaryDebugActionTint: Color {
+        switch projectViewModel.debugSessionState {
+        case .idle, .failed:
+            return themeColors.accentStrong
+        case .starting:
+            return themeColors.accent
+        case .running, .paused, .stopping:
+            return themeColors.warning
+        }
+    }
+
+    private var canPerformPrimaryDebugAction: Bool {
+        switch projectViewModel.debugSessionState {
+        case .idle, .failed:
+            return projectViewModel.canStartDebugging
+        case .starting, .stopping:
+            return false
+        case .running, .paused:
+            return projectViewModel.canStopDebugging
+        }
+    }
+
+    private func performPrimaryDebugAction() {
+        switch projectViewModel.debugSessionState {
+        case .idle, .failed:
+            projectViewModel.startDebugging()
+        case .running, .paused:
+            projectViewModel.stopDebugging()
+        case .starting, .stopping:
+            break
+        }
     }
 
     private func debugMetadata(label: String, value: String) -> some View {

@@ -53,6 +53,66 @@ struct ThemedDivider: View {
     }
 }
 
+struct RosewoodSidebarCard<Content: View>: View {
+    @EnvironmentObject private var configService: ConfigurationService
+
+    let spacing: CGFloat
+    let content: Content
+
+    init(spacing: CGFloat = RosewoodUI.spacing4, @ViewBuilder content: () -> Content) {
+        self.spacing = spacing
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: spacing) {
+            content
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(RosewoodUI.spacing5)
+        .rosewoodCard(configService.currentThemeColors, radius: RosewoodUI.radiusSmall)
+    }
+}
+
+struct RosewoodHeaderChip: View {
+    let text: String
+    let tint: Color
+
+    var body: some View {
+        Text(text)
+            .font(RosewoodType.monoMicro)
+            .foregroundColor(tint)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 4)
+            .background(
+                Capsule()
+                    .fill(tint.opacity(0.12))
+            )
+    }
+}
+
+struct RosewoodPanelIconButton: View {
+    let systemImage: String
+    let tint: Color
+    let isEnabled: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundColor(isEnabled ? tint : tint.opacity(0.45))
+                .frame(width: 22, height: 22)
+                .background(
+                    RoundedRectangle(cornerRadius: 7)
+                        .fill(tint.opacity(0.12))
+                )
+        }
+        .buttonStyle(.plain)
+        .disabled(!isEnabled)
+    }
+}
+
 extension View {
     func rosewoodCard(_ themeColors: ThemeColors, radius: CGFloat = RosewoodUI.radiusMedium) -> some View {
         background(themeColors.elevatedBackground)

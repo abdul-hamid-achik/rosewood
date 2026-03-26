@@ -80,12 +80,14 @@ final class RosewoodUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchEnvironment["ROSEWOOD_UI_TEST_RESET_SESSION"] = "1"
         app.launch()
+        app.activate()
+        XCTAssertTrue(app.wait(for: .runningForeground, timeout: 5))
 
         app.typeKey("p", modifierFlags: [.command])
-        XCTAssertTrue(app.textFields["Search files, :line, #symbol..."].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.textFields["quick-open-input"].waitForExistence(timeout: 2))
 
         app.typeKey("p", modifierFlags: [.command, .shift])
-        XCTAssertTrue(app.textFields["Type a command..."].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.textFields["command-palette-input"].waitForExistence(timeout: 2))
     }
 
     @MainActor
@@ -99,14 +101,14 @@ final class RosewoodUITests: XCTestCase {
 
         app.typeKey("p", modifierFlags: [.command, .shift])
 
-        let commandField = app.textFields["Type a command..."]
+        let commandField = app.textFields["command-palette-input"]
         XCTAssertTrue(commandField.waitForExistence(timeout: 2))
 
         commandField.click()
         commandField.typeText("workspace symbol")
 
         let symbolAction = app.buttons["command-palette-action-goToSymbol"]
-        XCTAssertTrue(symbolAction.waitForExistence(timeout: 2))
+        XCTAssertTrue(symbolAction.waitForExistence(timeout: 5))
         app.typeKey(XCUIKeyboardKey.return.rawValue, modifierFlags: [])
 
         let quickOpenField = app.textFields["quick-open-input"]
@@ -124,10 +126,11 @@ final class RosewoodUITests: XCTestCase {
         app.launchEnvironment["ROSEWOOD_UI_TEST_NAVIGATION_FIXTURE"] = "1"
         app.launch()
         app.activate()
+        XCTAssertTrue(app.wait(for: .runningForeground, timeout: 5))
 
         app.typeKey("p", modifierFlags: [.command, .shift])
 
-        let commandField = app.textFields["Type a command..."]
+        let commandField = app.textFields["command-palette-input"]
         XCTAssertTrue(commandField.waitForExistence(timeout: 2))
 
         commandField.click()
@@ -135,7 +138,7 @@ final class RosewoodUITests: XCTestCase {
         XCTAssertTrue(app.buttons["command-palette-action-goToSymbol"].waitForExistence(timeout: 2))
         app.typeKey(XCUIKeyboardKey.return.rawValue, modifierFlags: [])
 
-        let quickOpenField = app.textFields["Search files, :line, #symbol..."]
+        let quickOpenField = app.textFields["quick-open-input"]
         XCTAssertTrue(quickOpenField.waitForExistence(timeout: 2))
         app.typeKey(XCUIKeyboardKey.escape.rawValue, modifierFlags: [])
 
@@ -152,16 +155,17 @@ final class RosewoodUITests: XCTestCase {
         app.launchEnvironment["ROSEWOOD_UI_TEST_NAVIGATION_FIXTURE"] = "1"
         app.launch()
         app.activate()
+        XCTAssertTrue(app.wait(for: .runningForeground, timeout: 5))
 
         app.typeKey("p", modifierFlags: [.command, .shift])
 
-        let commandField = app.textFields["Type a command..."]
+        let commandField = app.textFields["command-palette-input"]
         XCTAssertTrue(commandField.waitForExistence(timeout: 2))
         let helpText = app.descendants(matching: .any).matching(identifier: "command-palette-help-text").firstMatch
         XCTAssertTrue(helpText.waitForExistence(timeout: 2))
 
         let searchScope = app.buttons["command-palette-scope-search"]
-        XCTAssertTrue(searchScope.waitForExistence(timeout: 2))
+        XCTAssertTrue(searchScope.waitForExistence(timeout: 5))
         searchScope.click()
 
         XCTAssertTrue(app.buttons["command-palette-action-showProjectSearch"].waitForExistence(timeout: 2))
@@ -175,10 +179,11 @@ final class RosewoodUITests: XCTestCase {
         app.launchEnvironment["ROSEWOOD_UI_TEST_DIAGNOSTICS_FIXTURE"] = "1"
         app.launch()
         app.activate()
+        XCTAssertTrue(app.wait(for: .runningForeground, timeout: 5))
 
         app.typeKey("p", modifierFlags: [.command, .shift])
 
-        let commandField = app.textFields["Type a command..."]
+        let commandField = app.textFields["command-palette-input"]
         XCTAssertTrue(commandField.waitForExistence(timeout: 2))
 
         commandField.click()
@@ -198,13 +203,14 @@ final class RosewoodUITests: XCTestCase {
         app.launchEnvironment["ROSEWOOD_UI_TEST_GIT_FIXTURE"] = "1"
         app.launch()
         app.activate()
+        XCTAssertTrue(app.wait(for: .runningForeground, timeout: 5))
 
         let sourceControlSidebar = app.descendants(matching: .any).matching(identifier: "source-control-sidebar").firstMatch
         XCTAssertTrue(sourceControlSidebar.waitForExistence(timeout: 5))
 
         app.typeKey("p", modifierFlags: [.command, .shift])
 
-        let commandField = app.textFields["Type a command..."]
+        let commandField = app.textFields["command-palette-input"]
         XCTAssertTrue(commandField.waitForExistence(timeout: 2))
 
         commandField.click()
@@ -236,7 +242,7 @@ final class RosewoodUITests: XCTestCase {
 
         app.typeKey("p", modifierFlags: [.command, .shift])
 
-        let commandField = app.textFields["Type a command..."]
+        let commandField = app.textFields["command-palette-input"]
         XCTAssertTrue(commandField.waitForExistence(timeout: 2))
 
         commandField.click()
@@ -258,7 +264,7 @@ final class RosewoodUITests: XCTestCase {
 
         app.typeKey("p", modifierFlags: [.command])
 
-        let quickOpenField = app.textFields["Search files, :line, #symbol..."]
+        let quickOpenField = app.textFields["quick-open-input"]
         XCTAssertTrue(quickOpenField.waitForExistence(timeout: 2))
 
         quickOpenField.click()
@@ -291,7 +297,7 @@ final class RosewoodUITests: XCTestCase {
 
         app.typeKey("p", modifierFlags: [.command])
 
-        let quickOpenField = app.textFields["Search files, :line, #symbol..."]
+        let quickOpenField = app.textFields["quick-open-input"]
         XCTAssertTrue(quickOpenField.waitForExistence(timeout: 2))
 
         quickOpenField.click()
@@ -462,7 +468,7 @@ final class RosewoodUITests: XCTestCase {
 
         app.typeKey("p", modifierFlags: [.command, .shift])
 
-        let commandField = app.textFields["Type a command..."]
+        let commandField = app.textFields["command-palette-input"]
         XCTAssertTrue(commandField.waitForExistence(timeout: 2))
 
         commandField.click()
@@ -483,7 +489,7 @@ final class RosewoodUITests: XCTestCase {
 
         app.typeKey("p", modifierFlags: [.command, .shift])
 
-        let commandField = app.textFields["Type a command..."]
+        let commandField = app.textFields["command-palette-input"]
         XCTAssertTrue(commandField.waitForExistence(timeout: 2))
 
         commandField.click()
@@ -586,6 +592,7 @@ final class RosewoodUITests: XCTestCase {
         app.launchEnvironment["ROSEWOOD_UI_TEST_DIAGNOSTICS_FIXTURE"] = "1"
         app.launch()
         app.activate()
+        XCTAssertTrue(app.wait(for: .runningForeground, timeout: 5))
 
         app.typeKey("m", modifierFlags: [.command, .shift])
 

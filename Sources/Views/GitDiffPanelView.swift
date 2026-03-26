@@ -109,8 +109,8 @@ struct GitDiffPanelView: View {
                             .accessibilityIdentifier("git-diff-file-position")
                     }
                     Spacer(minLength: 8)
-                    workspaceViewActions
                     fileNavigationView
+                    workspaceViewActions
                     workspaceGitActions
                     hunkNavigationView(for: diff)
                     headerControls
@@ -390,7 +390,7 @@ struct GitDiffPanelView: View {
     private var workspaceGitActions: some View {
         HStack(spacing: 6) {
             if let changedFile = projectViewModel.selectedGitChangedFile, changedFile.canStage {
-                diffActionButton(
+                compactIconActionButton(
                     title: "Stage",
                     systemImage: "square.and.arrow.down",
                     tint: themeColors.success,
@@ -401,7 +401,7 @@ struct GitDiffPanelView: View {
             }
 
             if let changedFile = projectViewModel.selectedGitChangedFile, changedFile.canUnstage {
-                diffActionButton(
+                compactIconActionButton(
                     title: "Unstage",
                     systemImage: "arrow.uturn.backward",
                     tint: themeColors.warning,
@@ -412,7 +412,7 @@ struct GitDiffPanelView: View {
             }
 
             if let changedFile = projectViewModel.selectedGitChangedFile, changedFile.canDiscard {
-                diffActionButton(
+                compactIconActionButton(
                     title: changedFile.kind == .untracked ? "Delete" : "Revert",
                     systemImage: changedFile.kind == .untracked ? "trash" : "arrow.counterclockwise",
                     tint: themeColors.danger,
@@ -571,28 +571,6 @@ struct GitDiffPanelView: View {
         .buttonStyle(.plain)
         .help(title)
         .accessibilityLabel(title)
-        .accessibilityIdentifier(accessibilityIdentifier)
-    }
-
-    private func diffActionButton(
-        title: String,
-        systemImage: String,
-        tint: Color,
-        accessibilityIdentifier: String,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            Label(title, systemImage: systemImage)
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundColor(tint)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 5)
-                .background(
-                    Capsule()
-                        .fill(tint.opacity(0.12))
-                )
-        }
-        .buttonStyle(.plain)
         .accessibilityIdentifier(accessibilityIdentifier)
     }
 

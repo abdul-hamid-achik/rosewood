@@ -132,15 +132,7 @@ private struct SourceControlSectionView: View {
                     .kerning(0.5)
                     .foregroundColor(themeColors.mutedText)
 
-                Text("\(section.files.count)")
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                    .foregroundColor(themeColors.subduedText)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(
-                        Capsule()
-                            .fill(themeColors.elevatedBackground)
-                    )
+                RosewoodHeaderChip(text: "\(section.files.count)", tint: themeColors.mutedText)
 
                 Spacer()
             }

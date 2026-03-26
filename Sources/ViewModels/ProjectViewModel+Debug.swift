@@ -1,6 +1,56 @@
 import Foundation
 
 extension ProjectViewModel {
+    func selectDebugConfiguration(named name: String) {
+        guard debugConfigurations.contains(where: { $0.name == name }) else { return }
+        selectedDebugConfigurationName = name
+        persistDebugPreferences()
+    }
+
+    func toggleDebugPanel() {
+        bottomPanel = isDebugPanelVisible ? nil : .debugConsole
+        persistDebugPreferences()
+    }
+
+    func createProjectConfig() {
+        if let rootDirectory {
+            configService.setProjectRoot(rootDirectory)
+        }
+
+        do {
+            try configService.createDefaultProjectConfig()
+            reloadDebugConfigurations()
+            refreshGitState()
+        } catch {
+            ui.alert("Error", "Could not create project config: \(error.localizedDescription)", .warning)
+        }
+    }
+
+    func openProjectConfig(createIfNeeded: Bool = false) {
+        guard let rootDirectory else { return }
+
+        configService.setProjectRoot(rootDirectory)
+        guard let projectConfigURL = configService.projectConfigURL else { return }
+
+        if !FileManager.default.fileExists(atPath: projectConfigURL.path) {
+            guard createIfNeeded else {
+                ui.alert("No Project Config", "Create a .rosewood.toml file first.", .warning)
+                return
+            }
+
+            do {
+                try configService.createDefaultProjectConfig()
+                reloadDebugConfigurations()
+                refreshGitState()
+            } catch {
+                ui.alert("Error", "Could not create project config: \(error.localizedDescription)", .warning)
+                return
+            }
+        }
+
+        openFile(at: projectConfigURL)
+    }
+
     func clearDebugConsole() {
         debugConsoleEntries = []
     }

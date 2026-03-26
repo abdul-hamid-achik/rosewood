@@ -399,7 +399,7 @@ struct ActivitySidebarView: View {
 
             activityButton(
                 mode: .debug,
-                systemImage: "play.square",
+                systemImage: "ladybug",
                 label: "Run & Debug",
                 badge: projectViewModel.workspaceDiagnosticCount.errors > 0 ? "!" : nil
             )
@@ -498,7 +498,8 @@ struct SearchSidebarView: View {
                         Spacer(minLength: 0)
 
                         searchModeToggle(
-                            label: "Aa",
+                            systemImage: "textformat.abc",
+                            helpText: "Match Case",
                             isOn: projectViewModel.projectSearchCaseSensitive,
                             accessibilityIdentifier: "project-search-case-sensitive"
                         ) {
@@ -506,7 +507,8 @@ struct SearchSidebarView: View {
                         }
 
                         searchModeToggle(
-                            label: "W",
+                            systemImage: "text.word.spacing",
+                            helpText: "Match Whole Word",
                             isOn: projectViewModel.projectSearchWholeWord,
                             accessibilityIdentifier: "project-search-whole-word"
                         ) {
@@ -514,7 +516,8 @@ struct SearchSidebarView: View {
                         }
 
                         searchModeToggle(
-                            label: ".*",
+                            systemImage: "curlybraces.square",
+                            helpText: "Use Regular Expression",
                             isOn: projectViewModel.projectSearchUseRegex,
                             accessibilityIdentifier: "project-search-regex"
                         ) {
@@ -945,16 +948,18 @@ struct SearchSidebarView: View {
     }
 
     private func searchModeToggle(
-        label: String,
+        systemImage: String,
+        helpText: String,
         isOn: Bool,
         accessibilityIdentifier: String,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            Text(label)
-                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+            Image(systemName: systemImage)
+                .font(.system(size: 11, weight: .semibold))
                 .foregroundColor(isOn ? themeColors.accentStrong : themeColors.subduedText)
-                .padding(.horizontal, 7)
+                .frame(width: 20, height: 18)
+                .padding(.horizontal, 4)
                 .padding(.vertical, 4)
                 .background(
                     Capsule()
@@ -966,6 +971,7 @@ struct SearchSidebarView: View {
                 )
         }
         .buttonStyle(.plain)
+        .help(helpText)
         .accessibilityIdentifier(accessibilityIdentifier)
     }
 

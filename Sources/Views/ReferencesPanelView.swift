@@ -8,6 +8,10 @@ struct ReferencesPanelView: View {
         configService.currentThemeColors
     }
 
+    private var referenceFileCount: Int {
+        Set(projectViewModel.referenceResults.map(\.fileURL.standardizedFileURL.path)).count
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             headerView
@@ -25,9 +29,17 @@ struct ReferencesPanelView: View {
                             } label: {
                                 VStack(alignment: .leading, spacing: 6) {
                                     HStack(spacing: 8) {
-                                        Text(result.path)
+                                        Text(result.fileURL.lastPathComponent)
                                             .font(.system(size: 12, weight: .semibold))
                                             .foregroundColor(themeColors.foreground)
+
+                                        let parentPath = (result.path as NSString).deletingLastPathComponent
+                                        if parentPath != "." {
+                                            Text(parentPath)
+                                                .font(.system(size: 11))
+                                                .foregroundColor(themeColors.mutedText)
+                                                .lineLimit(1)
+                                        }
 
                                         Spacer()
 
@@ -70,20 +82,17 @@ struct ReferencesPanelView: View {
                 .foregroundColor(themeColors.subduedText)
                 .accessibilityIdentifier("references-panel-title")
 
-            Text("\(projectViewModel.referenceResults.count)")
-                .font(RosewoodType.monoCaption)
-                .foregroundColor(themeColors.mutedText)
+            RosewoodHeaderChip(text: "\(projectViewModel.referenceResults.count)", tint: themeColors.mutedText)
+
+            if referenceFileCount > 1 {
+                RosewoodHeaderChip(text: "\(referenceFileCount) files", tint: themeColors.mutedText)
+            }
 
             Spacer()
 
-            Button {
+            RosewoodPanelIconButton(systemImage: "xmark", tint: themeColors.mutedText, isEnabled: true) {
                 projectViewModel.closeReferencesPanel()
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundColor(themeColors.mutedText)
             }
-            .buttonStyle(.borderless)
             .accessibilityIdentifier("references-panel-close")
         }
         .padding(.horizontal, 12)

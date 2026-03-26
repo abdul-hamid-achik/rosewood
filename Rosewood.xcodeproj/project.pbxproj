@@ -33,6 +33,7 @@
 		3FAA497515F78B17F548A225 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F6CAA0F623BE0FD5FB8EA42 /* main.swift */; };
 		419E60BC8631DAD5165EB6EA /* LSPClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D71D91F39C0E3AB7765908AE /* LSPClientTests.swift */; };
 		41FA3A9E08C57A4384962E3A /* FileServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1A6C869FE137B135BD494BD /* FileServiceTests.swift */; };
+		427B2B6FBCB144212373066D /* ProjectViewModel+Diagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = B310B9BCDA5F4AC15F1E00F4 /* ProjectViewModel+Diagnostics.swift */; };
 		446A8A413857138BAB626068 /* LSPPositionConverterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17556CB8AA236346DFD52D65 /* LSPPositionConverterTests.swift */; };
 		495860AFDF9552AB8015932A /* EditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E1B11BE228F78309D859B13 /* EditorView.swift */; };
 		4A379E53F553E14727CD7AEE /* LSPServerRegistryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A165B3CE2826AE1A763168AD /* LSPServerRegistryTests.swift */; };
@@ -178,6 +179,7 @@
 		B0278A3EAE897137978D9558 /* ProjectViewModel+WorkspaceSymbols.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ProjectViewModel+WorkspaceSymbols.swift"; sourceTree = "<group>"; };
 		B17DCB9145E3044B18854525 /* DAPClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DAPClientTests.swift; sourceTree = "<group>"; };
 		B25072856E4F991EB7945C59 /* ProjectViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectViewModelTests.swift; sourceTree = "<group>"; };
+		B310B9BCDA5F4AC15F1E00F4 /* ProjectViewModel+Diagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ProjectViewModel+Diagnostics.swift"; sourceTree = "<group>"; };
 		B48DDA833DEADA90B732B3EE /* GitModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitModels.swift; sourceTree = "<group>"; };
 		B8C3C5BC3586B4EE563DE1EA /* AppSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettings.swift; sourceTree = "<group>"; };
 		BE59BAFA59ADCE94A4A55ACF /* Rosewood.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Rosewood.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -400,6 +402,7 @@
 			children = (
 				C13B8E092507E3C5394A265A /* ProjectViewModel.swift */,
 				D048A486426520ECB87A4D3C /* ProjectViewModel+Debug.swift */,
+				B310B9BCDA5F4AC15F1E00F4 /* ProjectViewModel+Diagnostics.swift */,
 				EA6ECD71985920EE951122A4 /* ProjectViewModel+Git.swift */,
 				AD0709F26B77B2B09F4F1C38 /* ProjectViewModel+ProjectSearch.swift */,
 				EDCD3FD5EFD358C49DA53B81 /* ProjectViewModel+UITestFixtures.swift */,
@@ -555,6 +558,7 @@
 				74DC3A2BCFC8B3586B2FD67F /* ProblemsPanelView.swift in Sources */,
 				E34A5B996D3AE6D57D691BEC /* ProjectSessionState.swift in Sources */,
 				6ACE5319933F4E8847200B1B /* ProjectViewModel+Debug.swift in Sources */,
+				427B2B6FBCB144212373066D /* ProjectViewModel+Diagnostics.swift in Sources */,
 				4C4FDE0E2C3E87EC90E991FB /* ProjectViewModel+Git.swift in Sources */,
 				C3A67F1FF0286C03A8E9543D /* ProjectViewModel+ProjectSearch.swift in Sources */,
 				71E1C298FC30476C73477F08 /* ProjectViewModel+UITestFixtures.swift in Sources */,
