@@ -165,17 +165,10 @@ struct GitDiffPanelView: View {
     private func hunkNavigationView(for diff: GitDiffResult) -> some View {
         HStack(spacing: 6) {
             if diff.hunks.count > 1 {
-                Button {
+                RosewoodPanelIconButton(systemImage: "chevron.up", tint: themeColors.mutedText, isEnabled: selectedHunkIndex > 0) {
                     selectedHunkIndex = max(0, selectedHunkIndex - 1)
                     scrollTargetHunkID = diff.hunks[selectedHunkIndex].id
-                } label: {
-                    Image(systemName: "chevron.up")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundColor(themeColors.mutedText)
-                        .frame(width: 20, height: 20)
                 }
-                .buttonStyle(.plain)
-                .disabled(selectedHunkIndex == 0)
             }
 
             if diff.hunks.count > 1 {
@@ -207,17 +200,10 @@ struct GitDiffPanelView: View {
             }
 
             if diff.hunks.count > 1 {
-                Button {
+                RosewoodPanelIconButton(systemImage: "chevron.down", tint: themeColors.mutedText, isEnabled: selectedHunkIndex < diff.hunks.count - 1) {
                     selectedHunkIndex = min(diff.hunks.count - 1, selectedHunkIndex + 1)
                     scrollTargetHunkID = diff.hunks[selectedHunkIndex].id
-                } label: {
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundColor(themeColors.mutedText)
-                        .frame(width: 20, height: 20)
                 }
-                .buttonStyle(.plain)
-                .disabled(selectedHunkIndex >= diff.hunks.count - 1)
             }
         }
         .accessibilityIdentifier("git-diff-hunk-label")
@@ -355,28 +341,14 @@ struct GitDiffPanelView: View {
 
     private var fileNavigationView: some View {
         HStack(spacing: 4) {
-            Button {
+            RosewoodPanelIconButton(systemImage: "arrow.left", tint: themeColors.mutedText, isEnabled: projectViewModel.canShowPreviousGitChange) {
                 projectViewModel.showPreviousGitChange()
-            } label: {
-                Image(systemName: "arrow.left")
-                    .font(.system(size: 10, weight: .semibold))
-                    .frame(width: 20, height: 20)
             }
-            .buttonStyle(.plain)
-            .foregroundColor(themeColors.mutedText)
-            .disabled(!projectViewModel.canShowPreviousGitChange)
             .accessibilityIdentifier("git-diff-previous-file")
 
-            Button {
+            RosewoodPanelIconButton(systemImage: "arrow.right", tint: themeColors.mutedText, isEnabled: projectViewModel.canShowNextGitChange) {
                 projectViewModel.showNextGitChange()
-            } label: {
-                Image(systemName: "arrow.right")
-                    .font(.system(size: 10, weight: .semibold))
-                    .frame(width: 20, height: 20)
             }
-            .buttonStyle(.plain)
-            .foregroundColor(themeColors.mutedText)
-            .disabled(!projectViewModel.canShowNextGitChange)
             .accessibilityIdentifier("git-diff-next-file")
         }
         .padding(.horizontal, 6)
@@ -534,19 +506,9 @@ struct GitDiffPanelView: View {
             .disabled(projectViewModel.selectedGitDiff == nil)
             .accessibilityIdentifier("git-diff-mode-picker")
 
-            Button {
+            RosewoodPanelIconButton(systemImage: "xmark", tint: themeColors.mutedText, isEnabled: true) {
                 projectViewModel.closeGitDiffPanel()
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundColor(themeColors.mutedText)
-                    .frame(width: 20, height: 20)
-                    .background(
-                        Circle()
-                            .fill(themeColors.elevatedBackground)
-                    )
             }
-            .buttonStyle(.plain)
             .accessibilityIdentifier("git-diff-panel-close")
         }
     }

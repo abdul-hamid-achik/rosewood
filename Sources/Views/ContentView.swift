@@ -778,11 +778,12 @@ struct SearchSidebarView: View {
                                     Button {
                                         projectViewModel.openSearchResult(result)
                                     } label: {
-                                        VStack(alignment: .leading, spacing: 6) {
+                                        VStack(alignment: .leading, spacing: 4) {
                                             HStack(alignment: .firstTextBaseline) {
-                                                Text("Ln \(result.lineNumber):\(result.columnNumber)")
-                                                    .font(.system(size: 11, design: .monospaced))
-                                                    .foregroundColor(themeColors.mutedText)
+                                                RosewoodHeaderChip(
+                                                    text: "Ln \(result.lineNumber):\(result.columnNumber)",
+                                                    tint: themeColors.mutedText
+                                                )
                                                 if projectViewModel.isActiveProjectSearchResult(result) {
                                                     Image(systemName: "arrowtriangle.right.fill")
                                                         .font(.system(size: 9))
@@ -790,22 +791,23 @@ struct SearchSidebarView: View {
                                                         .accessibilityIdentifier("project-search-active-row-\(sectionIndex)-\(resultIndex)")
                                                 }
                                                 Spacer()
-                                                Text("\(result.matchCount) match\(result.matchCount == 1 ? "" : "es")")
-                                                    .font(.system(size: 11))
-                                                    .foregroundColor(themeColors.mutedText)
+                                                RosewoodHeaderChip(
+                                                    text: "\(result.matchCount)x",
+                                                    tint: themeColors.mutedText
+                                                )
                                             }
 
                                             highlightedLineText(for: result)
                                                 .font(.system(size: 12, design: .monospaced))
-                                                .lineLimit(2)
+                                                .lineLimit(projectViewModel.projectReplaceQuery.isEmpty ? 1 : 2)
 
                                             if !projectViewModel.projectReplaceQuery.isEmpty {
                                                 replacementPreviewText(for: result)
-                                                    .font(.system(size: 12, design: .monospaced))
-                                                    .lineLimit(2)
+                                                    .font(.system(size: 11, design: .monospaced))
+                                                    .lineLimit(1)
                                             }
                                         }
-                                        .padding(.vertical, 4)
+                                        .padding(.vertical, 2)
                                         .frame(maxWidth: .infinity, alignment: .leading)
                                         .contentShape(Rectangle())
                                     }
@@ -817,8 +819,8 @@ struct SearchSidebarView: View {
                                         }
                                     }
                                 }
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 1)
                                 .padding(.trailing, 4)
                                 .accessibilityIdentifier("project-search-result-row-\(sectionIndex)-\(resultIndex)")
                                 .listRowBackground(
@@ -830,7 +832,7 @@ struct SearchSidebarView: View {
                             }
                         } header: {
                             VStack(alignment: .leading, spacing: 2) {
-                                HStack {
+                                HStack(spacing: 8) {
                                     Button {
                                         projectViewModel.toggleProjectSearchGroupCollapsed(group)
                                     } label: {
@@ -843,7 +845,7 @@ struct SearchSidebarView: View {
                                     .accessibilityIdentifier("project-search-toggle-file")
                                     .accessibilityLabel("Toggle \(group.fileName)")
 
-                                    VStack(alignment: .leading, spacing: 2) {
+                                    HStack(spacing: 6) {
                                         Text(group.fileName)
                                             .font(.system(size: 12, weight: .semibold))
                                             .foregroundColor(themeColors.foreground)
@@ -856,15 +858,13 @@ struct SearchSidebarView: View {
 
                                     Spacer()
                                     HStack(spacing: 8) {
-                                        Text("\(group.matchCount) match\(group.matchCount == 1 ? "" : "es")")
-                                            .font(.system(size: 11))
-                                            .foregroundColor(themeColors.mutedText)
+                                        RosewoodHeaderChip(text: "\(group.matchCount)x", tint: themeColors.mutedText)
 
                                         Button(projectViewModel.isProjectSearchGroupFullySelected(group) ? "Clear File" : "Select File") {
                                             projectViewModel.toggleProjectSearchGroupSelection(group)
                                         }
                                         .buttonStyle(.borderless)
-                                        .font(.system(size: 11, weight: .semibold))
+                                        .font(.system(size: 10, weight: .semibold))
                                         .foregroundColor(themeColors.accent)
                                         .accessibilityIdentifier("project-search-select-file-\(sectionIndex)")
 
@@ -872,7 +872,7 @@ struct SearchSidebarView: View {
                                             projectViewModel.replaceProjectSearchFileGroup(group)
                                         }
                                         .buttonStyle(.borderless)
-                                        .font(.system(size: 11, weight: .semibold))
+                                        .font(.system(size: 10, weight: .semibold))
                                         .foregroundColor(themeColors.warning)
                                         .disabled(!projectViewModel.canReplaceProjectSearchResults || projectViewModel.isProjectSearchGroupCollapsed(group))
                                         .accessibilityIdentifier("project-search-replace-file-\(sectionIndex)")
@@ -880,7 +880,7 @@ struct SearchSidebarView: View {
                                 }
                             }
                             .textCase(nil)
-                            .padding(.vertical, 4)
+                            .padding(.vertical, 2)
                         }
                     }
                 }

@@ -224,7 +224,7 @@ private struct SourceControlChangeRowView: View {
                 }
             }
             .padding(.horizontal, 10)
-            .padding(.vertical, 9)
+            .padding(.vertical, 7)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(rowBackground)
             .overlay(rowBorder)
@@ -319,7 +319,6 @@ private struct SourceControlChangeRowView: View {
                 }
             }
         }
-        .padding(.top, 1)
     }
 
     private func quickActionButton(
@@ -328,18 +327,8 @@ private struct SourceControlChangeRowView: View {
         tint: Color,
         action: @escaping () -> Void
     ) -> some View {
-        Button(action: action) {
-            Image(systemName: systemImage)
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundColor(tint)
-                .frame(width: 20, height: 20)
-                .background(
-                    RoundedRectangle(cornerRadius: 7)
-                        .fill(tint.opacity(0.12))
-                )
-        }
-        .buttonStyle(.plain)
-        .help(title)
+        RosewoodPanelIconButton(systemImage: systemImage, tint: tint, isEnabled: true, action: action)
+            .help(title)
     }
 
     private var rowBackground: some View {

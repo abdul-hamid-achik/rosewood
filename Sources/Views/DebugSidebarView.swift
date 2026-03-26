@@ -199,13 +199,15 @@ struct DebugSidebarView: View {
                         Button {
                             projectViewModel.openBreakpoint(breakpoint)
                         } label: {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(breakpoint.fileName)
-                                    .font(.system(size: 12, weight: .semibold))
-                                    .foregroundColor(themeColors.foreground)
-                                Text("Line \(breakpoint.line)")
-                                    .font(.system(size: 11, design: .monospaced))
-                                    .foregroundColor(themeColors.subduedText)
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack(spacing: 8) {
+                                    Text(breakpoint.fileName)
+                                        .font(.system(size: 12, weight: .semibold))
+                                        .foregroundColor(themeColors.foreground)
+
+                                    headerChip("Ln \(breakpoint.line)", tint: themeColors.subduedText)
+                                }
+
                                 Text(breakpoint.directoryPath)
                                     .font(.system(size: 11))
                                     .foregroundColor(themeColors.mutedText)
@@ -215,16 +217,11 @@ struct DebugSidebarView: View {
                         }
                         .buttonStyle(.plain)
 
-                        Button {
+                        RosewoodPanelIconButton(systemImage: "xmark", tint: themeColors.mutedText, isEnabled: true) {
                             projectViewModel.removeBreakpoint(breakpoint)
-                        } label: {
-                            Image(systemName: "xmark")
-                                .font(.system(size: 10, weight: .semibold))
-                                .foregroundColor(themeColors.mutedText)
                         }
-                        .buttonStyle(.borderless)
                     }
-                    .padding(.vertical, 4)
+                    .padding(.vertical, 2)
                 }
             }
         }
