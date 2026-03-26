@@ -30,6 +30,14 @@ struct HexViewerView: View {
 
                 Spacer()
 
+                Button("Copy Hex") {
+                    let pasteboard = NSPasteboard.general
+                    pasteboard.clearContents()
+                    pasteboard.setString(formattedHex, forType: .string)
+                }
+                .buttonStyle(.borderless)
+                .foregroundColor(themeColors.mutedText)
+
                 Button("Open Externally") {
                     if let filePath = tab.filePath {
                         NSWorkspace.shared.open(filePath)
@@ -40,6 +48,22 @@ struct HexViewerView: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
+            .background(themeColors.panelBackground)
+
+            ThemedDivider()
+
+            HStack(spacing: 0) {
+                Text("OFFSET")
+                    .frame(width: 82, alignment: .leading)
+                Text("HEX")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Text("ASCII")
+                    .frame(width: 120, alignment: .leading)
+            }
+            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+            .foregroundColor(themeColors.mutedText)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
             .background(themeColors.panelBackground)
 
             ThemedDivider()

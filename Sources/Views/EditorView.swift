@@ -40,6 +40,13 @@ struct EditorView: View {
         }
     }
 
+    private var deferHighlightingDuringEditing: Bool {
+        if case .text(let isLarge) = tab.contentType {
+            return isLarge
+        }
+        return false
+    }
+
     var body: some View {
         CodeEditorRepresentable(
             text: Binding(
@@ -53,6 +60,7 @@ struct EditorView: View {
             language: tab.language,
             editorFont: configService.font,
             commandDispatcher: commandDispatcher,
+            deferHighlightingDuringEditing: deferHighlightingDuringEditing,
             pendingLineJump: Binding(
                 get: { projectViewModel.selectedTab?.pendingLineJump },
                 set: { newValue in
@@ -129,6 +137,7 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
     let language: String
     let editorFont: NSFont
     let commandDispatcher: AppCommandDispatcher
+    let deferHighlightingDuringEditing: Bool
     @Binding var pendingLineJump: Int?
     let themeColors: ThemeColors
     let tabSize: Int
@@ -202,6 +211,7 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
         private var pendingSourceSelection: NSRange?
         private var mouseMonitor: Any?
         private var commandCancellables: Set<AnyCancellable> = []
+        private var deferredHighlightTask: Task<Void, Never>?
 
         init(parent: CodeEditorRepresentable) {
             self.parent = parent
@@ -218,6 +228,7 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
             completionTask?.cancel()
             hoverTask?.cancel()
             referencesTask?.cancel()
+            deferredHighlightTask?.cancel()
         }
 
         func attach(to containerView: EditorContainerView) {
@@ -239,6 +250,7 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
 
         func applyExternalState(text: String, language: String) {
             guard let containerView else { return }
+            deferredHighlightTask?.cancel()
             applyPopupTheme()
             let textView = containerView.textView
             if parent.pendingLineJump != nil {
@@ -304,11 +316,16 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
             let updatedText = textView.string
             let selectedRange = textView.selectedRange()
 
-            isApplyingExternalUpdate = true
-            containerView?.applyText(updatedText, language: parent.language, themeColors: parent.themeColors)
-            let clampedLocation = min(selectedRange.location, (textView.string as NSString).length)
-            textView.setSelectedRange(NSRange(location: clampedLocation, length: 0))
-            isApplyingExternalUpdate = false
+            if parent.deferHighlightingDuringEditing {
+                containerView?.refreshAfterEditing(text: updatedText, themeColors: parent.themeColors)
+                scheduleDeferredHighlight(for: updatedText, language: parent.language)
+            } else {
+                isApplyingExternalUpdate = true
+                containerView?.applyText(updatedText, language: parent.language, themeColors: parent.themeColors)
+                let clampedLocation = min(selectedRange.location, (textView.string as NSString).length)
+                textView.setSelectedRange(NSRange(location: clampedLocation, length: 0))
+                isApplyingExternalUpdate = false
+            }
 
             renderState.recordRender(
                 text: updatedText,
@@ -330,6 +347,33 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
                 triggerCompletionIfNeeded(in: textView, trigger: lastChar)
             } else if completionPopup.isVisible {
                 completionPopup.dismiss()
+            }
+        }
+
+        private func scheduleDeferredHighlight(for text: String, language: String) {
+            deferredHighlightTask?.cancel()
+            deferredHighlightTask = Task { @MainActor [weak self] in
+                do {
+                    try await Task.sleep(nanoseconds: 180_000_000)
+                } catch {
+                    return
+                }
+
+                guard let self,
+                      !Task.isCancelled,
+                      let containerView,
+                      containerView.textView.string == text else {
+                    return
+                }
+
+                let selectedRange = containerView.textView.selectedRange()
+                isApplyingExternalUpdate = true
+                containerView.applyText(text, language: language, themeColors: parent.themeColors)
+                let clampedLocation = min(selectedRange.location, (containerView.textView.string as NSString).length)
+                containerView.textView.setSelectedRange(NSRange(location: clampedLocation, length: 0))
+                isApplyingExternalUpdate = false
+                refreshEditorDecorations(in: containerView.textView)
+                updateCursorPosition(in: containerView.textView)
             }
         }
 
@@ -1250,6 +1294,19 @@ final class EditorContainerView: NSView {
         updateMinimap()
     }
 
+    func refreshAfterEditing(text: String, themeColors: ThemeColors) {
+        currentDisplayText = text
+        textView.setAccessibilityValue(text)
+        textView.typingAttributes = [
+            .font: editorFont,
+            .foregroundColor: themeColors.nsForeground
+        ]
+        updateTextViewFrame()
+        textView.needsDisplay = true
+        lineNumberView.needsDisplay = true
+        updateMinimap()
+    }
+
     func applyFolding(_ snapshot: FoldedTextSnapshot, onToggleFold: @escaping (Int) -> Void) {
         lineNumberView.foldableLines = snapshot.foldableLines
         lineNumberView.foldedLines = snapshot.foldedLines
@@ -1290,6 +1347,16 @@ final class EditorContainerView: NSView {
     }
 
     private func updateMinimap() {
+        guard showMinimap else {
+            let snapshot = MinimapSnapshot.make(
+                text: currentDisplayText,
+                visibleRect: scrollView.contentView.bounds,
+                documentHeight: textView.bounds.height
+            )
+            onViewportChange?(snapshot.visibleStartLine, snapshot.visibleEndLine)
+            return
+        }
+
         let snapshot = MinimapSnapshot.make(
             text: currentDisplayText,
             visibleRect: scrollView.contentView.bounds,

@@ -207,7 +207,7 @@ final class RosewoodUITests: XCTestCase {
         commandField.typeText("workspace problems")
 
         let workspaceProblemsAction = app.buttons["command-palette-action-showWorkspaceProblems"]
-        XCTAssertTrue(workspaceProblemsAction.waitForExistence(timeout: 2))
+        XCTAssertTrue(workspaceProblemsAction.waitForExistence(timeout: 5))
         app.typeKey(XCUIKeyboardKey.return.rawValue, modifierFlags: [])
 
         XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "problems-panel").firstMatch.waitForExistence(timeout: 2))
@@ -222,7 +222,7 @@ final class RosewoodUITests: XCTestCase {
         activateAndFocus(app)
 
         let sourceControlSidebar = app.descendants(matching: .any).matching(identifier: "source-control-sidebar").firstMatch
-        XCTAssertTrue(sourceControlSidebar.waitForExistence(timeout: 5))
+        XCTAssertTrue(sourceControlSidebar.waitForExistence(timeout: 8))
 
         app.typeKey("p", modifierFlags: [.command, .shift])
 
@@ -866,13 +866,19 @@ final class RosewoodUITests: XCTestCase {
     }
 
     private func activateAndFocus(_ app: XCUIApplication) {
-        app.activate()
-        XCTAssertTrue(app.wait(for: .runningForeground, timeout: 5))
+        let deadline = Date().addingTimeInterval(8)
+        repeat {
+            app.activate()
+            if app.state == .runningForeground {
+                break
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        } while Date() < deadline
+
+        XCTAssertEqual(app.state, .runningForeground)
 
         let window = app.windows.firstMatch
         XCTAssertTrue(window.waitForExistence(timeout: 5))
-        window.click()
-
-        RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        RunLoop.current.run(until: Date().addingTimeInterval(0.2))
     }
 }

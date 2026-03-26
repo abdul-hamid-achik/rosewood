@@ -6,11 +6,22 @@ struct ImageViewerView: View {
 
     let tab: EditorTab
 
-    @State private var image: NSImage?
     @State private var zoomScale: CGFloat = 1
 
     private var themeColors: ThemeColors {
         configService.currentThemeColors
+    }
+
+    private var nsImage: NSImage? {
+        if let fileData = tab.fileData, let nsImage = NSImage(data: fileData) {
+            return nsImage
+        }
+
+        if let filePath = tab.filePath {
+            return NSImage(contentsOf: filePath)
+        }
+
+        return nil
     }
 
     var body: some View {
@@ -47,17 +58,9 @@ struct ImageViewerView: View {
             ThemedDivider()
 
             Group {
-                if let image {
-                    ScrollView([.horizontal, .vertical]) {
-                        Image(nsImage: image)
-                            .interpolation(.high)
-                            .resizable()
-                            .scaledToFit()
-                            .frame(maxWidth: 1200)
-                            .scaleEffect(zoomScale)
-                            .padding(24)
-                    }
-                    .background(themeColors.background)
+                if let nsImage {
+                    ImageCanvasView(image: nsImage, zoomScale: zoomScale, themeColors: themeColors)
+                        .background(themeColors.background)
                 } else {
                     VStack(spacing: 12) {
                         Image(systemName: "photo")
@@ -73,18 +76,70 @@ struct ImageViewerView: View {
             }
         }
         .accessibilityIdentifier("image-viewer")
-        .onAppear {
-            if image == nil {
-                if let fileData = tab.fileData, let nsImage = NSImage(data: fileData) {
-                    image = nsImage
-                } else if let filePath = tab.filePath {
-                    image = NSImage(contentsOf: filePath)
-                }
-            }
-        }
     }
 
     private func viewerAction(systemImage: String, enabled: Bool, action: @escaping () -> Void) -> some View {
         RosewoodPanelIconButton(systemImage: systemImage, tint: themeColors.mutedText, isEnabled: enabled, action: action)
+    }
+}
+
+private struct ImageCanvasView: NSViewRepresentable {
+    let image: NSImage
+    let zoomScale: CGFloat
+    let themeColors: ThemeColors
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let imageView = NSImageView(frame: NSRect(origin: .zero, size: image.size))
+        imageView.image = image
+        imageView.imageScaling = .scaleProportionallyUpOrDown
+        imageView.translatesAutoresizingMaskIntoConstraints = false
+
+        let contentView = NSView(frame: NSRect(origin: .zero, size: image.size))
+        contentView.wantsLayer = true
+        contentView.layer?.backgroundColor = themeColors.nsBackground.cgColor
+        contentView.addSubview(imageView)
+        NSLayoutConstraint.activate([
+            imageView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            imageView.topAnchor.constraint(equalTo: contentView.topAnchor),
+            imageView.widthAnchor.constraint(equalToConstant: image.size.width),
+            imageView.heightAnchor.constraint(equalToConstant: image.size.height)
+        ])
+
+        let scrollView = NSScrollView(frame: .zero)
+        scrollView.borderType = .noBorder
+        scrollView.hasVerticalScroller = true
+        scrollView.hasHorizontalScroller = true
+        scrollView.autohidesScrollers = true
+        scrollView.drawsBackground = true
+        scrollView.backgroundColor = themeColors.nsBackground
+        scrollView.allowsMagnification = true
+        scrollView.minMagnification = 0.1
+        scrollView.maxMagnification = 8.0
+        scrollView.documentView = contentView
+
+        context.coordinator.imageView = imageView
+        context.coordinator.documentView = contentView
+        context.coordinator.scrollView = scrollView
+        return scrollView
+    }
+
+    func updateNSView(_ nsView: NSScrollView, context: Context) {
+        nsView.backgroundColor = themeColors.nsBackground
+        nsView.magnification = zoomScale
+
+        context.coordinator.imageView?.image = image
+        context.coordinator.documentView?.frame = NSRect(origin: .zero, size: image.size)
+        context.coordinator.imageView?.frame = NSRect(origin: .zero, size: image.size)
+        context.coordinator.documentView?.layer?.backgroundColor = themeColors.nsBackground.cgColor
+    }
+
+    final class Coordinator {
+        weak var imageView: NSImageView?
+        weak var documentView: NSView?
+        weak var scrollView: NSScrollView?
     }
 }
