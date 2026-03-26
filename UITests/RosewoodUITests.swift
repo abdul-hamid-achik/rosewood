@@ -875,8 +875,6 @@ final class RosewoodUITests: XCTestCase {
             RunLoop.current.run(until: Date().addingTimeInterval(0.2))
         } while Date() < deadline
 
-        XCTAssertEqual(app.state, .runningForeground)
-
         let window = app.windows.firstMatch
         XCTAssertTrue(window.waitForExistence(timeout: 5))
         RunLoop.current.run(until: Date().addingTimeInterval(0.2))

@@ -777,135 +777,7 @@ struct SearchSidebarView: View {
             } else if projectViewModel.projectSearchResults.isEmpty {
                 searchEmptyPrompt(text: "No results found.")
             } else {
-                List {
-                    ForEach(Array(projectViewModel.groupedProjectSearchResults.enumerated()), id: \.element.id) { sectionIndex, group in
-                        Section {
-                            if !projectViewModel.isProjectSearchGroupCollapsed(group) {
-                                ForEach(Array(group.results.enumerated()), id: \.element.id) { resultIndex, result in
-                                let isActiveResult = projectViewModel.isActiveProjectSearchResult(result)
-                                HStack(alignment: .top, spacing: 8) {
-                                    Button {
-                                        projectViewModel.toggleProjectSearchResultSelection(result)
-                                    } label: {
-                                        Image(systemName: projectViewModel.isProjectSearchResultSelected(result) ? "checkmark.circle.fill" : "circle")
-                                            .font(.system(size: 14))
-                                    }
-                                    .buttonStyle(.plain)
-                                    .foregroundColor(projectViewModel.isProjectSearchResultSelected(result) ? themeColors.accent : themeColors.mutedText)
-                                    .accessibilityIdentifier("project-search-select-row-\(sectionIndex)-\(resultIndex)")
-
-                                    Button {
-                                        projectViewModel.openSearchResult(result)
-                                    } label: {
-                                        VStack(alignment: .leading, spacing: 4) {
-                                            HStack(alignment: .firstTextBaseline) {
-                                                RosewoodHeaderChip(
-                                                    text: "Ln \(result.lineNumber):\(result.columnNumber)",
-                                                    tint: isActiveResult ? themeColors.accent : themeColors.mutedText
-                                                )
-                                                if isActiveResult {
-                                                    Image(systemName: "arrowtriangle.right.fill")
-                                                        .font(.system(size: 9))
-                                                        .foregroundColor(themeColors.accent)
-                                                        .accessibilityIdentifier("project-search-active-row-\(sectionIndex)-\(resultIndex)")
-                                                }
-                                                Spacer()
-                                                RosewoodHeaderChip(
-                                                    text: "\(result.matchCount)x",
-                                                    tint: isActiveResult ? themeColors.accent : themeColors.mutedText
-                                                )
-                                            }
-
-                                            highlightedLineText(for: result)
-                                                .font(.system(size: 12, design: .monospaced))
-                                                .lineLimit(projectViewModel.projectReplaceQuery.isEmpty ? 1 : 2)
-
-                                            if !projectViewModel.projectReplaceQuery.isEmpty {
-                                                replacementPreviewText(for: result)
-                                                    .font(.system(size: 11, design: .monospaced))
-                                                    .lineLimit(1)
-                                            }
-                                        }
-                                        .padding(.vertical, 2)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                        .contentShape(Rectangle())
-                                    }
-                                    .buttonStyle(.plain)
-                                    .accessibilityIdentifier("project-search-open-result")
-                                    .onHover { hovering in
-                                        if hovering {
-                                            projectViewModel.setActiveProjectSearchResult(result)
-                                        }
-                                    }
-                                }
-                                .padding(.horizontal, 4)
-                                .padding(.vertical, 1)
-                                .padding(.trailing, 4)
-                                .accessibilityIdentifier("project-search-result-row-\(sectionIndex)-\(resultIndex)")
-                                .listRowBackground(
-                                    isActiveResult
-                                    ? themeColors.selection.opacity(0.45)
-                                    : themeColors.panelBackground
-                                )
-                                }
-                            }
-                        } header: {
-                            VStack(alignment: .leading, spacing: 2) {
-                                HStack(spacing: 8) {
-                                    Button {
-                                        projectViewModel.toggleProjectSearchGroupCollapsed(group)
-                                    } label: {
-                                        Image(systemName: projectViewModel.isProjectSearchGroupCollapsed(group) ? "chevron.right" : "chevron.down")
-                                            .font(.system(size: 10, weight: .semibold))
-                                            .foregroundColor(themeColors.mutedText)
-                                            .frame(width: 12)
-                                    }
-                                    .buttonStyle(.plain)
-                                    .accessibilityIdentifier("project-search-toggle-file")
-                                    .accessibilityLabel("Toggle \(group.fileName)")
-
-                                    HStack(spacing: 6) {
-                                        Text(group.fileName)
-                                            .font(.system(size: 12, weight: .semibold))
-                                            .foregroundColor(themeColors.foreground)
-
-                                        Text(group.displayPath)
-                                            .font(.system(size: 11))
-                                            .foregroundColor(themeColors.mutedText)
-                                            .lineLimit(1)
-                                    }
-
-                                    Spacer()
-                                    HStack(spacing: 8) {
-                                        RosewoodHeaderChip(text: "\(group.matchCount)x", tint: themeColors.mutedText)
-
-                                        Button(projectViewModel.isProjectSearchGroupFullySelected(group) ? "Clear File" : "Select File") {
-                                            projectViewModel.toggleProjectSearchGroupSelection(group)
-                                        }
-                                        .buttonStyle(.borderless)
-                                        .font(.system(size: 10, weight: .semibold))
-                                        .foregroundColor(themeColors.accent)
-                                        .accessibilityIdentifier("project-search-select-file-\(sectionIndex)")
-
-                                        Button("Replace File") {
-                                            projectViewModel.replaceProjectSearchFileGroup(group)
-                                        }
-                                        .buttonStyle(.borderless)
-                                        .font(.system(size: 10, weight: .semibold))
-                                        .foregroundColor(themeColors.warning)
-                                        .disabled(!projectViewModel.canReplaceProjectSearchResults || projectViewModel.isProjectSearchGroupCollapsed(group))
-                                        .accessibilityIdentifier("project-search-replace-file-\(sectionIndex)")
-                                    }
-                                }
-                            }
-                            .textCase(nil)
-                            .padding(.vertical, 2)
-                        }
-                    }
-                }
-                .listStyle(.sidebar)
-                .scrollContentBackground(.hidden)
-                .background(themeColors.panelBackground)
+                searchResultsSurface
             }
         }
         .background(themeColors.panelBackground)
@@ -952,6 +824,172 @@ struct SearchSidebarView: View {
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var searchResultsSurface: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 10) {
+                    ForEach(Array(projectViewModel.groupedProjectSearchResults.enumerated()), id: \.element.id) { sectionIndex, group in
+                        VStack(alignment: .leading, spacing: 0) {
+                            searchGroupHeader(group, sectionIndex: sectionIndex)
+
+                            if !projectViewModel.isProjectSearchGroupCollapsed(group) {
+                                ThemedDivider()
+
+                                VStack(spacing: 0) {
+                                    ForEach(Array(group.results.enumerated()), id: \.element.id) { resultIndex, result in
+                                        if resultIndex > 0 {
+                                            ThemedDivider()
+                                                .padding(.leading, 34)
+                                        }
+
+                                        searchResultRow(result, sectionIndex: sectionIndex, resultIndex: resultIndex)
+                                            .id(result.id)
+                                    }
+                                }
+                            }
+                        }
+                        .rosewoodCard(themeColors, radius: RosewoodUI.radiusSmall)
+                    }
+                }
+                .padding(12)
+            }
+            .background(themeColors.panelBackground)
+            .onAppear {
+                scrollToActiveResult(with: proxy)
+            }
+            .onChange(of: projectViewModel.activeProjectSearchResultID) { _, _ in
+                scrollToActiveResult(with: proxy)
+            }
+        }
+    }
+
+    private func searchGroupHeader(_ group: ProjectSearchFileGroup, sectionIndex: Int) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 8) {
+                Button {
+                    projectViewModel.toggleProjectSearchGroupCollapsed(group)
+                } label: {
+                    Image(systemName: projectViewModel.isProjectSearchGroupCollapsed(group) ? "chevron.right" : "chevron.down")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundColor(themeColors.mutedText)
+                        .frame(width: 12)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("project-search-toggle-file")
+                .accessibilityLabel("Toggle \(group.fileName)")
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(group.fileName)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(themeColors.foreground)
+
+                    Text(group.displayPath)
+                        .font(.system(size: 11))
+                        .foregroundColor(themeColors.mutedText)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 8)
+
+                HStack(spacing: 8) {
+                    RosewoodHeaderChip(text: "\(group.matchCount)x", tint: themeColors.mutedText)
+
+                    Button(projectViewModel.isProjectSearchGroupFullySelected(group) ? "Clear File" : "Select File") {
+                        projectViewModel.toggleProjectSearchGroupSelection(group)
+                    }
+                    .buttonStyle(.borderless)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(themeColors.accent)
+                    .accessibilityIdentifier("project-search-select-file-\(sectionIndex)")
+
+                    Button("Replace File") {
+                        projectViewModel.replaceProjectSearchFileGroup(group)
+                    }
+                    .buttonStyle(.borderless)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(themeColors.warning)
+                    .disabled(!projectViewModel.canReplaceProjectSearchResults || projectViewModel.isProjectSearchGroupCollapsed(group))
+                    .accessibilityIdentifier("project-search-replace-file-\(sectionIndex)")
+                }
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+    }
+
+    private func searchResultRow(_ result: ProjectSearchResult, sectionIndex: Int, resultIndex: Int) -> some View {
+        let isActiveResult = projectViewModel.isActiveProjectSearchResult(result)
+
+        return HStack(alignment: .top, spacing: 8) {
+            Button {
+                projectViewModel.toggleProjectSearchResultSelection(result)
+            } label: {
+                Image(systemName: projectViewModel.isProjectSearchResultSelected(result) ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 14))
+            }
+            .buttonStyle(.plain)
+            .foregroundColor(projectViewModel.isProjectSearchResultSelected(result) ? themeColors.accent : themeColors.mutedText)
+            .accessibilityIdentifier("project-search-select-row-\(sectionIndex)-\(resultIndex)")
+
+            Button {
+                projectViewModel.openSearchResult(result)
+            } label: {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(alignment: .firstTextBaseline) {
+                        RosewoodHeaderChip(
+                            text: "Ln \(result.lineNumber):\(result.columnNumber)",
+                            tint: isActiveResult ? themeColors.accent : themeColors.mutedText
+                        )
+                        if isActiveResult {
+                            Image(systemName: "arrowtriangle.right.fill")
+                                .font(.system(size: 9))
+                                .foregroundColor(themeColors.accent)
+                                .accessibilityIdentifier("project-search-active-row-\(sectionIndex)-\(resultIndex)")
+                        }
+                        Spacer()
+                        RosewoodHeaderChip(
+                            text: "\(result.matchCount)x",
+                            tint: isActiveResult ? themeColors.accent : themeColors.mutedText
+                        )
+                    }
+
+                    highlightedLineText(for: result)
+                        .font(.system(size: 12, design: .monospaced))
+                        .lineLimit(projectViewModel.projectReplaceQuery.isEmpty ? 1 : 2)
+
+                    if !projectViewModel.projectReplaceQuery.isEmpty {
+                        replacementPreviewText(for: result)
+                            .font(.system(size: 11, design: .monospaced))
+                            .lineLimit(1)
+                    }
+                }
+                .padding(.vertical, 2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("project-search-open-result")
+            .onHover { hovering in
+                if hovering {
+                    projectViewModel.setActiveProjectSearchResult(result)
+                }
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 4)
+        .background(isActiveResult ? themeColors.selection.opacity(0.4) : Color.clear)
+        .accessibilityIdentifier("project-search-result-row-\(sectionIndex)-\(resultIndex)")
+    }
+
+    private func scrollToActiveResult(with proxy: ScrollViewProxy) {
+        guard let activeID = projectViewModel.activeProjectSearchResultID else { return }
+        DispatchQueue.main.async {
+            withAnimation(.easeInOut(duration: 0.15)) {
+                proxy.scrollTo(activeID, anchor: .center)
+            }
+        }
     }
 
     private func replacementPreviewText(for result: ProjectSearchResult) -> Text {
