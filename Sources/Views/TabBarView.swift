@@ -58,7 +58,7 @@ struct TabItemView: View {
 
             if tab.isDirty {
                 Image(systemName: "circle.fill")
-                    .font(.system(size: 7))
+                    .font(.system(size: 10))
                     .foregroundColor(themeColors.warning)
             }
 

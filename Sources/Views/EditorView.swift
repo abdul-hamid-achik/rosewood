@@ -117,7 +117,6 @@ struct EditorView: View {
                 NSWorkspace.shared.activateFileViewerSelecting([url])
             }
         )
-        .id(configIdentity)
         .background(themeColors.background)
     }
 }
@@ -179,13 +178,38 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
 
     func updateNSView(_ nsView: EditorContainerView, context: Context) {
         context.coordinator.parent = self
-        nsView.applyTheme(
-            themeColors,
-            font: editorFont,
-            showMinimap: showMinimap,
-            showLineNumbers: showLineNumbers,
-            wordWrap: wordWrap
-        )
+        
+        // Track if we need to update anything
+        let fontChanged = nsView.textView.font != editorFont
+        let themeChanged = nsView.themeColors != themeColors
+        let minimapChanged = nsView.minimapView.isHidden == showMinimap
+        let wordWrapChanged = nsView.textView.isHorizontallyResizable == wordWrap
+        
+        // Apply incremental changes
+        if fontChanged {
+            nsView.textView.font = editorFont
+        }
+        
+        if themeChanged {
+            nsView.applyTheme(
+                themeColors,
+                font: editorFont,
+                showMinimap: showMinimap,
+                showLineNumbers: showLineNumbers,
+                wordWrap: wordWrap
+            )
+        }
+        
+        if minimapChanged {
+            nsView.minimapView.isHidden = !showMinimap
+        }
+        
+        if wordWrapChanged {
+            nsView.textView.isHorizontallyResizable = !wordWrap
+            nsView.textView.textContainer?.widthTracksTextView = wordWrap
+        }
+        
+        // Always update these (cheap operations)
         nsView.onViewportChange = onViewportChange
         nsView.lineNumberView.breakpointLines = breakpointLines
         nsView.lineNumberView.currentExecutionLine = executionLine
@@ -480,20 +504,53 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
             return false
         }
 
+        private var lineOffsetTable: [Int] = [0]
+        private var lineTableNeedsUpdate = true
+        
+        private func updateLineOffsetTable(for text: String) {
+            lineOffsetTable = [0]
+            var offset = 0
+            let nsText = text as NSString
+            nsText.enumerateSubstrings(in: NSRange(location: 0, length: nsText.length), options: .byLines) { _, substringRange, _, _ in
+                offset = substringRange.location + substringRange.length
+                self.lineOffsetTable.append(offset)
+            }
+            lineTableNeedsUpdate = false
+        }
+        
+        private func lineAndColumn(for offset: Int, in text: String) -> (line: Int, column: Int) {
+            if lineTableNeedsUpdate {
+                updateLineOffsetTable(for: text)
+            }
+            
+            // Binary search
+            var low = 0
+            var high = lineOffsetTable.count - 1
+            
+            while low < high {
+                let mid = (low + high) / 2
+                if lineOffsetTable[mid] <= offset {
+                    low = mid + 1
+                } else {
+                    high = mid
+                }
+            }
+            
+            let line = low
+            let lineStart = line > 0 ? lineOffsetTable[line - 1] : 0
+            let column = offset - lineStart + 1
+            
+            return (line, column)
+        }
+
         private func updateCursorPosition(in textView: NSTextView) {
             let text = textView.string
             let location = min(textView.selectedRange().location, (text as NSString).length)
-            let utf16View = text.utf16
-            let utf16Index = utf16View.index(utf16View.startIndex, offsetBy: location)
-            let stringIndex = String.Index(utf16Index, within: text) ?? text.endIndex
-            let prefix = text[..<stringIndex]
-            let line = prefix.reduce(into: 1) { result, character in
-                if character == "\n" {
-                    result += 1
-                }
-            }
-            let column = (prefix.split(separator: "\n", omittingEmptySubsequences: false).last?.count ?? 0) + 1
+            
+            let (line, column) = lineAndColumn(for: location, in: text)
             parent.onCursorChange(line, column)
+            
+            lineTableNeedsUpdate = true
         }
 
         private func jumpToLine(_ lineNumber: Int, in textView: NSTextView) {
@@ -1119,17 +1176,21 @@ final class EditorContainerView: NSView {
     var onLayout: (() -> Void)?
     var onViewportChange: ((Int, Int) -> Void)?
     var editorFont: NSFont
+    var themeColors: ThemeColors
     var showMinimap: Bool
     var showLineNumbers: Bool
     var wordWrap: Bool
+    var tabSize: Int
     private var currentDisplayText = ""
     private let minimapWidthConstraint: NSLayoutConstraint
 
-    init(themeColors: ThemeColors, font: NSFont, showMinimap: Bool, showLineNumbers: Bool, wordWrap: Bool) {
+    init(themeColors: ThemeColors, font: NSFont, showMinimap: Bool, showLineNumbers: Bool, wordWrap: Bool, tabSize: Int = 4) {
         self.editorFont = font
+        self.themeColors = themeColors
         self.showMinimap = showMinimap
         self.showLineNumbers = showLineNumbers
         self.wordWrap = wordWrap
+        self.tabSize = tabSize
         // Build an explicit TextKit 1 stack to avoid TextKit 2 rendering issues
         // on macOS 12+ where NSTextView defaults to TextKit 2 and the compatibility
         // shim for layoutManager doesn't reliably draw text.
@@ -1167,6 +1228,12 @@ final class EditorContainerView: NSView {
         textView.smartInsertDeleteEnabled = false
         textView.usesAdaptiveColorMappingForDarkAppearance = false
         textView.drawsBackground = true
+        textView.isContinuousSpellCheckingEnabled = false
+        textView.isGrammarCheckingEnabled = false
+        textView.isAutomaticSpellingCorrectionEnabled = false
+        textView.usesRuler = false
+        textView.usesInspectorBar = false
+        textView.acceptsGlyphInfo = false
         textView.setAccessibilityLabel("Editor text")
         textView.setAccessibilityIdentifier("editor-text-view")
 
@@ -1183,7 +1250,9 @@ final class EditorContainerView: NSView {
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = true
         scrollView.autohidesScrollers = true
-        scrollView.drawsBackground = true
+        scrollView.drawsBackground = false
+        scrollView.postsFrameChangedNotifications = false
+        scrollView.automaticallyAdjustsContentInsets = false
         scrollView.hasVerticalRuler = true
         scrollView.rulersVisible = true
         scrollView.verticalRulerView = lineNumberView
@@ -1276,28 +1345,78 @@ final class EditorContainerView: NSView {
         window != nil && !bounds.isEmpty && !scrollView.contentSize.equalTo(.zero)
     }
 
+    private var highlightTask: Task<Void, Never>?
+    private var lastAppliedText: String = ""
+
     func applyText(_ text: String, language: String, themeColors: ThemeColors) {
+        // Skip if text hasn't changed
+        if text == lastAppliedText {
+            return
+        }
+        lastAppliedText = text
         currentDisplayText = text
+        
+        // Apply text immediately (without highlighting)
+        guard let textStorage = textView.textStorage else { return }
+        textStorage.beginEditing()
+        
+        // Only replace if needed
+        if textStorage.string != text {
+            let replacementRange = NSRange(location: 0, length: textStorage.length)
+            textStorage.replaceCharacters(in: replacementRange, with: text)
+        }
+        
+        textStorage.endEditing()
+        textView.setAccessibilityValue(text)
+        
+        // Schedule deferred highlighting
+        let shouldDefer = text.count > 10000
+        if shouldDefer {
+            scheduleHighlighting(text: text, language: language, themeColors: themeColors)
+        } else {
+            // Small file - highlight immediately
+            applyHighlighting(text: text, language: language, themeColors: themeColors)
+        }
+        
+        updateTextViewFrame()
+        updateMinimap()
+    }
+    
+    private func scheduleHighlighting(text: String, language: String, themeColors: ThemeColors) {
+        highlightTask?.cancel()
+        highlightTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 180_000_000)  // 180ms debounce
+            guard let self = self, !Task.isCancelled else { return }
+            await MainActor.run {
+                self.applyHighlighting(text: text, language: language, themeColors: themeColors)
+            }
+        }
+    }
+    
+    private func applyHighlighting(text: String, language: String, themeColors: ThemeColors) {
+        // Skip if text has changed since we started
+        if text != currentDisplayText {
+            return
+        }
+        
         let highlighted = HighlightService.shared.highlightedAttributedString(
             text,
             language: language,
             themeColors: themeColors,
             font: editorFont
         )
-
+        
         guard let textStorage = textView.textStorage else { return }
-        let replacementRange = NSRange(location: 0, length: textStorage.length)
-        textStorage.beginEditing()
-        textStorage.replaceCharacters(in: replacementRange, with: highlighted.string)
         let fullRange = NSRange(location: 0, length: textStorage.length)
+        
+        textStorage.beginEditing()
         textStorage.setAttributes([
             .font: editorFont,
             .foregroundColor: themeColors.nsForeground
         ], range: fullRange)
         textStorage.endEditing()
-        textView.setAccessibilityValue(text)
-
-        if let layoutManager = textView.layoutManager, let textContainer = textView.textContainer {
+        
+        if let layoutManager = textView.layoutManager {
             if fullRange.length > 0 {
                 layoutManager.removeTemporaryAttribute(.foregroundColor, forCharacterRange: fullRange)
                 layoutManager.removeTemporaryAttribute(.font, forCharacterRange: fullRange)
@@ -1313,15 +1432,10 @@ final class EditorContainerView: NSView {
                     layoutManager.addTemporaryAttributes(temporaryAttributes, forCharacterRange: range)
                 }
             }
-            layoutManager.ensureLayout(for: textContainer)
         }
-        updateTextViewFrame()
+        
         textView.needsDisplay = true
         lineNumberView.needsDisplay = true
-        lineNumberView.themeColors = themeColors
-        lineNumberView.editorFont = editorFont
-        lineNumberView.needsDisplay = true
-        updateMinimap()
     }
 
     func refreshAfterEditing(text: String, themeColors: ThemeColors) {
@@ -1354,8 +1468,6 @@ final class EditorContainerView: NSView {
     override func layout() {
         super.layout()
         updateTextViewFrame()
-        textView.needsDisplay = true
-        lineNumberView.needsDisplay = true
         updateMinimap()
         onLayout?()
     }
@@ -1376,7 +1488,20 @@ final class EditorContainerView: NSView {
         textView.frame = NSRect(origin: .zero, size: NSSize(width: targetWidth, height: targetHeight))
     }
 
+    private var minimapUpdateTask: Task<Void, Never>?
+
     private func updateMinimap() {
+        minimapUpdateTask?.cancel()
+        minimapUpdateTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 100_000_000)  // 100ms debounce
+            guard let self = self, !Task.isCancelled else { return }
+            await MainActor.run {
+                self.calculateAndApplyMinimap()
+            }
+        }
+    }
+
+    private func calculateAndApplyMinimap() {
         guard showMinimap else {
             let snapshot = MinimapSnapshot.make(
                 text: currentDisplayText,

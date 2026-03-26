@@ -8,6 +8,7 @@ struct EditorTab: Identifiable {
     var originalContent: String
     var isDirty: Bool
     var cursorPosition: CursorPosition
+    var scrollPosition: ScrollPosition?  // Added for scroll persistence
     var pendingLineJump: Int?
     var documentVersion: Int
     var documentMetadata: FileDocumentMetadata
@@ -99,4 +100,9 @@ struct CursorPosition {
     var description: String {
         "Line \(line), Col \(column)"
     }
+}
+
+struct ScrollPosition: Codable {
+    let visibleRange: NSRange
+    let verticalOffset: CGFloat
 }

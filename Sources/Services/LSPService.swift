@@ -96,10 +96,19 @@ final class LSPService: ObservableObject, LSPServiceProtocol {
         let version = (documentVersions[uri] ?? 0) + 1
         documentVersions[uri] = version
 
-        // Debounce: cancel previous timer for this URI, set new one
+        // Adaptive debounce: longer for larger files
         debounceTimers[uri]?.cancel()
+        let delay: UInt64
+        if text.count > 100000 {
+            delay = 1_000_000_000  // 1 second for huge files
+        } else if text.count > 10000 {
+            delay = 500_000_000    // 500ms for large files
+        } else {
+            delay = 300_000_000    // 300ms for normal files
+        }
+        
         debounceTimers[uri] = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 300_000_000) // 300ms debounce
+            try? await Task.sleep(nanoseconds: delay)
             guard !Task.isCancelled else { return }
             guard let self else { return }
             let client = await self.ensureClient(for: language)
@@ -268,7 +277,13 @@ final class LSPService: ObservableObject, LSPServiceProtocol {
     }
 
     private func handleDiagnostics(uri: String, diagnostics: [LSPDiagnostic]) {
-        diagnosticsByURI[uri] = diagnostics
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 100_000_000)
+            guard let self = self else { return }
+            await MainActor.run {
+                self.diagnosticsByURI[uri] = diagnostics
+            }
+        }
     }
 }
 

@@ -210,6 +210,8 @@ final class ProjectViewModel: ObservableObject {
     @Published var debugConfigurationError: String?
     @Published var bottomPanel: BottomPanelKind?
     @Published private(set) var isLoadingFileTree: Bool = false
+    @Published var isLoadingFile: Bool = false
+    @Published var loadingFileProgress: Double?
     @Published var isSearchingProject: Bool = false
     @Published var isReplacingInProject: Bool = false
     @Published var breakpoints: [Breakpoint] = []
@@ -2348,6 +2350,9 @@ final class ProjectViewModel: ObservableObject {
         }
 
         do {
+            isLoadingFile = true
+            loadingFileProgress = 0.0
+            
             let fileHandling = configService.settings.fileHandling
             let contentType = fileService.detectContentType(at: url, settings: fileHandling)
 
@@ -2388,6 +2393,8 @@ final class ProjectViewModel: ObservableObject {
                 )
             case .excluded(let reason):
                 ui.alert("Unsupported File", excludedContentMessage(for: reason, fileURL: url, settings: fileHandling), .warning)
+                isLoadingFile = false
+                loadingFileProgress = nil
                 return
             }
 
@@ -2402,8 +2409,12 @@ final class ProjectViewModel: ObservableObject {
 
             recordQuickOpenAccess(for: url)
             persistSession()
+            isLoadingFile = false
+            loadingFileProgress = nil
         } catch {
             ui.alert("Error", "Could not open file: \(error.localizedDescription)", .warning)
+            isLoadingFile = false
+            loadingFileProgress = nil
         }
     }
 
