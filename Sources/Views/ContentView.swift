@@ -462,7 +462,7 @@ struct SearchSidebarView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            VStack(spacing: 8) {
+            RosewoodSidebarCard(spacing: RosewoodUI.spacing3) {
                 HStack(spacing: 8) {
                     HStack(spacing: 8) {
                         Image(systemName: "magnifyingglass")
@@ -526,7 +526,7 @@ struct SearchSidebarView: View {
                     }
                     .padding(.horizontal, 10)
                     .padding(.vertical, 8)
-                    .background(themeColors.elevatedBackground)
+                    .background(themeColors.background)
                     .clipShape(RoundedRectangle(cornerRadius: 8))
                 }
 
@@ -543,7 +543,7 @@ struct SearchSidebarView: View {
                         }
                         .padding(.horizontal, 10)
                         .padding(.vertical, 8)
-                        .background(themeColors.elevatedBackground)
+                        .background(themeColors.background)
                         .clipShape(RoundedRectangle(cornerRadius: 8))
 
                         HStack(spacing: 6) {
@@ -557,7 +557,7 @@ struct SearchSidebarView: View {
                         }
                         .padding(.horizontal, 10)
                         .padding(.vertical, 8)
-                        .background(themeColors.elevatedBackground)
+                        .background(themeColors.background)
                         .clipShape(RoundedRectangle(cornerRadius: 8))
                     }
                     HStack(spacing: 8) {
@@ -606,7 +606,7 @@ struct SearchSidebarView: View {
                             }
                             .padding(.horizontal, 10)
                             .padding(.vertical, 8)
-                            .background(themeColors.elevatedBackground)
+                            .background(themeColors.background)
                             .clipShape(RoundedRectangle(cornerRadius: 8))
 
                             Button(projectViewModel.replaceAllProjectResultsTitle) {
@@ -702,7 +702,7 @@ struct SearchSidebarView: View {
                                 }
                             }
                             .padding(10)
-                            .background(themeColors.elevatedBackground)
+                            .background(themeColors.background)
                             .clipShape(RoundedRectangle(cornerRadius: 8))
                             .accessibilityIdentifier("project-replace-preview")
                         }
@@ -746,7 +746,6 @@ struct SearchSidebarView: View {
                         Spacer()
                     }
                 }
-
             }
             .padding(12)
 

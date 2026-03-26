@@ -22,7 +22,7 @@ struct SourceControlSidebarView: View {
     }
 
     private var headerView: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        RosewoodSidebarCard(spacing: 8) {
             HStack(spacing: 8) {
                 Label(projectViewModel.gitRepositoryStatus.branchName ?? "No Repository", systemImage: "arrow.triangle.branch")
                     .font(.system(size: 12, weight: .semibold))
@@ -57,7 +57,8 @@ struct SourceControlSidebarView: View {
             }
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 10)
+        .padding(.top, 12)
+        .padding(.bottom, 8)
     }
 
     private var changeSummaryText: String {
