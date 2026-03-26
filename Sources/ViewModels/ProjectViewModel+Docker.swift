@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 
 extension ProjectViewModel {
     
@@ -46,9 +47,20 @@ extension ProjectViewModel {
             do {
                 try await dockerService.startContainer(id: container.id)
                 await refreshDockerState()
+                NotificationManager.shared.show(NotificationItem(
+                    type: .success,
+                    title: "Container Started",
+                    message: "\(container.displayName) is now running",
+                    duration: 3.0
+                ))
             } catch {
                 await MainActor.run {
-                    ui.alert("Start Failed", "Could not start container: \(error.localizedDescription)", .warning)
+                    NotificationManager.shared.show(NotificationItem(
+                        type: .error,
+                        title: "Start Failed",
+                        message: "Could not start container: \(error.localizedDescription)",
+                        autoDismiss: false
+                    ))
                 }
             }
         }
@@ -59,9 +71,20 @@ extension ProjectViewModel {
             do {
                 try await dockerService.stopContainer(id: container.id)
                 await refreshDockerState()
+                NotificationManager.shared.show(NotificationItem(
+                    type: .success,
+                    title: "Container Stopped",
+                    message: "\(container.displayName) has been stopped",
+                    duration: 3.0
+                ))
             } catch {
                 await MainActor.run {
-                    ui.alert("Stop Failed", "Could not stop container: \(error.localizedDescription)", .warning)
+                    NotificationManager.shared.show(NotificationItem(
+                        type: .error,
+                        title: "Stop Failed",
+                        message: "Could not stop container: \(error.localizedDescription)",
+                        autoDismiss: false
+                    ))
                 }
             }
         }
@@ -72,58 +95,98 @@ extension ProjectViewModel {
             do {
                 try await dockerService.restartContainer(id: container.id)
                 await refreshDockerState()
+                NotificationManager.shared.show(NotificationItem(
+                    type: .success,
+                    title: "Container Restarted",
+                    message: "\(container.displayName) has been restarted",
+                    duration: 3.0
+                ))
             } catch {
                 await MainActor.run {
-                    ui.alert("Restart Failed", "Could not restart container: \(error.localizedDescription)", .warning)
+                    NotificationManager.shared.show(NotificationItem(
+                        type: .error,
+                        title: "Restart Failed",
+                        message: "Could not restart container: \(error.localizedDescription)",
+                        autoDismiss: false
+                    ))
                 }
             }
         }
     }
     
     func removeContainer(_ container: DockerContainer, force: Bool = false) {
-        let response = ui.confirm(
-            "Remove Container",
-            "Are you sure you want to remove \(container.displayName)?\(force ? " Force removal will stop the container first." : "")",
-            .warning,
-            ["Remove", "Cancel"]
-        )
-        
-        if response == .alertFirstButtonReturn {
-            Task {
-                do {
-                    try await dockerService.removeContainer(id: container.id, force: force)
-                    await refreshDockerState()
-                } catch {
-                    await MainActor.run {
-                        ui.alert("Remove Failed", "Could not remove container: \(error.localizedDescription)", .warning)
+        // Use non-blocking notification instead of modal
+        NotificationManager.shared.show(NotificationItem(
+            type: .warning,
+            title: "Remove Container",
+            message: "Are you sure you want to remove \(container.displayName)?\(force ? " This will stop the container first." : "")",
+            actions: [
+                NotificationAction(title: "Remove", action: { [weak self] in
+                    Task {
+                        do {
+                            try await self?.dockerService.removeContainer(id: container.id, force: force)
+                            await self?.refreshDockerState()
+                            NotificationManager.shared.show(NotificationItem(
+                                type: .success,
+                                title: "Container Removed",
+                                message: "\(container.displayName) has been removed",
+                                duration: 3.0
+                            ))
+                        } catch {
+                            await MainActor.run {
+                                NotificationManager.shared.show(NotificationItem(
+                                    type: .error,
+                                    title: "Remove Failed",
+                                    message: "Could not remove container: \(error.localizedDescription)",
+                                    autoDismiss: false
+                                ))
+                            }
+                        }
                     }
-                }
-            }
-        }
+                }),
+                NotificationAction(title: "Cancel", action: { })
+            ],
+            duration: 10.0,
+            autoDismiss: false
+        ))
     }
     
     // MARK: - Image Actions
     
     func removeImage(_ image: DockerImage, force: Bool = false) {
-        let response = ui.confirm(
-            "Remove Image",
-            "Are you sure you want to remove \(image.displayName)?",
-            .warning,
-            ["Remove", "Cancel"]
-        )
-        
-        if response == .alertFirstButtonReturn {
-            Task {
-                do {
-                    try await dockerService.removeImage(id: image.id, force: force)
-                    await refreshDockerState()
-                } catch {
-                    await MainActor.run {
-                        ui.alert("Remove Failed", "Could not remove image: \(error.localizedDescription)", .warning)
+        NotificationManager.shared.show(NotificationItem(
+            type: .warning,
+            title: "Remove Image",
+            message: "Are you sure you want to remove \(image.displayName)?",
+            actions: [
+                NotificationAction(title: "Remove", action: { [weak self] in
+                    Task {
+                        do {
+                            try await self?.dockerService.removeImage(id: image.id, force: force)
+                            await self?.refreshDockerState()
+                            NotificationManager.shared.show(NotificationItem(
+                                type: .success,
+                                title: "Image Removed",
+                                message: "\(image.displayName) has been removed",
+                                duration: 3.0
+                            ))
+                        } catch {
+                            await MainActor.run {
+                                NotificationManager.shared.show(NotificationItem(
+                                    type: .error,
+                                    title: "Remove Failed",
+                                    message: "Could not remove image: \(error.localizedDescription)",
+                                    autoDismiss: false
+                                ))
+                            }
+                        }
                     }
-                }
-            }
-        }
+                }),
+                NotificationAction(title: "Cancel", action: { })
+            ],
+            duration: 10.0,
+            autoDismiss: false
+        ))
     }
     
     // MARK: - Compose Actions
@@ -133,34 +196,59 @@ extension ProjectViewModel {
             do {
                 try await dockerService.composeUp(projectPath: project.configPath)
                 await refreshDockerState()
+                NotificationManager.shared.show(NotificationItem(
+                    type: .success,
+                    title: "Compose Started",
+                    message: "\(project.name) is now running",
+                    duration: 3.0
+                ))
             } catch {
                 await MainActor.run {
-                    ui.alert("Compose Up Failed", "Could not start compose project: \(error.localizedDescription)", .warning)
+                    NotificationManager.shared.show(NotificationItem(
+                        type: .error,
+                        title: "Compose Up Failed",
+                        message: "Could not start compose project: \(error.localizedDescription)",
+                        autoDismiss: false
+                    ))
                 }
             }
         }
     }
     
     func composeDown(project: DockerComposeProject) {
-        let response = ui.confirm(
-            "Stop Compose Project",
-            "Stop all services in \(project.name)?",
-            .warning,
-            ["Stop", "Cancel"]
-        )
-        
-        if response == .alertFirstButtonReturn {
-            Task {
-                do {
-                    try await dockerService.composeDown(projectPath: project.configPath)
-                    await refreshDockerState()
-                } catch {
-                    await MainActor.run {
-                        ui.alert("Compose Down Failed", "Could not stop compose project: \(error.localizedDescription)", .warning)
+        NotificationManager.shared.show(NotificationItem(
+            type: .warning,
+            title: "Stop Compose Project",
+            message: "Stop all services in \(project.name)?",
+            actions: [
+                NotificationAction(title: "Stop", action: { [weak self] in
+                    Task {
+                        do {
+                            try await self?.dockerService.composeDown(projectPath: project.configPath)
+                            await self?.refreshDockerState()
+                            NotificationManager.shared.show(NotificationItem(
+                                type: .success,
+                                title: "Compose Stopped",
+                                message: "\(project.name) has been stopped",
+                                duration: 3.0
+                            ))
+                        } catch {
+                            await MainActor.run {
+                                NotificationManager.shared.show(NotificationItem(
+                                    type: .error,
+                                    title: "Compose Down Failed",
+                                    message: "Could not stop compose project: \(error.localizedDescription)",
+                                    autoDismiss: false
+                                ))
+                            }
+                        }
                     }
-                }
-            }
-        }
+                }),
+                NotificationAction(title: "Cancel", action: { })
+            ],
+            duration: 10.0,
+            autoDismiss: false
+        ))
     }
     
     // MARK: - Terminal Integration
