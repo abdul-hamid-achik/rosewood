@@ -250,9 +250,20 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
 
         func applyExternalState(text: String, language: String) {
             guard let containerView else { return }
-            deferredHighlightTask?.cancel()
             applyPopupTheme()
             let textView = containerView.textView
+            let requestedLineJump = parent.pendingLineJump
+
+            if parent.deferHighlightingDuringEditing,
+               requestedLineJump == nil,
+               deferredHighlightTask != nil,
+               textView.string == text {
+                refreshEditorDecorations(in: textView)
+                updateCursorPosition(in: textView)
+                return
+            }
+
+            deferredHighlightTask?.cancel()
             if parent.pendingLineJump != nil {
                 foldedStartLines.removeAll()
             }
@@ -272,8 +283,6 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
                 renderedText: textView.string,
                 isViewReadyForDisplay: containerView.isReadyForDisplay
             )
-            let requestedLineJump = parent.pendingLineJump
-
             guard shouldApplyText || requestedLineJump != nil else { return }
 
             let selectedRange = textView.selectedRange()
@@ -366,12 +375,33 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
                     return
                 }
 
+                deferredHighlightTask = nil
+                if parent.pendingLineJump != nil {
+                    foldedStartLines.removeAll()
+                }
+
+                let foldSnapshot = FoldedTextSnapshot.make(
+                    from: text,
+                    language: language,
+                    foldedStartLines: foldedStartLines
+                )
+                foldedStartLines = foldSnapshot.foldedLines
+                currentFoldSnapshot = foldSnapshot
+                containerView.applyFolding(foldSnapshot) { [weak self] line in
+                    self?.toggleFold(atActualLine: line)
+                }
+
                 let selectedRange = containerView.textView.selectedRange()
                 isApplyingExternalUpdate = true
-                containerView.applyText(text, language: language, themeColors: parent.themeColors)
+                containerView.applyText(foldSnapshot.displayText, language: language, themeColors: parent.themeColors)
                 let clampedLocation = min(selectedRange.location, (containerView.textView.string as NSString).length)
                 containerView.textView.setSelectedRange(NSRange(location: clampedLocation, length: 0))
                 isApplyingExternalUpdate = false
+                renderState.recordRender(
+                    text: foldSnapshot.displayText,
+                    language: language,
+                    isViewReadyForDisplay: containerView.isReadyForDisplay
+                )
                 refreshEditorDecorations(in: containerView.textView)
                 updateCursorPosition(in: containerView.textView)
             }
