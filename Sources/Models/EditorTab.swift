@@ -11,6 +11,8 @@ struct EditorTab: Identifiable {
     var pendingLineJump: Int?
     var documentVersion: Int
     var documentMetadata: FileDocumentMetadata
+    var contentType: ContentType
+    var fileData: Data?
 
     init(
         id: UUID = UUID(),
@@ -22,7 +24,9 @@ struct EditorTab: Identifiable {
         cursorPosition: CursorPosition = CursorPosition(),
         pendingLineJump: Int? = nil,
         documentVersion: Int = 0,
-        documentMetadata: FileDocumentMetadata = .utf8LF
+        documentMetadata: FileDocumentMetadata = .utf8LF,
+        contentType: ContentType = .text(isLarge: false),
+        fileData: Data? = nil
     ) {
         self.id = id
         self.filePath = filePath
@@ -34,6 +38,8 @@ struct EditorTab: Identifiable {
         self.pendingLineJump = pendingLineJump
         self.documentVersion = documentVersion
         self.documentMetadata = documentMetadata
+        self.contentType = contentType
+        self.fileData = fileData
     }
 
     var documentURI: String? {

@@ -368,6 +368,51 @@ final class FileService {
         try data.write(to: url, options: .atomic)
     }
 
+    func detectContentType(at url: URL, settings: AppSettings.FileHandling) -> ContentType {
+        let fileExtension = url.pathExtension.lowercased()
+        let fileSize = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+        let prefixData = readPrefixData(at: url)
+        let imageFormat = detectedImageFormat(for: url, fileExtension: fileExtension, prefixData: prefixData)
+
+        if let imageFormat {
+            let imageSizeLimit = settings.imageSizeLimitMB * 1_048_576
+            return fileSize > imageSizeLimit ? .excluded(reason: .tooLarge) : .image(format: imageFormat)
+        }
+
+        let binaryDetection = isBinary(prefixData: prefixData, fileExtension: fileExtension)
+        if binaryDetection {
+            if settings.excludedBinaryExtensions.contains(fileExtension) {
+                return .excluded(reason: .excludedExtension)
+            }
+
+            if fileSize <= settings.binarySizeHexKB * 1024 {
+                return .binary(viewer: .hex)
+            }
+
+            if fileSize > settings.binarySizeWarningKB * 1024 {
+                return .binary(viewer: .external)
+            }
+
+            return .binary(viewer: .placeholder)
+        }
+
+        if fileSize > settings.textSizeLimitKB * 1024 {
+            return .excluded(reason: .tooLarge)
+        }
+
+        return .text(isLarge: fileSize >= settings.textSizeWarningKB * 1024)
+    }
+
+    func readFileAsData(at url: URL) throws -> Data {
+        try Data(contentsOf: url)
+    }
+
+    func readFileAsText(at url: URL, maxSize: Int) throws -> String? {
+        let fileSize = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+        guard fileSize <= maxSize else { return nil }
+        return try readDocument(at: url).content
+    }
+
     func createFile(named name: String, in directory: URL) throws -> URL {
         let fileURL = directory.appendingPathComponent(name)
         let didCreate = FileManager.default.createFile(atPath: fileURL.path, contents: Data())
@@ -692,6 +737,94 @@ final class FileService {
 }
 
 private extension FileService {
+    private static let imageSignatures: [ImageFormat: [UInt8]] = [
+        .png: [0x89, 0x50, 0x4E, 0x47],
+        .jpg: [0xFF, 0xD8, 0xFF],
+        .gif: [0x47, 0x49, 0x46, 0x38],
+        .bmp: [0x42, 0x4D],
+        .pdf: [0x25, 0x50, 0x44, 0x46],
+        .tiff: [0x49, 0x49, 0x2A, 0x00],
+        .heic: [0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70]
+    ]
+
+    private static let imageExtensionMap: [String: ImageFormat] = [
+        "png": .png,
+        "jpg": .jpg,
+        "jpeg": .jpg,
+        "gif": .gif,
+        "svg": .svg,
+        "webp": .webp,
+        "bmp": .bmp,
+        "ico": .ico,
+        "icns": .ico,
+        "tif": .tiff,
+        "tiff": .tiff,
+        "heic": .heic,
+        "heif": .heic,
+        "raw": .raw,
+        "pdf": .pdf,
+        "eps": .eps
+    ]
+
+    private static let likelyTextExtensions: Set<String> = [
+        "txt", "md", "markdown", "swift", "py", "rb", "js", "jsx", "ts", "tsx",
+        "go", "rs", "json", "yaml", "yml", "toml", "xml", "html", "css", "scss",
+        "sql", "sh", "bash", "zsh", "fish", "c", "h", "m", "mm", "cpp", "cc",
+        "cxx", "hpp", "hh", "java", "kt", "kts", "dart", "lua", "r", "scala",
+        "zig", "php", "pl", "ini", "cfg", "conf", "log", "env", "gitignore"
+    ]
+
+    func detectedImageFormat(for url: URL, fileExtension: String, prefixData: Data?) -> ImageFormat? {
+        if fileExtension == "webp",
+           let prefixData,
+           prefixData.starts(with: [0x52, 0x49, 0x46, 0x46]),
+           prefixData.dropFirst(8).starts(with: [0x57, 0x45, 0x42, 0x50]) {
+            return .webp
+        }
+
+        if let prefixData {
+            let prefixBytes = Array(prefixData)
+            for (format, signature) in Self.imageSignatures where prefixBytes.starts(with: signature) {
+                return format
+            }
+        }
+
+        return Self.imageExtensionMap[fileExtension]
+    }
+
+    func readPrefixData(at url: URL, count: Int = 512) -> Data? {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? handle.close() }
+        return try? handle.read(upToCount: count)
+    }
+
+    func isBinary(prefixData: Data?, fileExtension: String) -> Bool {
+        if Self.likelyTextExtensions.contains(fileExtension) {
+            return false
+        }
+
+        guard let prefixData, !prefixData.isEmpty else {
+            return false
+        }
+
+        if prefixData.contains(0) {
+            return true
+        }
+
+        let prefixBytes = Array(prefixData.prefix(256))
+        let nonTextCount = prefixBytes.filter { byte in
+            switch byte {
+            case 0x09, 0x0A, 0x0D, 0x20...0x7E:
+                return false
+            default:
+                return true
+            }
+        }.count
+
+        let binaryRatio = Double(nonTextCount) / Double(max(prefixBytes.count, 1))
+        return binaryRatio > 0.18
+    }
+
     func detectLineEnding(in content: String, data: Data, encoding: String.Encoding) -> LineEndingStyle {
         let textBasedLineEnding = LineEndingStyle.detect(in: content)
         if textBasedLineEnding != .lf || !content.contains("\n") {

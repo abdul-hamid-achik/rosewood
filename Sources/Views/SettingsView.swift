@@ -13,6 +13,12 @@ struct SettingsView: View {
     @State private var autoSaveEnabled: Bool = true
     @State private var autoSaveDelay: Double = 2.0
     @State private var selectedThemeId: String = "nord"
+    @State private var textSizeWarningKB: Int = 500
+    @State private var textSizeLimitKB: Int = 5000
+    @State private var largeFileThresholdKB: Int = 200
+    @State private var binarySizeHexKB: Int = 100
+    @State private var binarySizeWarningKB: Int = 1000
+    @State private var imageSizeLimitMB: Int = 10
 
     private let fontFamilies = [
         "SF Mono",
@@ -37,6 +43,7 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 24) {
                     editorSection
                     autoSaveSection
+                    fileHandlingSection
                     themeSection
                 }
                 .padding(24)
@@ -193,6 +200,28 @@ struct SettingsView: View {
         }
     }
 
+    private var fileHandlingSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("File Handling")
+                .font(RosewoodType.bodyStrong)
+                .foregroundColor(themeColors.subduedText)
+
+            VStack(alignment: .leading, spacing: 12) {
+                settingsStepperRow("Large file mode", value: $largeFileThresholdKB, range: 100...2000, suffix: "KB")
+                settingsStepperRow("Text size limit", value: $textSizeLimitKB, range: 500...20000, suffix: "KB")
+                settingsStepperRow("Hex viewer limit", value: $binarySizeHexKB, range: 16...1024, suffix: "KB")
+                settingsStepperRow("Binary warning", value: $binarySizeWarningKB, range: 128...10000, suffix: "KB")
+                settingsStepperRow("Image size limit", value: $imageSizeLimitMB, range: 1...100, suffix: "MB")
+
+                Text("Large text files stay editable, but Rosewood can disable heavier affordances like the minimap to keep scrolling smooth.")
+                    .font(RosewoodType.caption)
+                    .foregroundColor(themeColors.mutedText)
+            }
+            .padding(16)
+            .rosewoodCard(themeColors, radius: RosewoodUI.radiusSmall)
+        }
+    }
+
     private var footerView: some View {
         HStack {
             Button("Reset to Defaults") {
@@ -230,6 +259,12 @@ struct SettingsView: View {
         autoSaveEnabled = settings.editor.autoSaveEnabled
         autoSaveDelay = settings.editor.autoSaveDelay
         selectedThemeId = settings.theme.name
+        textSizeWarningKB = settings.fileHandling.textSizeWarningKB
+        textSizeLimitKB = settings.fileHandling.textSizeLimitKB
+        largeFileThresholdKB = settings.fileHandling.largeFileThresholdKB
+        binarySizeHexKB = settings.fileHandling.binarySizeHexKB
+        binarySizeWarningKB = settings.fileHandling.binarySizeWarningKB
+        imageSizeLimitMB = settings.fileHandling.imageSizeLimitMB
     }
 
     private func loadDefaultSettings() {
@@ -243,6 +278,12 @@ struct SettingsView: View {
         autoSaveEnabled = defaults.editor.autoSaveEnabled
         autoSaveDelay = defaults.editor.autoSaveDelay
         selectedThemeId = defaults.theme.name
+        textSizeWarningKB = defaults.fileHandling.textSizeWarningKB
+        textSizeLimitKB = defaults.fileHandling.textSizeLimitKB
+        largeFileThresholdKB = defaults.fileHandling.largeFileThresholdKB
+        binarySizeHexKB = defaults.fileHandling.binarySizeHexKB
+        binarySizeWarningKB = defaults.fileHandling.binarySizeWarningKB
+        imageSizeLimitMB = defaults.fileHandling.imageSizeLimitMB
     }
 
     private func saveSettings() {
@@ -256,8 +297,34 @@ struct SettingsView: View {
         newSettings.editor.autoSaveEnabled = autoSaveEnabled
         newSettings.editor.autoSaveDelay = autoSaveDelay
         newSettings.theme.name = selectedThemeId
+        newSettings.fileHandling.textSizeWarningKB = textSizeWarningKB
+        newSettings.fileHandling.textSizeLimitKB = textSizeLimitKB
+        newSettings.fileHandling.largeFileThresholdKB = largeFileThresholdKB
+        newSettings.fileHandling.binarySizeHexKB = binarySizeHexKB
+        newSettings.fileHandling.binarySizeWarningKB = binarySizeWarningKB
+        newSettings.fileHandling.imageSizeLimitMB = imageSizeLimitMB
 
         configService.updateSettings(newSettings)
         dismiss()
+    }
+
+    private func settingsStepperRow(
+        _ title: String,
+        value: Binding<Int>,
+        range: ClosedRange<Int>,
+        suffix: String
+    ) -> some View {
+        HStack {
+            Text(title)
+                .font(RosewoodType.body)
+                .foregroundColor(themeColors.foreground)
+            Spacer()
+            Stepper(value: value, in: range, step: 1) {
+                Text("\(value.wrappedValue)\(suffix)")
+                    .font(RosewoodType.monoBody)
+                    .foregroundColor(themeColors.subduedText)
+                    .frame(width: 68, alignment: .trailing)
+            }
+        }
     }
 }

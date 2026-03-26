@@ -48,7 +48,7 @@ struct TabItemView: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Image(systemName: tab.filePath != nil ? iconForFile(tab.fileName) : "doc")
+            Image(systemName: tabIconName)
                 .font(.system(size: 12))
                 .foregroundColor(isSelected ? themeColors.accent : themeColors.mutedText)
 
@@ -137,6 +137,15 @@ struct TabItemView: View {
             }
         }
         .help(tab.fileName)
+    }
+
+    private var tabIconName: String {
+        switch tab.contentType {
+        case .text:
+            return tab.filePath != nil ? iconForFile(tab.fileName) : "doc"
+        default:
+            return tab.contentType.tabIconName
+        }
     }
 
     private func iconForFile(_ name: String) -> String {

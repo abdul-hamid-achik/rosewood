@@ -65,6 +65,19 @@ struct StatusBarView: View {
         projectViewModel.sidebarMode != .sourceControl && !projectViewModel.isGitDiffWorkspaceVisible
     }
 
+    private func fileSizeLabel(for tab: EditorTab) -> String? {
+        if let fileData = tab.fileData {
+            return ByteCountFormatter.string(fromByteCount: Int64(fileData.count), countStyle: .file)
+        }
+
+        guard let filePath = tab.filePath,
+              let fileSize = try? filePath.resourceValues(forKeys: [.fileSizeKey]).fileSize else {
+            return nil
+        }
+
+        return ByteCountFormatter.string(fromByteCount: Int64(fileSize), countStyle: .file)
+    }
+
     @ViewBuilder
     private var diagnosticsToggle: some View {
         let diagCount = projectViewModel.currentTabDiagnosticCount
@@ -124,38 +137,49 @@ struct StatusBarView: View {
     var body: some View {
         HStack {
             if let tab = projectViewModel.selectedTab {
-                statusMonospaceText(tab.cursorPosition.description)
-                    .accessibilityLabel(tab.cursorPosition.description)
-                    .accessibilityValue(tab.cursorPosition.description)
-                    .accessibilityIdentifier("statusbar-cursor-position")
+                if tab.contentType.isText {
+                    statusMonospaceText(tab.cursorPosition.description)
+                        .accessibilityLabel(tab.cursorPosition.description)
+                        .accessibilityValue(tab.cursorPosition.description)
+                        .accessibilityIdentifier("statusbar-cursor-position")
 
-                Spacer()
+                    Spacer()
 
-                statusText(indentLabel)
-                    .accessibilityIdentifier("statusbar-indent-width")
-
-                statusDivider
-
-                statusText(wrapLabel)
-                    .accessibilityIdentifier("statusbar-wrap-mode")
-
-                statusDivider
-
-                if let lineEndingLabel = projectViewModel.selectedTabLineEndingLabel {
-                    statusText(lineEndingLabel)
-                        .accessibilityIdentifier("statusbar-line-endings")
+                    statusText(indentLabel)
+                        .accessibilityIdentifier("statusbar-indent-width")
 
                     statusDivider
-                }
 
-                if let encodingLabel = projectViewModel.selectedTabEncodingLabel {
-                    statusText(encodingLabel)
-                        .accessibilityIdentifier("statusbar-file-encoding")
+                    statusText(wrapLabel)
+                        .accessibilityIdentifier("statusbar-wrap-mode")
 
                     statusDivider
-                }
 
-                statusText(tab.language.capitalized)
+                    if let lineEndingLabel = projectViewModel.selectedTabLineEndingLabel {
+                        statusText(lineEndingLabel)
+                            .accessibilityIdentifier("statusbar-line-endings")
+
+                        statusDivider
+                    }
+
+                    if let encodingLabel = projectViewModel.selectedTabEncodingLabel {
+                        statusText(encodingLabel)
+                            .accessibilityIdentifier("statusbar-file-encoding")
+
+                        statusDivider
+                    }
+
+                    statusText(tab.language.capitalized)
+                } else {
+                    statusText(tab.fileName)
+                    Spacer()
+                    statusText(tab.contentType.statusLabel)
+
+                    if let fileSize = fileSizeLabel(for: tab) {
+                        statusDivider
+                        statusText(fileSize)
+                    }
+                }
 
                 if shouldShowGitMetadata,
                    let branchName = projectViewModel.gitRepositoryStatus.branchName {

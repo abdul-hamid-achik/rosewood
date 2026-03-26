@@ -20,9 +20,24 @@ struct EditorView: View {
             themeName: configService.currentThemeDefinition.id,
             tabSize: configService.settings.editor.tabSize,
             showLineNumbers: configService.settings.editor.showLineNumbers,
-            showMinimap: configService.settings.editor.showMinimap,
+            showMinimap: effectiveShowMinimap,
             wordWrap: configService.settings.editor.wordWrap
         )
+    }
+
+    private var effectiveShowMinimap: Bool {
+        switch tab.contentType {
+        case .text(let isLarge):
+            guard configService.settings.editor.showMinimap else { return false }
+            if isLarge,
+               let filePath = tab.filePath,
+               let fileSize = try? filePath.resourceValues(forKeys: [.fileSizeKey]).fileSize {
+                return fileSize < configService.settings.fileHandling.largeFileThresholdKB * 1024
+            }
+            return true
+        default:
+            return false
+        }
     }
 
     var body: some View {
@@ -51,7 +66,7 @@ struct EditorView: View {
             themeColors: themeColors,
             tabSize: configService.settings.editor.tabSize,
             showLineNumbers: configService.settings.editor.showLineNumbers,
-            showMinimap: configService.settings.editor.showMinimap,
+            showMinimap: effectiveShowMinimap,
             wordWrap: configService.settings.editor.wordWrap,
             diagnostics: projectViewModel.currentTabDiagnostics,
             breakpointLines: projectViewModel.currentTabBreakpointLines,

@@ -90,6 +90,28 @@ final class RosewoodUITests: XCTestCase {
     }
 
     @MainActor
+    func testImageFixtureOpensImageViewer() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["ROSEWOOD_UI_TEST_RESET_SESSION"] = "1"
+        app.launchEnvironment["ROSEWOOD_UI_TEST_IMAGE_FIXTURE"] = "1"
+        app.launch()
+        activateAndFocus(app)
+
+        XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "image-viewer").firstMatch.waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    func testBinaryFixtureOpensHexViewer() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["ROSEWOOD_UI_TEST_RESET_SESSION"] = "1"
+        app.launchEnvironment["ROSEWOOD_UI_TEST_BINARY_FIXTURE"] = "1"
+        app.launch()
+        activateAndFocus(app)
+
+        XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "hex-viewer").firstMatch.waitForExistence(timeout: 5))
+    }
+
+    @MainActor
     func testCommandPaletteAliasSearchCanOpenWorkspaceSymbolMode() throws {
         let app = XCUIApplication()
         app.launchEnvironment["ROSEWOOD_UI_TEST_RESET_SESSION"] = "1"

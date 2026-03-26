@@ -16,6 +16,8 @@ extension ProjectViewModel {
         let shouldInstallExplorerFixture = environment["ROSEWOOD_UI_TEST_EXPLORER_FIXTURE"] == "1"
         let shouldInstallDebugCommandsFixture = environment["ROSEWOOD_UI_TEST_DEBUG_COMMANDS_FIXTURE"] == "1"
         let shouldInstallGoCommandsFixture = environment["ROSEWOOD_UI_TEST_GO_COMMANDS_FIXTURE"] == "1"
+        let shouldInstallImageFixture = environment["ROSEWOOD_UI_TEST_IMAGE_FIXTURE"] == "1"
+        let shouldInstallBinaryFixture = environment["ROSEWOOD_UI_TEST_BINARY_FIXTURE"] == "1"
         guard shouldInstallContextMenuFixture
             || shouldInstallSearchFixture
             || shouldInstallDiagnosticsFixture
@@ -26,7 +28,9 @@ extension ProjectViewModel {
             || shouldInstallNavigationFixture
             || shouldInstallExplorerFixture
             || shouldInstallDebugCommandsFixture
-            || shouldInstallGoCommandsFixture else {
+            || shouldInstallGoCommandsFixture
+            || shouldInstallImageFixture
+            || shouldInstallBinaryFixture else {
             return
         }
 
@@ -36,6 +40,10 @@ extension ProjectViewModel {
             fixtureFileName = "Alpha.swift"
         } else if shouldInstallGitFixture {
             fixtureFileName = "Tracked.swift"
+        } else if shouldInstallImageFixture {
+            fixtureFileName = "Preview.png"
+        } else if shouldInstallBinaryFixture {
+            fixtureFileName = "Preview.bin"
         } else {
             fixtureFileName = "Alpha.swift"
         }
@@ -49,7 +57,11 @@ extension ProjectViewModel {
         do {
             try fileManager.createDirectory(at: rootURL, withIntermediateDirectories: true)
             let alphaContents: String
-            if shouldInstallSearchFixture {
+            if shouldInstallImageFixture {
+                alphaContents = ""
+            } else if shouldInstallBinaryFixture {
+                alphaContents = ""
+            } else if shouldInstallSearchFixture {
                 alphaContents = "let alpha = 1\n"
             } else if shouldInstallDiagnosticsFixture {
                 alphaContents = """
@@ -101,7 +113,14 @@ extension ProjectViewModel {
             } else {
                 alphaContents = "let alpha = 1\n"
             }
-            try alphaContents.write(to: alphaURL, atomically: true, encoding: .utf8)
+            if shouldInstallImageFixture {
+                let pngData = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9n0mAAAAAASUVORK5CYII=")!
+                try pngData.write(to: alphaURL)
+            } else if shouldInstallBinaryFixture {
+                try Data([0x7F, 0x45, 0x4C, 0x46, 0x00, 0x01, 0x02, 0x03, 0xAA, 0xBB]).write(to: alphaURL)
+            } else {
+                try alphaContents.write(to: alphaURL, atomically: true, encoding: .utf8)
+            }
 
             if shouldInstallSearchFixture {
                 try "let beta = alpha\n".write(to: betaURL, atomically: true, encoding: .utf8)

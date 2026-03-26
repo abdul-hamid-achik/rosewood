@@ -262,13 +262,31 @@ struct ContentView: View {
             if projectViewModel.isGitDiffWorkspaceVisible {
                 GitDiffPanelView(layoutStyle: .workspace)
             } else if let tab = projectViewModel.selectedTab {
-                editorChromeView
-                EditorView(tab: tab)
+                tabContentView(for: tab)
             } else {
                 emptyEditorView
             }
         }
         .background(themeColors.background)
+    }
+
+    @ViewBuilder
+    private func tabContentView(for tab: EditorTab) -> some View {
+        switch tab.contentType {
+        case .text(let isLarge):
+            if isLarge {
+                LargeFileWarningView(tab: tab)
+            } else {
+                editorChromeView
+                EditorView(tab: tab)
+            }
+        case .image:
+            ImageViewerView(tab: tab)
+        case .binary(.hex):
+            HexViewerView(tab: tab)
+        case .binary, .excluded:
+            BinaryPlaceholderView(tab: tab)
+        }
     }
 
     @ViewBuilder

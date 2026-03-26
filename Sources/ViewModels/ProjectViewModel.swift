@@ -2348,30 +2348,138 @@ final class ProjectViewModel: ObservableObject {
         }
 
         do {
-            let document = try fileService.readDocument(at: url)
-            openTabs.append(
-                EditorTab(
-                    filePath: url,
-                    fileName: url.lastPathComponent,
-                    content: document.content,
-                    originalContent: document.content,
-                    documentMetadata: document.metadata
+            let fileHandling = configService.settings.fileHandling
+            let contentType = fileService.detectContentType(at: url, settings: fileHandling)
+
+            switch contentType {
+            case .text:
+                let document = try fileService.readDocument(at: url)
+                openTabs.append(
+                    EditorTab(
+                        filePath: url,
+                        fileName: url.lastPathComponent,
+                        content: document.content,
+                        originalContent: document.content,
+                        documentMetadata: document.metadata,
+                        contentType: contentType
+                    )
                 )
-            )
+            case .image:
+                let data = try fileService.readFileAsData(at: url)
+                openTabs.append(
+                    EditorTab(
+                        filePath: url,
+                        fileName: url.lastPathComponent,
+                        documentMetadata: .utf8LF,
+                        contentType: contentType,
+                        fileData: data
+                    )
+                )
+            case .binary(let viewer):
+                let data = viewer == .hex ? try fileService.readFileAsData(at: url) : nil
+                openTabs.append(
+                    EditorTab(
+                        filePath: url,
+                        fileName: url.lastPathComponent,
+                        documentMetadata: .utf8LF,
+                        contentType: contentType,
+                        fileData: data
+                    )
+                )
+            case .excluded(let reason):
+                ui.alert("Unsupported File", excludedContentMessage(for: reason, fileURL: url, settings: fileHandling), .warning)
+                return
+            }
+
             selectedTabIndex = openTabs.count - 1
             revealInExplorer(url)
             fileWatcher.watch(url: url)
 
-            // Notify LSP service of document open
             let tab = openTabs[openTabs.count - 1]
-            if let uri = tab.documentURI {
-                lspService.documentOpened(uri: uri, language: tab.language, text: document.content)
+            if tab.contentType.isText, let uri = tab.documentURI {
+                lspService.documentOpened(uri: uri, language: tab.language, text: tab.content)
             }
 
             recordQuickOpenAccess(for: url)
             persistSession()
         } catch {
             ui.alert("Error", "Could not open file: \(error.localizedDescription)", .warning)
+        }
+    }
+
+    private func excludedContentMessage(
+        for reason: ExcludedReason,
+        fileURL: URL,
+        settings: AppSettings.FileHandling
+    ) -> String {
+        switch reason {
+        case .tooLarge:
+            return "\(fileURL.lastPathComponent) exceeds the configured size limit. Adjust File Handling settings if you want to allow larger files."
+        case .binary:
+            return "\(fileURL.lastPathComponent) appears to be binary and cannot be opened as editable text."
+        case .excludedExtension:
+            return "\(fileURL.lastPathComponent) uses an excluded binary extension. Open it externally or change File Handling settings to allow it."
+        }
+    }
+
+    private func sessionContentTypeKind(for contentType: ContentType) -> String {
+        switch contentType {
+        case .text:
+            return "text"
+        case .image:
+            return "image"
+        case .binary:
+            return "binary"
+        case .excluded:
+            return "excluded"
+        }
+    }
+
+    private func sessionContentTypeDetail(for contentType: ContentType) -> String? {
+        switch contentType {
+        case .text(let isLarge):
+            return isLarge ? "large" : "normal"
+        case .image(let format):
+            return format.rawValue
+        case .binary(let viewer):
+            switch viewer {
+            case .hex: return "hex"
+            case .external: return "external"
+            case .placeholder: return "placeholder"
+            }
+        case .excluded(let reason):
+            switch reason {
+            case .tooLarge: return "tooLarge"
+            case .binary: return "binary"
+            case .excludedExtension: return "excludedExtension"
+            }
+        }
+    }
+
+    private func restoredContentType(for tabState: ProjectSessionTabState, fileURL: URL) -> ContentType {
+        switch tabState.contentTypeKind {
+        case "text":
+            return .text(isLarge: tabState.contentTypeDetail == "large")
+        case "image":
+            return .image(format: ImageFormat(rawValue: tabState.contentTypeDetail ?? "png") ?? .png)
+        case "binary":
+            let viewer: BinaryViewer
+            switch tabState.contentTypeDetail {
+            case "hex": viewer = .hex
+            case "external": viewer = .external
+            default: viewer = .placeholder
+            }
+            return .binary(viewer: viewer)
+        case "excluded":
+            let reason: ExcludedReason
+            switch tabState.contentTypeDetail {
+            case "binary": reason = .binary
+            case "excludedExtension": reason = .excludedExtension
+            default: reason = .tooLarge
+            }
+            return .excluded(reason: reason)
+        default:
+            return fileService.detectContentType(at: fileURL, settings: configService.settings.fileHandling)
         }
     }
 
@@ -2417,7 +2525,7 @@ final class ProjectViewModel: ObservableObject {
         }
 
         // Notify LSP service of document close
-        if let uri = openTabs[index].documentURI {
+        if openTabs[index].contentType.isText, let uri = openTabs[index].documentURI {
             lspService.documentClosed(uri: uri, language: openTabs[index].language)
         }
 
@@ -2453,11 +2561,11 @@ final class ProjectViewModel: ObservableObject {
 
     func updateTabContent(_ content: String) {
         guard let selectedTabIndex, openTabs.indices.contains(selectedTabIndex) else { return }
+        guard openTabs[selectedTabIndex].contentType.isText else { return }
         openTabs[selectedTabIndex].content = content
         openTabs[selectedTabIndex].isDirty = content != openTabs[selectedTabIndex].originalContent
         invalidateWorkspaceSymbolCache()
 
-        // Notify LSP service of document change
         openTabs[selectedTabIndex].documentVersion += 1
         if let uri = openTabs[selectedTabIndex].documentURI {
             lspService.documentChanged(
@@ -2772,11 +2880,33 @@ final class ProjectViewModel: ObservableObject {
         guard openTabs.indices.contains(index), let url = openTabs[index].filePath else { return }
 
         do {
-            let document = try fileService.readDocument(at: url)
-            openTabs[index].content = document.content
-            openTabs[index].originalContent = document.content
+            let fileHandling = configService.settings.fileHandling
+            let contentType = fileService.detectContentType(at: url, settings: fileHandling)
+
+            switch contentType {
+            case .text:
+                let document = try fileService.readDocument(at: url)
+                openTabs[index].content = document.content
+                openTabs[index].originalContent = document.content
+                openTabs[index].documentMetadata = document.metadata
+                openTabs[index].fileData = nil
+            case .image:
+                openTabs[index].content = ""
+                openTabs[index].originalContent = ""
+                openTabs[index].fileData = try fileService.readFileAsData(at: url)
+                openTabs[index].documentMetadata = .utf8LF
+            case .binary(let viewer):
+                openTabs[index].content = ""
+                openTabs[index].originalContent = ""
+                openTabs[index].fileData = viewer == .hex ? try fileService.readFileAsData(at: url) : nil
+                openTabs[index].documentMetadata = .utf8LF
+            case .excluded(let reason):
+                ui.alert("Unsupported File", excludedContentMessage(for: reason, fileURL: url, settings: fileHandling), .warning)
+                return
+            }
+
             openTabs[index].isDirty = false
-            openTabs[index].documentMetadata = document.metadata
+            openTabs[index].contentType = contentType
             persistSession()
             refreshGitState()
             refreshCurrentLineBlame()
@@ -3498,14 +3628,14 @@ final class ProjectViewModel: ObservableObject {
     @discardableResult
     private func saveTab(at index: Int) -> Bool {
         guard openTabs.indices.contains(index), let url = openTabs[index].filePath else { return false }
+        guard openTabs[index].contentType.isText else { return true }
 
         do {
             try fileService.writeDocument(content: openTabs[index].content, metadata: openTabs[index].documentMetadata, to: url)
             openTabs[index].originalContent = openTabs[index].content
             openTabs[index].isDirty = false
 
-            // Notify LSP service of document save
-            if let uri = openTabs[index].documentURI {
+            if openTabs[index].contentType.isText, let uri = openTabs[index].documentURI {
                 lspService.documentSaved(uri: uri, language: openTabs[index].language)
             }
 
@@ -3762,7 +3892,9 @@ final class ProjectViewModel: ObservableObject {
                     isDirty: tab.isDirty,
                     encodingRawValue: tab.documentMetadata.encodingRawValue,
                     encodingLabel: tab.documentMetadata.encodingLabel,
-                    lineEndingRawValue: tab.documentMetadata.lineEnding.rawValue
+                    lineEndingRawValue: tab.documentMetadata.lineEnding.rawValue,
+                    contentTypeKind: sessionContentTypeKind(for: tab.contentType),
+                    contentTypeDetail: sessionContentTypeDetail(for: tab.contentType)
                 )
             },
             selectedTabPath: selectedTab?.filePath.map(normalizedPath(for:))
@@ -3797,17 +3929,29 @@ final class ProjectViewModel: ObservableObject {
 
         openTabs = session.openTabs.compactMap { tabState in
             guard FileManager.default.fileExists(atPath: tabState.filePath) else { return nil }
+            let fileURL = URL(fileURLWithPath: tabState.filePath)
+            let contentType = restoredContentType(for: tabState, fileURL: fileURL)
+            let fileData: Data?
+            switch contentType {
+            case .image, .binary(.hex):
+                fileData = try? fileService.readFileAsData(at: fileURL)
+            default:
+                fileData = nil
+            }
+
             return EditorTab(
-                filePath: URL(fileURLWithPath: tabState.filePath),
+                filePath: fileURL,
                 fileName: tabState.fileName,
-                content: tabState.content,
-                originalContent: tabState.originalContent,
-                isDirty: tabState.isDirty,
+                content: contentType.isText ? tabState.content : "",
+                originalContent: contentType.isText ? tabState.originalContent : "",
+                isDirty: contentType.isText ? tabState.isDirty : false,
                 documentMetadata: FileDocumentMetadata(
                     encoding: String.Encoding(rawValue: tabState.encodingRawValue ?? String.Encoding.utf8.rawValue),
                     encodingLabel: tabState.encodingLabel ?? String.Encoding.utf8.displayLabel,
                     lineEnding: LineEndingStyle(rawValue: tabState.lineEndingRawValue ?? LineEndingStyle.lf.rawValue) ?? .lf
-                )
+                ),
+                contentType: contentType,
+                fileData: fileData
             )
         }
         for tab in openTabs {

@@ -37,8 +37,33 @@ struct AppSettings: Codable, Equatable {
         }
     }
 
+    struct FileHandling: Codable, Equatable {
+        var textSizeWarningKB: Int = 500
+        var textSizeLimitKB: Int = 5000
+        var largeFileThresholdKB: Int = 200
+        var binarySizeHexKB: Int = 100
+        var binarySizeWarningKB: Int = 1000
+        var imageSizeLimitMB: Int = 10
+        var excludedBinaryExtensions: [String] = ["exe", "dll", "o", "a", "so", "dylib"]
+
+        init() {}
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            textSizeWarningKB = try container.decodeIfPresent(Int.self, forKey: .textSizeWarningKB) ?? 500
+            textSizeLimitKB = try container.decodeIfPresent(Int.self, forKey: .textSizeLimitKB) ?? 5000
+            largeFileThresholdKB = try container.decodeIfPresent(Int.self, forKey: .largeFileThresholdKB) ?? 200
+            binarySizeHexKB = try container.decodeIfPresent(Int.self, forKey: .binarySizeHexKB) ?? 100
+            binarySizeWarningKB = try container.decodeIfPresent(Int.self, forKey: .binarySizeWarningKB) ?? 1000
+            imageSizeLimitMB = try container.decodeIfPresent(Int.self, forKey: .imageSizeLimitMB) ?? 10
+            excludedBinaryExtensions = try container.decodeIfPresent([String].self, forKey: .excludedBinaryExtensions)
+                ?? ["exe", "dll", "o", "a", "so", "dylib"]
+        }
+    }
+
     var editor: Editor = Editor()
     var theme: Theme = Theme()
+    var fileHandling: FileHandling = FileHandling()
 
     init() {}
 
@@ -46,6 +71,7 @@ struct AppSettings: Codable, Equatable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         editor = try container.decodeIfPresent(Editor.self, forKey: .editor) ?? Editor()
         theme = try container.decodeIfPresent(Theme.self, forKey: .theme) ?? Theme()
+        fileHandling = try container.decodeIfPresent(FileHandling.self, forKey: .fileHandling) ?? FileHandling()
     }
 
     static let `default` = AppSettings()

@@ -165,6 +165,14 @@ final class ConfigurationService: ObservableObject {
 
         result.theme.name = override.theme.name
 
+        result.fileHandling.textSizeWarningKB = override.fileHandling.textSizeWarningKB
+        result.fileHandling.textSizeLimitKB = override.fileHandling.textSizeLimitKB
+        result.fileHandling.largeFileThresholdKB = override.fileHandling.largeFileThresholdKB
+        result.fileHandling.binarySizeHexKB = override.fileHandling.binarySizeHexKB
+        result.fileHandling.binarySizeWarningKB = override.fileHandling.binarySizeWarningKB
+        result.fileHandling.imageSizeLimitMB = override.fileHandling.imageSizeLimitMB
+        result.fileHandling.excludedBinaryExtensions = override.fileHandling.excludedBinaryExtensions
+
         return result
     }
 

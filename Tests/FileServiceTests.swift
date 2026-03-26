@@ -260,6 +260,46 @@ struct FileServiceTests {
     }
 
     @Test
+    func detectContentTypeRecognizesImagesAndBinaryFiles() throws {
+        let directoryURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let imageURL = directoryURL.appendingPathComponent("Preview.png")
+        let binaryURL = directoryURL.appendingPathComponent("Preview.bin")
+
+        try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directoryURL) }
+
+        let pngData = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9n0mAAAAAASUVORK5CYII=")!
+        try pngData.write(to: imageURL)
+        try Data([0x7F, 0x45, 0x4C, 0x46, 0x00, 0x01, 0x02, 0x03]).write(to: binaryURL)
+
+        let settings = AppSettings.FileHandling()
+
+        #expect(FileService.shared.detectContentType(at: imageURL, settings: settings) == .image(format: .png))
+        #expect(FileService.shared.detectContentType(at: binaryURL, settings: settings) == .binary(viewer: .hex))
+    }
+
+    @Test
+    func detectContentTypeFlagsLargeTextAndExcludedBinaryExtensions() throws {
+        let directoryURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let textURL = directoryURL.appendingPathComponent("Large.swift")
+        let binaryURL = directoryURL.appendingPathComponent("Tool.dylib")
+
+        try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directoryURL) }
+
+        try String(repeating: "let alpha = 1\n", count: 20_000).write(to: textURL, atomically: true, encoding: .utf8)
+        try Data([0xCF, 0xFA, 0xED, 0xFE, 0x00, 0x01]).write(to: binaryURL)
+
+        var settings = AppSettings.FileHandling()
+        settings.textSizeWarningKB = 1
+
+        #expect(FileService.shared.detectContentType(at: textURL, settings: settings) == .text(isLarge: true))
+        #expect(FileService.shared.detectContentType(at: binaryURL, settings: settings) == .excluded(reason: .excludedExtension))
+    }
+
+    @Test
     func replaceInProjectUpdatesNestedFilesAndCountsMatches() throws {
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

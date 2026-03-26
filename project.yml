@@ -32,9 +32,7 @@ targets:
     platform: macOS
     sources:
       - path: Sources
-    resources:
-      - path: Resources
-        type: group
+      - path: Resources/Assets.xcassets
     settings:
       base:
         INFOPLIST_GENERATION_MODE: GeneratedFile
