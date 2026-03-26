@@ -764,6 +764,7 @@ struct SearchSidebarView: View {
                         Section {
                             if !projectViewModel.isProjectSearchGroupCollapsed(group) {
                                 ForEach(Array(group.results.enumerated()), id: \.element.id) { resultIndex, result in
+                                let isActiveResult = projectViewModel.isActiveProjectSearchResult(result)
                                 HStack(alignment: .top, spacing: 8) {
                                     Button {
                                         projectViewModel.toggleProjectSearchResultSelection(result)
@@ -782,9 +783,9 @@ struct SearchSidebarView: View {
                                             HStack(alignment: .firstTextBaseline) {
                                                 RosewoodHeaderChip(
                                                     text: "Ln \(result.lineNumber):\(result.columnNumber)",
-                                                    tint: themeColors.mutedText
+                                                    tint: isActiveResult ? themeColors.accent : themeColors.mutedText
                                                 )
-                                                if projectViewModel.isActiveProjectSearchResult(result) {
+                                                if isActiveResult {
                                                     Image(systemName: "arrowtriangle.right.fill")
                                                         .font(.system(size: 9))
                                                         .foregroundColor(themeColors.accent)
@@ -793,7 +794,7 @@ struct SearchSidebarView: View {
                                                 Spacer()
                                                 RosewoodHeaderChip(
                                                     text: "\(result.matchCount)x",
-                                                    tint: themeColors.mutedText
+                                                    tint: isActiveResult ? themeColors.accent : themeColors.mutedText
                                                 )
                                             }
 
@@ -824,7 +825,7 @@ struct SearchSidebarView: View {
                                 .padding(.trailing, 4)
                                 .accessibilityIdentifier("project-search-result-row-\(sectionIndex)-\(resultIndex)")
                                 .listRowBackground(
-                                    projectViewModel.isActiveProjectSearchResult(result)
+                                    isActiveResult
                                     ? themeColors.selection.opacity(0.45)
                                     : themeColors.panelBackground
                                 )

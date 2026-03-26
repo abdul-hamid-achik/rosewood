@@ -80,8 +80,7 @@ final class RosewoodUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchEnvironment["ROSEWOOD_UI_TEST_RESET_SESSION"] = "1"
         app.launch()
-        app.activate()
-        XCTAssertTrue(app.wait(for: .runningForeground, timeout: 5))
+        activateAndFocus(app)
 
         app.typeKey("p", modifierFlags: [.command])
         XCTAssertTrue(app.textFields["quick-open-input"].waitForExistence(timeout: 2))
@@ -96,8 +95,7 @@ final class RosewoodUITests: XCTestCase {
         app.launchEnvironment["ROSEWOOD_UI_TEST_RESET_SESSION"] = "1"
         app.launchEnvironment["ROSEWOOD_UI_TEST_NAVIGATION_FIXTURE"] = "1"
         app.launch()
-        app.activate()
-        XCTAssertTrue(app.wait(for: .runningForeground, timeout: 5))
+        activateAndFocus(app)
 
         app.typeKey("p", modifierFlags: [.command, .shift])
 
@@ -125,8 +123,7 @@ final class RosewoodUITests: XCTestCase {
         app.launchEnvironment["ROSEWOOD_UI_TEST_RESET_SESSION"] = "1"
         app.launchEnvironment["ROSEWOOD_UI_TEST_NAVIGATION_FIXTURE"] = "1"
         app.launch()
-        app.activate()
-        XCTAssertTrue(app.wait(for: .runningForeground, timeout: 5))
+        activateAndFocus(app)
 
         app.typeKey("p", modifierFlags: [.command, .shift])
 
@@ -154,8 +151,7 @@ final class RosewoodUITests: XCTestCase {
         app.launchEnvironment["ROSEWOOD_UI_TEST_RESET_SESSION"] = "1"
         app.launchEnvironment["ROSEWOOD_UI_TEST_NAVIGATION_FIXTURE"] = "1"
         app.launch()
-        app.activate()
-        XCTAssertTrue(app.wait(for: .runningForeground, timeout: 5))
+        activateAndFocus(app)
 
         app.typeKey("p", modifierFlags: [.command, .shift])
 
@@ -178,8 +174,7 @@ final class RosewoodUITests: XCTestCase {
         app.launchEnvironment["ROSEWOOD_UI_TEST_RESET_SESSION"] = "1"
         app.launchEnvironment["ROSEWOOD_UI_TEST_DIAGNOSTICS_FIXTURE"] = "1"
         app.launch()
-        app.activate()
-        XCTAssertTrue(app.wait(for: .runningForeground, timeout: 5))
+        activateAndFocus(app)
 
         app.typeKey("p", modifierFlags: [.command, .shift])
 
@@ -202,8 +197,7 @@ final class RosewoodUITests: XCTestCase {
         app.launchEnvironment["ROSEWOOD_UI_TEST_RESET_SESSION"] = "1"
         app.launchEnvironment["ROSEWOOD_UI_TEST_GIT_FIXTURE"] = "1"
         app.launch()
-        app.activate()
-        XCTAssertTrue(app.wait(for: .runningForeground, timeout: 5))
+        activateAndFocus(app)
 
         let sourceControlSidebar = app.descendants(matching: .any).matching(identifier: "source-control-sidebar").firstMatch
         XCTAssertTrue(sourceControlSidebar.waitForExistence(timeout: 5))
@@ -230,8 +224,7 @@ final class RosewoodUITests: XCTestCase {
         app.launchEnvironment["ROSEWOOD_UI_TEST_RESET_SESSION"] = "1"
         app.launchEnvironment["ROSEWOOD_UI_TEST_GIT_FIXTURE"] = "1"
         app.launch()
-        app.activate()
-        XCTAssertTrue(app.wait(for: .runningForeground, timeout: 5))
+        activateAndFocus(app)
 
         let changedFile = app.descendants(matching: .any).matching(identifier: "git-change-row-0").firstMatch
         XCTAssertTrue(changedFile.waitForExistence(timeout: 5))
@@ -260,7 +253,7 @@ final class RosewoodUITests: XCTestCase {
         app.launchEnvironment["ROSEWOOD_UI_TEST_RESET_SESSION"] = "1"
         app.launchEnvironment["ROSEWOOD_UI_TEST_NAVIGATION_FIXTURE"] = "1"
         app.launch()
-        app.activate()
+        activateAndFocus(app)
 
         app.typeKey("p", modifierFlags: [.command])
 
@@ -293,7 +286,7 @@ final class RosewoodUITests: XCTestCase {
         app.launchEnvironment["ROSEWOOD_UI_TEST_RESET_SESSION"] = "1"
         app.launchEnvironment["ROSEWOOD_UI_TEST_NAVIGATION_FIXTURE"] = "1"
         app.launch()
-        app.activate()
+        activateAndFocus(app)
 
         app.typeKey("p", modifierFlags: [.command])
 
@@ -313,7 +306,7 @@ final class RosewoodUITests: XCTestCase {
         app.launchEnvironment["ROSEWOOD_UI_TEST_RESET_SESSION"] = "1"
         app.launchEnvironment["ROSEWOOD_UI_TEST_DIAGNOSTICS_FIXTURE"] = "1"
         app.launch()
-        app.activate()
+        activateAndFocus(app)
 
         let diagnosticsToggle = app.buttons["statusbar-diagnostics-toggle"]
         XCTAssertTrue(diagnosticsToggle.waitForExistence(timeout: 2))
@@ -355,7 +348,7 @@ final class RosewoodUITests: XCTestCase {
         app.launchEnvironment["ROSEWOOD_UI_TEST_RESET_SESSION"] = "1"
         app.launchEnvironment["ROSEWOOD_UI_TEST_CONTEXT_MENU_FIXTURE"] = "1"
         app.launch()
-        app.activate()
+        activateAndFocus(app)
 
         app.typeKey("f", modifierFlags: [.command, .shift])
 
@@ -376,7 +369,7 @@ final class RosewoodUITests: XCTestCase {
         app.launchEnvironment["ROSEWOOD_UI_TEST_RESET_SESSION"] = "1"
         app.launchEnvironment["ROSEWOOD_UI_TEST_SEARCH_FIXTURE"] = "1"
         app.launch()
-        app.activate()
+        activateAndFocus(app)
 
         app.typeKey("f", modifierFlags: [.command, .shift])
 
@@ -464,7 +457,7 @@ final class RosewoodUITests: XCTestCase {
         app.launchEnvironment["ROSEWOOD_UI_TEST_RESET_SESSION"] = "1"
         app.launchEnvironment["ROSEWOOD_UI_TEST_DEBUG_COMMANDS_FIXTURE"] = "1"
         app.launch()
-        app.activate()
+        activateAndFocus(app)
 
         app.typeKey("p", modifierFlags: [.command, .shift])
 
@@ -485,7 +478,7 @@ final class RosewoodUITests: XCTestCase {
         app.launchEnvironment["ROSEWOOD_UI_TEST_RESET_SESSION"] = "1"
         app.launchEnvironment["ROSEWOOD_UI_TEST_GO_COMMANDS_FIXTURE"] = "1"
         app.launch()
-        app.activate()
+        activateAndFocus(app)
 
         app.typeKey("p", modifierFlags: [.command, .shift])
 
@@ -568,7 +561,7 @@ final class RosewoodUITests: XCTestCase {
         app.launchEnvironment["ROSEWOOD_UI_TEST_RESET_SESSION"] = "1"
         app.launchEnvironment["ROSEWOOD_UI_TEST_DIAGNOSTICS_FIXTURE"] = "1"
         app.launch()
-        app.activate()
+        activateAndFocus(app)
 
         XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "tab-item-0").firstMatch.waitForExistence(timeout: 2))
         app.typeKey("w", modifierFlags: [.command])
@@ -591,7 +584,7 @@ final class RosewoodUITests: XCTestCase {
         app.launchEnvironment["ROSEWOOD_UI_TEST_RESET_SESSION"] = "1"
         app.launchEnvironment["ROSEWOOD_UI_TEST_DIAGNOSTICS_FIXTURE"] = "1"
         app.launch()
-        app.activate()
+        activateAndFocus(app)
         XCTAssertTrue(app.wait(for: .runningForeground, timeout: 5))
 
         app.typeKey("m", modifierFlags: [.command, .shift])
@@ -781,7 +774,7 @@ final class RosewoodUITests: XCTestCase {
         app.launchEnvironment["ROSEWOOD_UI_TEST_RESET_SESSION"] = "1"
         app.launchEnvironment["ROSEWOOD_UI_TEST_EXPLORER_FIXTURE"] = "1"
         app.launch()
-        app.activate()
+        activateAndFocus(app)
 
         let sourcesRow = app.descendants(matching: .any).matching(identifier: "file-tree-row-Sources").firstMatch
         XCTAssertTrue(sourcesRow.waitForExistence(timeout: 5))
@@ -811,7 +804,7 @@ final class RosewoodUITests: XCTestCase {
         app.launchEnvironment["ROSEWOOD_UI_TEST_RESET_SESSION"] = "1"
         app.launchEnvironment["ROSEWOOD_UI_TEST_NAVIGATION_FIXTURE"] = "1"
         app.launch()
-        app.activate()
+        activateAndFocus(app)
 
         let outlineSidebar = app.descendants(matching: .any).matching(identifier: "outline-sidebar").firstMatch
         XCTAssertTrue(outlineSidebar.waitForExistence(timeout: 5))
@@ -848,5 +841,16 @@ final class RosewoodUITests: XCTestCase {
         } while Date() < deadline
 
         return (element.value as? String) != oldValue
+    }
+
+    private func activateAndFocus(_ app: XCUIApplication) {
+        app.activate()
+        XCTAssertTrue(app.wait(for: .runningForeground, timeout: 5))
+
+        let window = app.windows.firstMatch
+        XCTAssertTrue(window.waitForExistence(timeout: 5))
+        window.click()
+
+        RunLoop.current.run(until: Date().addingTimeInterval(0.1))
     }
 }

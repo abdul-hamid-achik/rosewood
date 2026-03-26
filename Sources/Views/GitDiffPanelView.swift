@@ -438,15 +438,7 @@ struct GitDiffPanelView: View {
     private func hunkHeader(index: Int, totalHunks: Int, hunk: GitDiffHunk) -> some View {
         HStack(spacing: 8) {
             if totalHunks > 1 {
-                Text("Hunk \(index + 1)")
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                    .foregroundColor(themeColors.accent)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(
-                        Capsule()
-                            .fill(themeColors.accentStrong.opacity(0.16))
-                    )
+                RosewoodHeaderChip(text: "Hunk \(index + 1)", tint: themeColors.accent)
             }
 
             Text(hunk.headerText)
@@ -481,15 +473,7 @@ struct GitDiffPanelView: View {
     }
 
     private func statChip(_ text: String, tint: Color) -> some View {
-        Text(text)
-            .font(.system(size: 10, weight: .semibold, design: .monospaced))
-            .foregroundColor(tint)
-            .padding(.horizontal, 7)
-            .padding(.vertical, 4)
-            .background(
-                Capsule()
-                    .fill(tint.opacity(0.12))
-            )
+        RosewoodHeaderChip(text: text, tint: tint)
     }
 
     private var headerControls: some View {
@@ -520,20 +504,10 @@ struct GitDiffPanelView: View {
         accessibilityIdentifier: String,
         action: @escaping () -> Void
     ) -> some View {
-        Button(action: action) {
-            Image(systemName: systemImage)
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundColor(tint)
-                .frame(width: 20, height: 20)
-                .background(
-                    RoundedRectangle(cornerRadius: 7)
-                        .fill(tint.opacity(0.12))
-                )
-        }
-        .buttonStyle(.plain)
-        .help(title)
-        .accessibilityLabel(title)
-        .accessibilityIdentifier(accessibilityIdentifier)
+        RosewoodPanelIconButton(systemImage: systemImage, tint: tint, isEnabled: true, action: action)
+            .help(title)
+            .accessibilityLabel(title)
+            .accessibilityIdentifier(accessibilityIdentifier)
     }
 
     private func diffLineText(text: String?, counterpart: String?, kind: GitDiffLineKind) -> some View {

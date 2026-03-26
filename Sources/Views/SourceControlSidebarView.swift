@@ -250,15 +250,7 @@ private struct SourceControlChangeRowView: View {
     }
 
     private var stateBadge: some View {
-        Text(changedFile.stateSummary)
-            .font(.system(size: 10, weight: .medium))
-            .foregroundColor(stateTint)
-            .padding(.horizontal, 7)
-            .padding(.vertical, 3)
-            .background(
-                Capsule()
-                    .fill(stateTint.opacity(0.12))
-            )
+        RosewoodHeaderChip(text: changedFile.stateSummary, tint: stateTint)
     }
 
     private var stateTint: Color {
