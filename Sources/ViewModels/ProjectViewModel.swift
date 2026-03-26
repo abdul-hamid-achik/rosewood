@@ -117,6 +117,7 @@ final class ProjectViewModel: ObservableObject {
         case search
         case sourceControl
         case debug
+        case docker
     }
 
     enum PaletteMode {
@@ -129,6 +130,8 @@ final class ProjectViewModel: ObservableObject {
         case diagnostics
         case references
         case gitDiff
+        case terminal
+        case dockerLogs
     }
 
     enum DiagnosticsPanelScope {
@@ -230,6 +233,22 @@ final class ProjectViewModel: ObservableObject {
     @Published var activeCurrentDiagnosticID: String?
     @Published var activeWorkspaceDiagnosticID: String?
     @Published var diagnosticsPanelScope: DiagnosticsPanelScope = .currentFile
+    
+    // MARK: - Docker State
+    @Published var dockerContainers: [DockerContainer] = []
+    @Published var dockerImages: [DockerImage] = []
+    @Published var dockerVolumes: [DockerVolume] = []
+    @Published var dockerComposeProjects: [DockerComposeProject] = []
+    @Published var dockerConnectionState: DockerConnectionState = .connecting
+    @Published var isRefreshingDocker: Bool = false
+    @Published var selectedDockerTab: DockerTab = .containers
+    @Published var selectedContainer: DockerContainer?
+    @Published var showDockerSettings: Bool = false
+    
+    // MARK: - Terminal State
+    @Published var terminalSessions: [TerminalSession] = []
+    @Published var currentTerminalSessionId: UUID?
+    
     private var recentCommandPaletteActionIDs: [String] = []
 
     var currentTabDiagnostics: [LSPDiagnostic] {

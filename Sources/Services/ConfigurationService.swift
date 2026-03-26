@@ -173,6 +173,19 @@ final class ConfigurationService: ObservableObject {
         result.fileHandling.imageSizeLimitMB = override.fileHandling.imageSizeLimitMB
         result.fileHandling.excludedBinaryExtensions = override.fileHandling.excludedBinaryExtensions
 
+        result.docker.socketPath = override.docker.socketPath
+        result.docker.enableDockerIntegration = override.docker.enableDockerIntegration
+        result.docker.autoDetectComposeFiles = override.docker.autoDetectComposeFiles
+        result.docker.composeFilePatterns = override.docker.composeFilePatterns
+        result.docker.terminalFont = override.docker.terminalFont
+        result.docker.terminalFontSize = override.docker.terminalFontSize
+        result.docker.terminalShell = override.docker.terminalShell
+        result.docker.logLineLimit = override.docker.logLineLimit
+        result.docker.logFollowInterval = override.docker.logFollowInterval
+        result.docker.refreshIntervalSeconds = override.docker.refreshIntervalSeconds
+        result.docker.maxReconnectAttempts = override.docker.maxReconnectAttempts
+        result.docker.composeScanDepth = override.docker.composeScanDepth
+
         return result
     }
 

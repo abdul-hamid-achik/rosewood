@@ -25,6 +25,9 @@ packages:
   TOMLKit:
     url: https://github.com/LebJe/TOMLKit
     from: "0.6.0"
+  DockerSwift:
+    url: https://github.com/m-barthelemy/DockerSwift.git
+    exactVersion: 1.41.0-beta11
 
 targets:
   Rosewood:
@@ -46,6 +49,7 @@ targets:
     dependencies:
       - package: Highlightr
       - package: TOMLKit
+      - package: DockerSwift
     entitlements:
       path: Resources/Rosewood.entitlements
       properties:

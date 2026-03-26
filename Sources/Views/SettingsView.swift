@@ -19,6 +19,11 @@ struct SettingsView: View {
     @State private var binarySizeHexKB: Int = 100
     @State private var binarySizeWarningKB: Int = 1000
     @State private var imageSizeLimitMB: Int = 10
+    @State private var dockerSocketPath: String = ""
+    @State private var dockerEnabled: Bool = true
+    @State private var dockerAutoDetectCompose: Bool = true
+    @State private var dockerRefreshInterval: Int = 5
+    @State private var dockerTerminalShell: String = "/bin/zsh"
 
     private let fontFamilies = [
         "SF Mono",
@@ -44,6 +49,7 @@ struct SettingsView: View {
                     editorSection
                     autoSaveSection
                     fileHandlingSection
+                    dockerSection
                     themeSection
                 }
                 .padding(24)
@@ -200,6 +206,71 @@ struct SettingsView: View {
         }
     }
 
+    private var dockerSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Docker")
+                .font(RosewoodType.bodyStrong)
+                .foregroundColor(themeColors.subduedText)
+
+            VStack(alignment: .leading, spacing: 12) {
+                Toggle("Enable Docker Integration", isOn: $dockerEnabled)
+                    .font(RosewoodType.body)
+                    .foregroundColor(themeColors.foreground)
+                    .toggleStyle(.switch)
+                    .tint(themeColors.accent)
+
+                HStack {
+                    Text("Docker Socket Path")
+                        .font(RosewoodType.body)
+                        .foregroundColor(dockerEnabled ? themeColors.foreground : themeColors.mutedText)
+                    Spacer()
+                    TextField("", text: $dockerSocketPath)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 200)
+                        .disabled(!dockerEnabled)
+                }
+
+                Toggle("Auto-detect Compose Files", isOn: $dockerAutoDetectCompose)
+                    .font(RosewoodType.body)
+                    .foregroundColor(themeColors.foreground)
+                    .toggleStyle(.switch)
+                    .tint(themeColors.accent)
+                    .disabled(!dockerEnabled)
+
+                HStack {
+                    Text("Refresh Interval")
+                        .font(RosewoodType.body)
+                        .foregroundColor(dockerEnabled ? themeColors.foreground : themeColors.mutedText)
+                    Spacer()
+                    Stepper(value: $dockerRefreshInterval, in: 1...60, step: 1) {
+                        Text("\(dockerRefreshInterval)s")
+                            .font(RosewoodType.monoBody)
+                            .foregroundColor(themeColors.subduedText)
+                            .frame(width: 50)
+                    }
+                    .disabled(!dockerEnabled)
+                }
+
+                HStack {
+                    Text("Terminal Shell")
+                        .font(RosewoodType.body)
+                        .foregroundColor(dockerEnabled ? themeColors.foreground : themeColors.mutedText)
+                    Spacer()
+                    TextField("", text: $dockerTerminalShell)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 200)
+                        .disabled(!dockerEnabled)
+                }
+
+                Text("Leave socket path empty to auto-detect Docker socket location.")
+                    .font(RosewoodType.caption)
+                    .foregroundColor(themeColors.mutedText)
+            }
+            .padding(16)
+            .rosewoodCard(themeColors, radius: RosewoodUI.radiusSmall)
+        }
+    }
+
     private var fileHandlingSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("File Handling")
@@ -265,6 +336,11 @@ struct SettingsView: View {
         binarySizeHexKB = settings.fileHandling.binarySizeHexKB
         binarySizeWarningKB = settings.fileHandling.binarySizeWarningKB
         imageSizeLimitMB = settings.fileHandling.imageSizeLimitMB
+        dockerSocketPath = settings.docker.socketPath
+        dockerEnabled = settings.docker.enableDockerIntegration
+        dockerAutoDetectCompose = settings.docker.autoDetectComposeFiles
+        dockerRefreshInterval = settings.docker.refreshIntervalSeconds
+        dockerTerminalShell = settings.docker.terminalShell
     }
 
     private func loadDefaultSettings() {
@@ -284,6 +360,11 @@ struct SettingsView: View {
         binarySizeHexKB = defaults.fileHandling.binarySizeHexKB
         binarySizeWarningKB = defaults.fileHandling.binarySizeWarningKB
         imageSizeLimitMB = defaults.fileHandling.imageSizeLimitMB
+        dockerSocketPath = defaults.docker.socketPath
+        dockerEnabled = defaults.docker.enableDockerIntegration
+        dockerAutoDetectCompose = defaults.docker.autoDetectComposeFiles
+        dockerRefreshInterval = defaults.docker.refreshIntervalSeconds
+        dockerTerminalShell = defaults.docker.terminalShell
     }
 
     private func saveSettings() {
@@ -303,6 +384,11 @@ struct SettingsView: View {
         newSettings.fileHandling.binarySizeHexKB = binarySizeHexKB
         newSettings.fileHandling.binarySizeWarningKB = binarySizeWarningKB
         newSettings.fileHandling.imageSizeLimitMB = imageSizeLimitMB
+        newSettings.docker.socketPath = dockerSocketPath
+        newSettings.docker.enableDockerIntegration = dockerEnabled
+        newSettings.docker.autoDetectComposeFiles = dockerAutoDetectCompose
+        newSettings.docker.refreshIntervalSeconds = dockerRefreshInterval
+        newSettings.docker.terminalShell = dockerTerminalShell
 
         configService.updateSettings(newSettings)
         dismiss()

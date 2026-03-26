@@ -127,6 +127,8 @@ struct ContentView: View {
                 SourceControlSidebarView()
             } else if projectViewModel.sidebarMode == .debug {
                 DebugSidebarView()
+            } else if projectViewModel.sidebarMode == .docker {
+                DockerSidebarView()
             } else if projectViewModel.fileTree.isEmpty {
                 emptyStateView
             } else {
@@ -206,6 +208,8 @@ struct ContentView: View {
             return "Source Control"
         case .debug:
             return "Run & Debug"
+        case .docker:
+            return "Docker"
         }
     }
 
@@ -229,6 +233,8 @@ struct ContentView: View {
                 return "Ready: \(selectedDebugConfigurationName)"
             }
             return "Set up launch configs and breakpoints"
+        case .docker:
+            return "Manage containers and images"
         }
     }
 
@@ -345,6 +351,10 @@ struct ContentView: View {
             ReferencesPanelView()
         case .gitDiff:
             GitDiffPanelView()
+        case .terminal:
+            TerminalPanelView()
+        case .dockerLogs:
+            DockerLogsPanelView()
         }
     }
 
@@ -420,6 +430,13 @@ struct ActivitySidebarView: View {
                 systemImage: "ladybug",
                 label: "Run & Debug",
                 badge: projectViewModel.workspaceDiagnosticCount.errors > 0 ? "!" : nil
+            )
+
+            activityButton(
+                mode: .docker,
+                systemImage: "shippingbox",
+                label: "Docker",
+                badge: projectViewModel.dockerBadgeCount
             )
 
             Spacer()
