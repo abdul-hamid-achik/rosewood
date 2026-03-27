@@ -40,12 +40,31 @@ final class DockerService: DockerServiceProtocol, ObservableObject {
     private var refreshTask: Task<Void, Never>?
     private var reconnectAttempts: Int = 0
     private var reconnectTimer: Timer?
-    
+    private var cancellables = Set<AnyCancellable>()
+
     private let configService: ConfigurationService
-    
+    private var lastDockerSettings: AppSettings.Docker
+
     private init() {
         configService = ConfigurationService.shared
-        Task { await connect() }
+        lastDockerSettings = configService.settings.docker
+
+        configService.$settings
+            .map(\.docker)
+            .removeDuplicates()
+            .dropFirst()
+            .sink { [weak self] settings in
+                Task { @MainActor [weak self] in
+                    self?.handleSettingsChange(settings)
+                }
+            }
+            .store(in: &cancellables)
+
+        if lastDockerSettings.enableDockerIntegration {
+            Task { await connect() }
+        } else {
+            connectionState = .disconnected(error: "Docker integration disabled")
+        }
     }
     
     var isAvailable: Bool {
@@ -56,6 +75,13 @@ final class DockerService: DockerServiceProtocol, ObservableObject {
     // MARK: - Connection Management
     
     func connect() async {
+        guard configService.settings.docker.enableDockerIntegration else {
+            disconnect(reason: "Docker integration disabled", clearState: true)
+            return
+        }
+
+        reconnectTimer?.invalidate()
+        reconnectTimer = nil
         connectionState = .connecting
         
         let socketPath = configService.settings.docker.resolvedSocketPath
@@ -65,7 +91,7 @@ final class DockerService: DockerServiceProtocol, ObservableObject {
                 throw DockerError.notConnected
             }
             dockerClient = DockerClient(daemonURL: daemonURL)
-            let version = try await dockerClient?.version()
+            _ = try await dockerClient?.version()
             connectionState = .connected
             reconnectAttempts = 0
             startAutoRefresh()
@@ -95,8 +121,8 @@ final class DockerService: DockerServiceProtocol, ObservableObject {
                     title: "Docker Not Found",
                     message: "Install Docker Desktop or configure socket path in Settings",
                     actions: [
-                        NotificationAction(title: "Settings", action: { [weak self] in
-                            self?.configService.updateSettings(self?.configService.settings ?? .default)
+                        NotificationAction(title: "Settings", action: {
+                            AppCommandDispatcher.shared.send(.settings)
                         })
                     ],
                     autoDismiss: false
@@ -112,8 +138,11 @@ final class DockerService: DockerServiceProtocol, ObservableObject {
         let settings = configService.settings.docker
         let maxAttempts = settings.maxReconnectAttempts
         let baseDelay = settings.refreshIntervalSeconds
+
+        reconnectTimer?.invalidate()
+        reconnectTimer = nil
         
-        guard reconnectAttempts < maxAttempts else { return }
+        guard settings.enableDockerIntegration, reconnectAttempts < maxAttempts else { return }
         
         reconnectAttempts += 1
         let delay = min(baseDelay * Int(pow(2.0, Double(reconnectAttempts - 1))), 30)
@@ -137,16 +166,31 @@ final class DockerService: DockerServiceProtocol, ObservableObject {
     }
     
     func disconnect() {
+        disconnect(reason: "Disconnected")
+    }
+
+    private func disconnect(reason: String, clearState: Bool = false) {
         refreshTask?.cancel()
+        refreshTask = nil
         reconnectTimer?.invalidate()
+        reconnectTimer = nil
         dockerClient = nil
-        connectionState = .disconnected(error: "Disconnected")
+        if clearState {
+            containers = []
+            images = []
+            volumes = []
+            composeProjects = []
+        }
+        connectionState = .disconnected(error: reason)
     }
     
     // MARK: - Auto Refresh
     
     private func startAutoRefresh() {
         let interval = configService.settings.docker.refreshIntervalSeconds
+
+        refreshTask?.cancel()
+        refreshTask = nil
         
         refreshTask = Task { [weak self] in
             while !Task.isCancelled {
@@ -168,11 +212,9 @@ final class DockerService: DockerServiceProtocol, ObservableObject {
             async let containersTask = refreshContainers(client)
             async let imagesTask = refreshImages(client)
             async let volumesTask = refreshVolumes(client)
-            async let composeTask = refreshComposeProjects()
-            
-            let (newContainers, newImages, newVolumes, newProjects) = try await (
-                containersTask, imagesTask, volumesTask, composeTask
-            )
+            let newContainers = try await containersTask
+            async let composeTask = refreshComposeProjects(containers: newContainers)
+            let (newImages, newVolumes, newProjects) = try await (imagesTask, volumesTask, composeTask)
             
             await MainActor.run {
                 self.containers = newContainers
@@ -182,6 +224,31 @@ final class DockerService: DockerServiceProtocol, ObservableObject {
             }
         } catch {
             handleConnectionError(error)
+        }
+    }
+
+    private func handleSettingsChange(_ settings: AppSettings.Docker) {
+        let previousSettings = lastDockerSettings
+        lastDockerSettings = settings
+
+        guard settings.enableDockerIntegration else {
+            disconnect(reason: "Docker integration disabled", clearState: true)
+            return
+        }
+
+        if !previousSettings.enableDockerIntegration {
+            Task { await connect() }
+            return
+        }
+
+        if previousSettings.resolvedSocketPath != settings.resolvedSocketPath {
+            Task { await connect() }
+            return
+        }
+
+        if previousSettings.refreshIntervalSeconds != settings.refreshIntervalSeconds,
+           case .connected = connectionState {
+            startAutoRefresh()
         }
     }
     
@@ -313,7 +380,7 @@ final class DockerService: DockerServiceProtocol, ObservableObject {
         }
     }
     
-    private func refreshComposeProjects() async -> [DockerComposeProject] {
+    private func refreshComposeProjects(containers: [DockerContainer]) async -> [DockerComposeProject] {
         guard configService.settings.docker.autoDetectComposeFiles else { return [] }
         
         let projectRoot = configService.projectConfigURL?.deletingLastPathComponent()

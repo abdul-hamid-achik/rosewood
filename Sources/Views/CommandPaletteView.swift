@@ -1,8 +1,11 @@
 import SwiftUI
 
 struct CommandPaletteView: View {
+    @EnvironmentObject var projectViewModel: ProjectViewModel
     @EnvironmentObject var commandPaletteViewModel: CommandPaletteViewModel
     @EnvironmentObject private var configService: ConfigurationService
+
+    let mode: PaletteMode
 
     @State private var selectedIndex: Int = 0
     @FocusState private var isQueryFieldFocused: Bool
@@ -13,8 +16,22 @@ struct CommandPaletteView: View {
 
     private var queryBinding: Binding<String> {
         Binding(
-            get: { commandPaletteViewModel.commandPaletteQuery },
-            set: { commandPaletteViewModel.commandPaletteQuery = $0 }
+            get: {
+                switch mode {
+                case .commandPalette:
+                    return commandPaletteViewModel.commandPaletteQuery
+                case .quickOpen:
+                    return projectViewModel.quickOpenQuery
+                }
+            },
+            set: { newValue in
+                switch mode {
+                case .commandPalette:
+                    commandPaletteViewModel.commandPaletteQuery = newValue
+                case .quickOpen:
+                    projectViewModel.quickOpenQuery = newValue
+                }
+            }
         )
     }
 
@@ -37,7 +54,7 @@ struct CommandPaletteView: View {
     }
 
     private var visibleActions: [CommandPaletteAction] {
-        mode == .commandPalette ? projectViewModel.commandPaletteActions : []
+        mode == .commandPalette ? visibleCommandSections.flatMap(\.actions) : []
     }
 
     private var visibleCommandSections: [CommandPaletteSection] {
@@ -65,7 +82,7 @@ struct CommandPaletteView: View {
     }
 
     private var visibleItems: [QuickOpenItem] {
-        mode == .quickOpen ? projectViewModel.quickOpenItems : []
+        mode == .quickOpen ? visibleSections.flatMap(\.items) : []
     }
 
     private var emptyStateText: String {
@@ -425,8 +442,8 @@ struct CommandPaletteItemView: View {
                         .foregroundColor(themeColors.mutedText)
                 }
 
-                if !action.shortcut.isEmpty {
-                    Text(action.shortcut)
+                if let shortcut = action.shortcut, !shortcut.isEmpty {
+                    Text(shortcut)
                         .font(RosewoodType.caption)
                         .foregroundColor(themeColors.mutedText)
                 }

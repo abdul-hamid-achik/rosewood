@@ -313,6 +313,7 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
             isApplyingExternalUpdate = true
             if shouldApplyText {
                 containerView.applyText(foldSnapshot.displayText, language: language, themeColors: parent.themeColors)
+                lineTableNeedsUpdate = true
                 renderState.recordRender(
                     text: foldSnapshot.displayText,
                     language: language,
@@ -348,6 +349,7 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
 
             let updatedText = textView.string
             let selectedRange = textView.selectedRange()
+            lineTableNeedsUpdate = true
 
             if parent.deferHighlightingDuringEditing {
                 containerView?.refreshAfterEditing(text: updatedText, themeColors: parent.themeColors)
@@ -511,8 +513,8 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
             lineOffsetTable = [0]
             var offset = 0
             let nsText = text as NSString
-            nsText.enumerateSubstrings(in: NSRange(location: 0, length: nsText.length), options: .byLines) { _, substringRange, _, _ in
-                offset = substringRange.location + substringRange.length
+            nsText.enumerateSubstrings(in: NSRange(location: 0, length: nsText.length), options: .byLines) { _, _, enclosingRange, _ in
+                offset = enclosingRange.location + enclosingRange.length
                 self.lineOffsetTable.append(offset)
             }
             lineTableNeedsUpdate = false
@@ -549,8 +551,6 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
             
             let (line, column) = lineAndColumn(for: location, in: text)
             parent.onCursorChange(line, column)
-            
-            lineTableNeedsUpdate = true
         }
 
         private func jumpToLine(_ lineNumber: Int, in textView: NSTextView) {
@@ -1347,38 +1347,49 @@ final class EditorContainerView: NSView {
 
     private var highlightTask: Task<Void, Never>?
     private var lastAppliedText: String = ""
+    private var lastAppliedLanguage: String = ""
+    private var lastAppliedThemeColors: ThemeColors = .nord
+    private var lastAppliedFontSignature: String = ""
 
     func applyText(_ text: String, language: String, themeColors: ThemeColors) {
-        // Skip if text hasn't changed
-        if text == lastAppliedText {
+        let fontSignature = "\(editorFont.fontName):\(editorFont.pointSize)"
+        let shouldReplaceText = text != lastAppliedText
+        let shouldRehighlight = shouldReplaceText
+            || language != lastAppliedLanguage
+            || themeColors != lastAppliedThemeColors
+            || fontSignature != lastAppliedFontSignature
+
+        guard shouldRehighlight else {
             return
         }
+
         lastAppliedText = text
+        lastAppliedLanguage = language
+        lastAppliedThemeColors = themeColors
+        lastAppliedFontSignature = fontSignature
         currentDisplayText = text
-        
-        // Apply text immediately (without highlighting)
+
         guard let textStorage = textView.textStorage else { return }
         textStorage.beginEditing()
-        
-        // Only replace if needed
-        if textStorage.string != text {
+
+        if shouldReplaceText && textStorage.string != text {
             let replacementRange = NSRange(location: 0, length: textStorage.length)
             textStorage.replaceCharacters(in: replacementRange, with: text)
         }
-        
+
         textStorage.endEditing()
         textView.setAccessibilityValue(text)
-        
-        // Schedule deferred highlighting
+
         let shouldDefer = text.count > 10000
         if shouldDefer {
             scheduleHighlighting(text: text, language: language, themeColors: themeColors)
         } else {
-            // Small file - highlight immediately
             applyHighlighting(text: text, language: language, themeColors: themeColors)
         }
-        
-        updateTextViewFrame()
+
+        if shouldReplaceText {
+            updateTextViewFrame()
+        }
         updateMinimap()
     }
     

@@ -28,53 +28,59 @@ actor DockerCLI {
     // MARK: - Log Streaming
     
     func streamLogs(containerId: String, tail: Int?) async throws -> AsyncStream<LogLine> {
-        AsyncStream { continuation in
-            Task {
-                let process = Process()
-                let pipe = Pipe()
-                
-                do {
-                    let dockerPath = try findDockerPath()
-                    process.executableURL = URL(fileURLWithPath: dockerPath)
-                    process.arguments = [
-                        "logs",
-                        "-f",
-                        "--tail", "\(tail ?? 500)",
-                        containerId
-                    ]
-                    process.standardOutput = pipe
-                    process.standardError = pipe
-                    
-                    try process.run()
-                    
-                    pipe.fileHandleForReading.readabilityHandler = { handle in
-                        let data = handle.availableData
-                        guard !data.isEmpty else {
-                            continuation.finish()
-                            return
-                        }
-                        
-                        if let line = String(data: data, encoding: .utf8) {
-                            let components = line.split(separator: "\n", omittingEmptySubsequences: true)
-                            for component in components {
-                                let logLine: LogLine
-                                if component.hasPrefix("stderr: ") {
-                                    logLine = LogLine(text: String(component.dropFirst(8)), stream: .stderr)
-                                } else if component.hasPrefix("stdout: ") {
-                                    logLine = LogLine(text: String(component.dropFirst(8)), stream: .stdout)
-                                } else {
-                                    logLine = LogLine(text: String(component), stream: .stdout)
-                                }
-                                continuation.yield(logLine)
-                            }
-                        }
-                    }
-                    
-                    process.waitUntilExit()
-                    continuation.finish()
-                } catch {
-                    continuation.finish()
+        let dockerPath = try findDockerPath()
+
+        return AsyncStream { continuation in
+            let process = Process()
+            let stdoutPipe = Pipe()
+            let stderrPipe = Pipe()
+            let stdoutBuffer = LogStreamBuffer(stream: .stdout)
+            let stderrBuffer = LogStreamBuffer(stream: .stderr)
+
+            process.executableURL = URL(fileURLWithPath: dockerPath)
+            process.arguments = [
+                "logs",
+                "-f",
+                "--tail", "\(tail ?? 500)",
+                containerId
+            ]
+            process.standardOutput = stdoutPipe
+            process.standardError = stderrPipe
+
+            stdoutPipe.fileHandleForReading.readabilityHandler = { handle in
+                let data = handle.availableData
+                guard !data.isEmpty else { return }
+                stdoutBuffer.append(data, into: continuation)
+            }
+
+            stderrPipe.fileHandleForReading.readabilityHandler = { handle in
+                let data = handle.availableData
+                guard !data.isEmpty else { return }
+                stderrBuffer.append(data, into: continuation)
+            }
+
+            process.terminationHandler = { _ in
+                stdoutPipe.fileHandleForReading.readabilityHandler = nil
+                stderrPipe.fileHandleForReading.readabilityHandler = nil
+                stdoutBuffer.flush(into: continuation)
+                stderrBuffer.flush(into: continuation)
+                continuation.finish()
+            }
+
+            continuation.onTermination = { _ in
+                stdoutPipe.fileHandleForReading.readabilityHandler = nil
+                stderrPipe.fileHandleForReading.readabilityHandler = nil
+                if process.isRunning {
+                    process.terminate()
                 }
+            }
+
+            do {
+                try process.run()
+            } catch {
+                stdoutPipe.fileHandleForReading.readabilityHandler = nil
+                stderrPipe.fileHandleForReading.readabilityHandler = nil
+                continuation.finish()
             }
         }
     }
@@ -279,5 +285,34 @@ actor DockerCLI {
                 continuation.resume(throwing: error)
             }
         }
+    }
+}
+
+private final class LogStreamBuffer {
+    private let stream: LogStream
+    private var pending = Data()
+
+    init(stream: LogStream) {
+        self.stream = stream
+    }
+
+    func append(_ data: Data, into continuation: AsyncStream<LogLine>.Continuation) {
+        pending.append(data)
+
+        while let newlineIndex = pending.firstIndex(of: 0x0A) {
+            let lineData = pending.prefix(upTo: newlineIndex)
+            pending.removeSubrange(...newlineIndex)
+
+            guard let text = String(data: lineData, encoding: .utf8) else { continue }
+            continuation.yield(LogLine(text: text, stream: stream))
+        }
+    }
+
+    func flush(into continuation: AsyncStream<LogLine>.Continuation) {
+        guard !pending.isEmpty else { return }
+        if let text = String(data: pending, encoding: .utf8), !text.isEmpty {
+            continuation.yield(LogLine(text: text, stream: stream))
+        }
+        pending.removeAll(keepingCapacity: false)
     }
 }

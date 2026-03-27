@@ -35,6 +35,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItem
 
         let contentView = ContentView()
             .environmentObject(projectViewModel)
+            .environmentObject(projectViewModel.commandPaletteViewModel)
             .environmentObject(ConfigurationService.shared)
             .environmentObject(commandDispatcher)
 

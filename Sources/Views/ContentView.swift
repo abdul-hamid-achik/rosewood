@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject var projectViewModel: ProjectViewModel
+    @EnvironmentObject private var commandPaletteViewModel: CommandPaletteViewModel
     @EnvironmentObject private var configService: ConfigurationService
     @EnvironmentObject private var commandDispatcher: AppCommandDispatcher
 
@@ -38,6 +39,9 @@ struct ContentView: View {
                         projectViewModel.renameItem = nil
                     }
                 }
+            }
+            .overlay(alignment: .top) {
+                NotificationBannerView()
             }
             .onReceive(commandDispatcher.publisher) { command in
                 handleAppCommand(command)
@@ -77,7 +81,9 @@ struct ContentView: View {
             projectViewModel.openNextProblem()
         case .previousProblem:
             projectViewModel.openPreviousProblem()
-        case .settings, .findInFile, .useSelectionForFind, .showReplace, .goToDefinition, .findReferences:
+        case .settings:
+            projectViewModel.showSettings = true
+        case .findInFile, .useSelectionForFind, .showReplace, .goToDefinition, .findReferences:
             break
         }
     }
@@ -109,7 +115,7 @@ struct ContentView: View {
         }
         .frame(minWidth: 800, minHeight: 600)
         .overlay {
-            if let paletteMode = projectViewModel.activePalette {
+            if let paletteMode = commandPaletteViewModel.activePalette {
                 CommandPaletteView(mode: paletteMode)
             }
         }

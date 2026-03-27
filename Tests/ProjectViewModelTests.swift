@@ -4759,6 +4759,43 @@ struct ProjectViewModelTests {
         #expect(viewModel.isReferencesPanelVisible == false)
         #expect(viewModel.referenceResults.isEmpty)
     }
+
+    @Test
+    func paletteTransitionsKeepQuickOpenAndCommandPaletteInSync() throws {
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("swift")
+        try "let value = 1\n".write(to: fileURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+
+        let configURL = tempConfigURL()
+        defer { try? FileManager.default.removeItem(at: configURL) }
+
+        let viewModel = makeViewModel(
+            sessionStore: makeDefaults(),
+            sessionKey: "palette-sync-test",
+            configService: ConfigurationService(userConfigURL: configURL),
+            fileWatcher: FileWatcherService(),
+            ui: TestProjectUI()
+        )
+
+        viewModel.toggleCommandPalette()
+        #expect(viewModel.commandPaletteViewModel.activePalette == .commandPalette)
+
+        viewModel.toggleQuickOpen()
+        #expect(viewModel.commandPaletteViewModel.activePalette == .quickOpen)
+        #expect(viewModel.quickOpenQuery == "")
+        #expect(viewModel.quickOpenActive == true)
+
+        viewModel.openFile(at: fileURL)
+        viewModel.beginGoToLine()
+        #expect(viewModel.commandPaletteViewModel.activePalette == .quickOpen)
+        #expect(viewModel.quickOpenQuery == ":1")
+
+        viewModel.closeCommandPalette()
+        #expect(viewModel.commandPaletteViewModel.activePalette == nil)
+        #expect(viewModel.quickOpenActive == false)
+    }
 }
 
 @MainActor

@@ -7,6 +7,11 @@ extension ProjectViewModel {
     private var terminalService: TerminalService {
         TerminalService.shared
     }
+
+    private func syncTerminalSessions() {
+        terminalSessions = terminalService.sessions
+        currentTerminalSessionId = terminalService.currentSessionId
+    }
     
     // MARK: - Terminal Actions
     
@@ -23,19 +28,18 @@ extension ProjectViewModel {
     
     func createTerminalSession(type: TerminalSessionType? = nil) {
         let sessionType = type ?? .local(shell: configService.settings.docker.terminalShell)
-        let session = TerminalService.shared.createSession(type: sessionType)
-        terminalSessions = terminalService.sessions
-        currentTerminalSessionId = session.id
+        _ = terminalService.createSession(type: sessionType)
+        syncTerminalSessions()
     }
-    
+
     func selectTerminalSession(_ id: UUID) {
-        TerminalService.shared.selectSession(id)
-        currentTerminalSessionId = id
+        terminalService.selectSession(id)
+        syncTerminalSessions()
     }
-    
+
     func closeTerminalSession(_ id: UUID) {
-        TerminalService.shared.closeSession(id)
-        terminalSessions = terminalService.sessions
+        terminalService.closeSession(id)
+        syncTerminalSessions()
     }
     
     func closeCurrentTerminalSession() {

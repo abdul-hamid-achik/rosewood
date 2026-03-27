@@ -237,8 +237,7 @@ final class ProjectViewModel: ObservableObject {
     @Published var isRefreshingDocker: Bool = false
     @Published var selectedDockerTab: DockerTab = .containers
     @Published var selectedContainer: DockerContainer?
-    @Published var showDockerSettings: Bool = false
-    
+
     // MARK: - Terminal State
     @Published var terminalSessions: [TerminalSession] = []
     @Published var currentTerminalSessionId: UUID?
@@ -569,6 +568,7 @@ final class ProjectViewModel: ObservableObject {
     let projectSearchDebounceNanoseconds: UInt64
     private var quickOpenAccessSequence = 0
     private var quickOpenRecentAccessByPath: [String: Int] = [:]
+    private var recentCommandPaletteActionIDs: [String] = []
     var cachedWorkspaceSymbols: [WorkspaceSymbolMatch]?
     var cachedWorkspaceSymbolRootPath: String?
     convenience init() {
@@ -622,12 +622,12 @@ final class ProjectViewModel: ObservableObject {
         self.debugSessionService = debugSessionService ?? DebugSessionService.shared
         self.gitService = gitService
         self.projectSearchDebounceNanoseconds = projectSearchDebounceNanoseconds
+        self.commandPaletteViewModel = CommandPaletteViewModel(commandDispatcher: commandDispatcher)
         self.debugSessionService.setEventHandler { [weak self] event in
             Task { @MainActor [weak self] in
                 self?.handleDebugSessionEvent(event)
             }
         }
-        self.commandPaletteViewModel = CommandPaletteViewModel(commandDispatcher: commandDispatcher)
 
         if ProcessInfo.processInfo.environment["ROSEWOOD_UI_TEST_RESET_SESSION"] == "1" {
             sessionStore.removeObject(forKey: sessionKey)
@@ -709,7 +709,12 @@ final class ProjectViewModel: ObservableObject {
     }
 
     var showQuickOpen: Bool {
-        quickOpenActive
+        commandPaletteViewModel.activePalette == .quickOpen
+    }
+
+    var commandPaletteQuery: String {
+        get { commandPaletteViewModel.commandPaletteQuery }
+        set { commandPaletteViewModel.commandPaletteQuery = newValue }
     }
 
     var quickOpenSectionTitle: String {
@@ -718,6 +723,8 @@ final class ProjectViewModel: ObservableObject {
 
     var quickOpenHelpText: String? {
         let trimmedQuery = quickOpenQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedQuery.isEmpty else { return nil }
+
         if let request = quickOpenFileLineRequest(from: trimmedQuery) {
             return "Open the best matching file and jump straight to line \(request.line)."
         }
@@ -735,7 +742,78 @@ final class ProjectViewModel: ObservableObject {
                 : "Current-file symbols stay ahead of workspace matches while you type."
         }
 
-        guard trimmedQuery.hasPrefix("!") else { return nil }
+        if trimmedQuery.hasPrefix("!") {
+            return "Filter workspace problems by scope or severity while you type."
+        }
+
+        return "Search files, jump with :line, symbols with #name, or problems with !."
+    }
+
+    var quickOpenProblemFilterHints: [QuickOpenProblemFilterHint] {
+        let trimmedQuery = quickOpenQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmedQuery.hasPrefix("!") else { return [] }
+
+        let query = quickOpenWorkspaceProblemQuery(from: trimmedQuery)
+        var hints: [QuickOpenProblemFilterHint] = [
+            QuickOpenProblemFilterHint(
+                id: "current",
+                token: "current",
+                title: "Current File",
+                isActive: query.scope == .currentFile,
+                kind: .scope(.currentFile)
+            ),
+            QuickOpenProblemFilterHint(
+                id: "workspace",
+                token: "workspace",
+                title: "Workspace",
+                isActive: query.scope == .workspace,
+                kind: .scope(.workspace)
+            )
+        ]
+
+        let severityHints: [(DiagnosticSeverity, String)] = [
+            (.error, "Errors"),
+            (.warning, "Warnings"),
+            (.information, "Info"),
+            (.hint, "Hints")
+        ]
+
+        hints.append(contentsOf: severityHints.map { severity, title in
+            QuickOpenProblemFilterHint(
+                id: problemFilterToken(for: severity),
+                token: problemFilterToken(for: severity),
+                title: title,
+                isActive: query.severity == severity,
+                kind: .severity(severity)
+            )
+        })
+
+        return hints
+    }
+
+    var quickOpenEmptyStateText: String {
+        let trimmedQuery = quickOpenQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if let request = quickOpenFileLineRequest(from: trimmedQuery) {
+            return "No matching files for line \(request.line)."
+        }
+
+        if trimmedQuery.hasPrefix(":") {
+            return hasOpenFile ? "No matching line jump." : "Open a file first to jump to a line."
+        }
+
+        if trimmedQuery.hasPrefix("#") {
+            return rootDirectory == nil ? "Open a folder to search workspace symbols." : "No matching symbols."
+        }
+
+        if trimmedQuery.hasPrefix("!") {
+            return quickOpenWorkspaceProblemEmptyStateText(for: quickOpenWorkspaceProblemQuery(from: trimmedQuery))
+        }
+
+        return rootDirectory == nil ? "Open a folder to search files." : "No matching files."
+    }
+
+    var commandPaletteActions: [CommandPaletteAction] {
         var actions: [CommandPaletteAction] = [
             makeCommandPaletteAction(
                 id: "newFile",
@@ -1021,6 +1099,33 @@ final class ProjectViewModel: ObservableObject {
                 aliases: ["debug", "debugger", "breakpoints"]
             ) {
                 self.showDebugSidebar()
+            }
+        )
+
+        if configService.settings.docker.enableDockerIntegration {
+            actions.append(
+                makeCommandPaletteAction(
+                    id: "showDockerSidebar",
+                    title: "Show Docker Sidebar",
+                    shortcut: "",
+                    category: "View",
+                    aliases: ["docker", "containers", "compose", "show docker"]
+                ) {
+                    self.sidebarMode = .docker
+                    self.refreshDockerState()
+                }
+            )
+        }
+
+        actions.append(
+            makeCommandPaletteAction(
+                id: "openSettings",
+                title: "Open Settings",
+                shortcut: "⌘,",
+                category: "View",
+                aliases: ["settings", "preferences", "configuration"]
+            ) {
+                self.showSettings = true
             }
         )
 
@@ -1368,13 +1473,77 @@ final class ProjectViewModel: ObservableObject {
             )
         }
 
-        let queryContext = commandPaletteQueryContext(for: commandPaletteQuery)
+        let queryContext = commandPaletteQueryContext(for: commandPaletteViewModel.commandPaletteQuery)
         let scopedActions = scopedCommandPaletteActions(actions, scope: queryContext.scope)
         return rankedCommandPaletteActions(scopedActions, query: queryContext.searchText)
     }
 
     var commandPaletteSections: [CommandPaletteSection] {
-        commandPaletteViewModel.commandPaletteSections
+        let query = commandPaletteViewModel.commandPaletteQuery
+        let queryContext = commandPaletteQueryContext(for: query)
+        let actions = commandPaletteActions
+
+        guard !actions.isEmpty else { return [] }
+
+        if queryContext.scope == nil, queryContext.searchText.isEmpty {
+            let recentActions = recentCommandPaletteActionIDs
+                .compactMap { actionID in actions.first(where: { $0.id == actionID }) }
+
+            var sections: [CommandPaletteSection] = []
+            if !recentActions.isEmpty {
+                sections.append(
+                    CommandPaletteSection(
+                        title: "Recent",
+                        actions: recentActions.map { decoratedCommandPaletteAction($0, query: query) }
+                    )
+                )
+            }
+
+            let remainingActions = actions.filter { action in
+                !recentActions.contains(where: { $0.id == action.id })
+            }
+            sections.append(contentsOf: commandPaletteCategorySections(for: remainingActions, query: query))
+            return sections
+        }
+
+        if commandPaletteShouldGroupByCategory(actions: actions, normalizedQuery: queryContext.searchText) {
+            return commandPaletteCategorySections(for: actions, query: query)
+        }
+
+        let title = queryContext.searchText.isEmpty ? "Commands" : "Top Matches"
+        return [
+            CommandPaletteSection(
+                title: title,
+                actions: actions.map { decoratedCommandPaletteAction($0, query: query) }
+            )
+        ]
+    }
+
+    var commandPaletteHelpText: String {
+        let context = commandPaletteQueryContext(for: commandPaletteViewModel.commandPaletteQuery)
+        if let scope = context.scope {
+            return context.searchText.isEmpty
+                ? "Scoped to \(scope.title) commands. Type to narrow the list."
+                : "Scoped to \(scope.title) commands."
+        }
+
+        return "Type to search commands or use a scope chip to narrow results."
+    }
+
+    var commandPaletteScopeHints: [CommandPaletteScope] {
+        availableCommandPaletteScopes
+    }
+
+    var activeCommandPaletteScope: CommandPaletteScope? {
+        commandPaletteQueryContext(for: commandPaletteViewModel.commandPaletteQuery).scope
+    }
+
+    var commandPaletteEmptyStateText: String {
+        if let scope = activeCommandPaletteScope {
+            return "No matching \(scope.title.lowercased()) commands."
+        }
+
+        return "No matching commands."
     }
 
     var quickOpenSections: [QuickOpenSection] {
@@ -1449,15 +1618,15 @@ final class ProjectViewModel: ObservableObject {
     }
 
     func applyCommandPaletteScope(_ scope: CommandPaletteScope) {
-        let context = commandPaletteQueryContext(for: commandPaletteQuery)
+        let context = commandPaletteQueryContext(for: commandPaletteViewModel.commandPaletteQuery)
 
         if context.scope?.id == scope.id {
-            commandPaletteQuery = context.searchText
+            commandPaletteViewModel.commandPaletteQuery = context.searchText
             return
         }
 
         let suffix = context.searchText.isEmpty ? "" : " \(context.searchText)"
-        commandPaletteQuery = "\(scope.queryToken)\(suffix)"
+        commandPaletteViewModel.commandPaletteQuery = "\(scope.queryToken)\(suffix)"
     }
 
     func applyQuickOpenProblemFilterHint(_ hint: QuickOpenProblemFilterHint) {
@@ -2476,9 +2645,12 @@ final class ProjectViewModel: ObservableObject {
     }
 
     func toggleQuickOpen() {
-        quickOpenActive.toggle()
-        if quickOpenActive {
+        if commandPaletteViewModel.activePalette == .quickOpen {
+            closeCommandPalette()
+        } else {
+            quickOpenActive = true
             quickOpenQuery = ""
+            commandPaletteViewModel.showQuickOpen()
         }
     }
 
@@ -2487,18 +2659,21 @@ final class ProjectViewModel: ObservableObject {
         quickOpenActive = true
         let currentLine = max(selectedTab?.cursorPosition.line ?? 1, 1)
         quickOpenQuery = ":\(currentLine)"
+        commandPaletteViewModel.showQuickOpen()
     }
 
     func beginWorkspaceSymbolSearch() {
         guard rootDirectory != nil else { return }
         quickOpenActive = true
         quickOpenQuery = "#"
+        commandPaletteViewModel.showQuickOpen()
     }
 
     func beginWorkspaceProblemSearch() {
         guard hasWorkspaceDiagnostics else { return }
         quickOpenActive = true
         quickOpenQuery = "!"
+        commandPaletteViewModel.showQuickOpen()
     }
 
     func executeQuickOpenItem(_ item: QuickOpenItem) {
@@ -2510,26 +2685,41 @@ final class ProjectViewModel: ObservableObject {
                 openFile(at: fileURL)
             }
             guard let selectedTabIndex, openTabs.indices.contains(selectedTabIndex) else { return }
-            openTabs[selectedTabIndex].pendingLineJump = line
+            let targetLine = max(line, 1)
+            updateCursorPosition(line: targetLine, column: 1)
+            openTabs[selectedTabIndex].pendingLineJump = targetLine
         case .symbol(let symbol):
             openFile(at: symbol.fileURL)
             guard let selectedTabIndex, openTabs.indices.contains(selectedTabIndex) else { return }
-            openTabs[selectedTabIndex].pendingLineJump = symbol.line
+            let targetLine = max(symbol.line, 1)
+            updateCursorPosition(line: targetLine, column: 1)
+            openTabs[selectedTabIndex].pendingLineJump = targetLine
         case .problem(let diagnostic):
             openWorkspaceDiagnostic(diagnostic)
         }
     }
 
     func executeCommandPaletteAction(_ action: CommandPaletteAction) {
-        commandPaletteViewModel.executeCommand(action)
+        action.action()
+        if commandPaletteViewModel.activePalette == .commandPalette {
+            closeCommandPalette()
+        }
     }
 
     func toggleCommandPalette() {
-        commandPaletteViewModel.toggleCommandPalette()
+        if commandPaletteViewModel.activePalette == .commandPalette {
+            closeCommandPalette()
+            return
+        }
+
+        quickOpenActive = false
+        commandPaletteViewModel.commandPaletteQuery = ""
+        commandPaletteViewModel.showCommandPalette()
     }
 
     func closeCommandPalette() {
-        commandPaletteViewModel.closeCommandPalette()
+        quickOpenActive = false
+        commandPaletteViewModel.closePalette()
     }
 
     func showExplorerSidebar() {
@@ -2876,6 +3066,11 @@ final class ProjectViewModel: ObservableObject {
 
     private func handleSidebarModeChange(from oldValue: SidebarMode) {
         guard oldValue != sidebarMode else { return }
+
+        if sidebarMode == .docker {
+            refreshDockerState()
+            return
+        }
 
         if sidebarMode != .search {
             projectSearchDebounceTask?.cancel()

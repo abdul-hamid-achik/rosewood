@@ -254,11 +254,8 @@ extension ProjectViewModel {
     // MARK: - Terminal Integration
     
     func openTerminalInContainer(_ container: DockerContainer) {
-        let session = TerminalService.shared.createSession(
-            type: .dockerExec(containerId: container.id)
-        )
+        createTerminalSession(type: .dockerExec(containerId: container.id))
         bottomPanel = .terminal
-        TerminalService.shared.selectSession(session.id)
     }
     
     // MARK: - Log Viewing

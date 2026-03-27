@@ -7,6 +7,7 @@ struct DockerLogsPanelView: View {
     @State private var logLines: [LogLine] = []
     @State private var isStreaming: Bool = false
     @State private var autoScroll: Bool = true
+    @State private var streamingTask: Task<Void, Never>?
     
     private var themeColors: ThemeColors {
         configService.currentThemeColors
@@ -30,6 +31,9 @@ struct DockerLogsPanelView: View {
         }
         .onDisappear {
             stopStreamingLogs()
+        }
+        .onChange(of: projectViewModel.selectedContainer?.id) { _ in
+            startStreamingLogs()
         }
     }
     
@@ -160,29 +164,35 @@ struct DockerLogsPanelView: View {
     
     private func startStreamingLogs() {
         guard let container = projectViewModel.selectedContainer else { return }
-        
+
+        stopStreamingLogs()
         isStreaming = true
         logLines = []
-        
-        Task {
-            let stream = projectViewModel.getLogStream(for: container.id, tail: 500)
+
+        let logLineLimit = max(configService.settings.docker.logLineLimit, 1)
+        streamingTask = Task {
+            let stream = projectViewModel.getLogStream(for: container.id, tail: logLineLimit)
             for await line in stream {
+                guard !Task.isCancelled else { break }
                 await MainActor.run {
                     logLines.append(line)
-                    
-                    if logLines.count > 10000 {
-                        logLines.removeFirst(logLines.count - 10000)
+
+                    if logLines.count > logLineLimit {
+                        logLines.removeFirst(logLines.count - logLineLimit)
                     }
                 }
             }
-            
+
             await MainActor.run {
                 isStreaming = false
+                streamingTask = nil
             }
         }
     }
-    
+
     private func stopStreamingLogs() {
+        streamingTask?.cancel()
+        streamingTask = nil
         isStreaming = false
     }
     
