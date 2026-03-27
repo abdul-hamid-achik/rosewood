@@ -2332,6 +2332,14 @@ final class ProjectViewModel: ObservableObject {
             reloadFileTree()
             openFile(at: fileURL)
             refreshGitState()
+            
+            // Show success notification
+            NotificationManager.shared.show(NotificationItem(
+                type: .success,
+                title: "File Created",
+                message: "\(name) created successfully",
+                duration: 2.0
+            ))
         } catch {
             ui.alert("Error", "Could not create file: \(error.localizedDescription)", .warning)
         }
@@ -2347,6 +2355,14 @@ final class ProjectViewModel: ObservableObject {
             expandedDirectoryPaths.insert(normalizedPath(for: folderURL))
             reloadFileTree()
             persistSession()
+            
+            // Show success notification
+            NotificationManager.shared.show(NotificationItem(
+                type: .success,
+                title: "Folder Created",
+                message: "\(name) created successfully",
+                duration: 2.0
+            ))
         } catch {
             ui.alert("Error", "Could not create folder: \(error.localizedDescription)", .warning)
         }
@@ -3672,6 +3688,15 @@ final class ProjectViewModel: ObservableObject {
             persistSession()
             refreshGitState()
             refreshCurrentLineBlame()
+            
+            // Show success notification
+            NotificationManager.shared.show(NotificationItem(
+                type: .success,
+                title: "File Saved",
+                message: "\(openTabs[index].fileName) saved successfully",
+                duration: 2.0
+            ))
+            
             return true
         } catch {
             ui.alert("Error", "Could not save file: \(error.localizedDescription)", .warning)
