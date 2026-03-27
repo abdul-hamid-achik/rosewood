@@ -16,6 +16,4 @@ protocol FileServiceProtocol: AnyObject {
     func loadDirectoryTree(rootDirectory: URL, showHiddenFiles: Bool) async throws -> [FileItem]
     func detectContentType(at url: URL, settings: AppSettings.FileHandling) -> ContentType
     func searchProject(rootDirectory: URL, query: String, options: ProjectSearchOptions) async throws -> [ProjectSearchResult]
-    func searchAndReplace(rootDirectory: URL, query: String, replacement: String, options: ProjectSearchOptions) async throws -> ProjectReplaceResult
-    func undoReplace(transaction: ProjectReplaceTransaction) async throws -> ProjectReplaceUndoResult
 }
