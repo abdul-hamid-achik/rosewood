@@ -120,11 +120,6 @@ final class ProjectViewModel: ObservableObject {
         case docker
     }
 
-    enum PaletteMode {
-        case quickOpen
-        case commandPalette
-    }
-
     enum BottomPanelKind {
         case debugConsole
         case diagnostics
@@ -148,12 +143,11 @@ final class ProjectViewModel: ObservableObject {
             synchronizeActiveDiagnosticSelection()
         }
     }
-    @Published private(set) var activePalette: PaletteMode?
     @Published var showNewFileSheet: Bool = false
     @Published var showNewFolderSheet: Bool = false
     @Published var renameItem: FileItem? = nil
-    @Published var commandPaletteQuery: String = ""
     @Published var quickOpenQuery: String = ""
+    @Published var quickOpenActive: Bool = false
     @Published var pendingNewItemDirectory: URL? = nil
     @Published var sidebarMode: SidebarMode = .explorer {
         didSet {
@@ -248,8 +242,6 @@ final class ProjectViewModel: ObservableObject {
     // MARK: - Terminal State
     @Published var terminalSessions: [TerminalSession] = []
     @Published var currentTerminalSessionId: UUID?
-    
-    private var recentCommandPaletteActionIDs: [String] = []
 
     var currentTabDiagnostics: [LSPDiagnostic] {
         guard let uri = selectedTab?.documentURI else { return [] }
@@ -563,7 +555,6 @@ final class ProjectViewModel: ObservableObject {
     let debugSessionService: DebugSessionServiceProtocol
     let gitService: GitServiceProtocol
     let commandPaletteViewModel: CommandPaletteViewModel
-    private var settingsCommandCancellable: AnyCancellable?
     private var fileTreeLoadToken = UUID()
     var projectSearchToken = UUID()
     var replaceInProjectToken = UUID()
@@ -665,7 +656,6 @@ final class ProjectViewModel: ObservableObject {
         gitStatusTask?.cancel()
         gitDiffTask?.cancel()
         gitBlameTask?.cancel()
-        settingsCommandCancellable?.cancel()
     }
 
     private func setupFileWatcher() {
@@ -728,7 +718,7 @@ final class ProjectViewModel: ObservableObject {
     }
 
     var showQuickOpen: Bool {
-        activePalette == .quickOpen
+        quickOpenActive
     }
 
     var quickOpenSectionTitle: String {
@@ -2621,31 +2611,28 @@ final class ProjectViewModel: ObservableObject {
     }
 
     func toggleQuickOpen() {
-        if activePalette == .quickOpen {
-            activePalette = nil
-            return
+        quickOpenActive.toggle()
+        if quickOpenActive {
+            quickOpenQuery = ""
         }
-
-        activePalette = .quickOpen
-        quickOpenQuery = ""
     }
 
     func beginGoToLine() {
         guard hasOpenFile else { return }
-        activePalette = .quickOpen
+        quickOpenActive = true
         let currentLine = max(selectedTab?.cursorPosition.line ?? 1, 1)
         quickOpenQuery = ":\(currentLine)"
     }
 
     func beginWorkspaceSymbolSearch() {
         guard rootDirectory != nil else { return }
-        activePalette = .quickOpen
+        quickOpenActive = true
         quickOpenQuery = "#"
     }
 
     func beginWorkspaceProblemSearch() {
         guard hasWorkspaceDiagnostics else { return }
-        activePalette = .quickOpen
+        quickOpenActive = true
         quickOpenQuery = "!"
     }
 
@@ -4031,39 +4018,6 @@ struct ReferenceResult: Identifiable, Equatable {
     var id: String {
         "\(location.uri):\(line):\(column)"
     }
-}
-
-struct CommandPaletteAction: Identifiable {
-    let id: String
-    let title: String
-    let shortcut: String
-    let category: String
-    let aliases: [String]
-    let detailText: String?
-    let badge: String?
-    let action: () -> Void
-}
-
-struct CommandPaletteSection: Identifiable {
-    let title: String
-    let actions: [CommandPaletteAction]
-
-    var id: String {
-        title
-    }
-}
-
-struct CommandPaletteScope: Identifiable, Hashable {
-    let id: String
-    let title: String
-    let category: String
-    let queryToken: String
-    let aliases: [String]
-}
-
-struct CommandPaletteQueryContext {
-    let scope: CommandPaletteScope?
-    let searchText: String
 }
 
 struct QuickOpenLineJumpRequest: Hashable {
