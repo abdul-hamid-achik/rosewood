@@ -666,14 +666,6 @@ final class ProjectViewModel: ObservableObject {
         }
     }
 
-    private func setupCommandObservers() {
-        settingsCommandCancellable = commandDispatcher.publisher
-            .filter { $0 == .settings }
-            .sink { [weak self] _ in
-                self?.showSettings = true
-            }
-    }
-
     var selectedTab: EditorTab? {
         guard let index = selectedTabIndex, openTabs.indices.contains(index) else { return nil }
         return openTabs[index]
