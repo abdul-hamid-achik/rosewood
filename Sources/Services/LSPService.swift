@@ -29,6 +29,7 @@ protocol LSPServiceProtocol: AnyObject {
     func references(uri: String, language: String, position: LSPPosition) async -> [LSPLocation]
     func serverAvailable(for language: String) -> Bool
     func injectDiagnosticsForTesting(uri: String, diagnostics: [LSPDiagnostic])
+    func setDiagnosticsChangeHandler(_ handler: (@MainActor () -> Void)?)
     func shutdownAll() async
 }
 
@@ -47,6 +48,7 @@ final class LSPService: ObservableObject, LSPServiceProtocol {
     private var currentRootURI: String?
     private var debounceTimers: [String: Task<Void, Never>] = [:]  // keyed by URI
     private var serverStartTasks: [String: Task<Void, Never>] = [:]  // keyed by serverKey
+    private var diagnosticsChangeHandler: (@MainActor () -> Void)?
 
     private init() {}
 
@@ -70,6 +72,11 @@ final class LSPService: ObservableObject, LSPServiceProtocol {
         diagnosticsByURI.removeAll()
         documentVersions.removeAll()
         documentLanguages.removeAll()
+        notifyDiagnosticsChanged()
+    }
+
+    func setDiagnosticsChangeHandler(_ handler: (@MainActor () -> Void)?) {
+        diagnosticsChangeHandler = handler
     }
 
     // MARK: - Document Sync
@@ -124,6 +131,7 @@ final class LSPService: ObservableObject, LSPServiceProtocol {
         documentVersions.removeValue(forKey: uri)
         documentLanguages.removeValue(forKey: uri)
         diagnosticsByURI.removeValue(forKey: uri)
+        notifyDiagnosticsChanged()
 
         Task {
             let client = existingClient(for: language)
@@ -190,6 +198,7 @@ final class LSPService: ObservableObject, LSPServiceProtocol {
 
     func injectDiagnosticsForTesting(uri: String, diagnostics: [LSPDiagnostic]) {
         diagnosticsByURI[uri] = diagnostics
+        notifyDiagnosticsChanged()
     }
 
     // MARK: - Shutdown
@@ -210,6 +219,8 @@ final class LSPService: ObservableObject, LSPServiceProtocol {
         }
         clients.removeAll()
         serverStatus.removeAll()
+        diagnosticsByURI.removeAll()
+        notifyDiagnosticsChanged()
     }
 
     // MARK: - Client Management
@@ -240,7 +251,10 @@ final class LSPService: ObservableObject, LSPServiceProtocol {
         let serverKey = config.serverKey
 
         // Resolve server binary path
-        guard let serverPath = LSPServerRegistry.resolveServerPath(for: config) else {
+        let serverPath = await Task.detached(priority: .utility) {
+            LSPServerRegistry.resolveServerPath(for: config)
+        }.value
+        guard let serverPath else {
             serverStatus[serverKey] = .unavailable
             return nil
         }
@@ -282,8 +296,13 @@ final class LSPService: ObservableObject, LSPServiceProtocol {
             guard let self = self else { return }
             await MainActor.run {
                 self.diagnosticsByURI[uri] = diagnostics
+                self.notifyDiagnosticsChanged()
             }
         }
+    }
+
+    private func notifyDiagnosticsChanged() {
+        diagnosticsChangeHandler?()
     }
 }
 
@@ -300,6 +319,7 @@ private final class Weak<T: AnyObject>: @unchecked Sendable {
 final class MockLSPService: LSPServiceProtocol, ObservableObject {
     @Published private(set) var diagnosticsByURI: [String: [LSPDiagnostic]] = [:]
     @Published private(set) var serverStatus: [String: LSPServerStatus] = [:]
+    private var diagnosticsChangeHandler: (@MainActor () -> Void)?
 
     private(set) var documentOpenedCalls: [(uri: String, language: String, text: String)] = []
     private(set) var documentChangedCalls: [(uri: String, language: String, text: String)] = []
@@ -311,6 +331,10 @@ final class MockLSPService: LSPServiceProtocol, ObservableObject {
 
     func setProjectRoot(_ url: URL?) {
         projectRootCalls.append(url)
+    }
+
+    func setDiagnosticsChangeHandler(_ handler: (@MainActor () -> Void)?) {
+        diagnosticsChangeHandler = handler
     }
 
     func documentOpened(uri: String, language: String, text: String) {
@@ -356,6 +380,7 @@ final class MockLSPService: LSPServiceProtocol, ObservableObject {
 
     func injectDiagnosticsForTesting(uri: String, diagnostics: [LSPDiagnostic]) {
         diagnosticsByURI[uri] = diagnostics
+        notifyDiagnosticsChanged()
     }
 
     func shutdownAll() async {}
@@ -363,6 +388,7 @@ final class MockLSPService: LSPServiceProtocol, ObservableObject {
     // Test helpers
     func setDiagnostics(uri: String, diagnostics: [LSPDiagnostic]) {
         diagnosticsByURI[uri] = diagnostics
+        notifyDiagnosticsChanged()
     }
 
     func setReferences(uri: String, locations: [LSPLocation]) {
@@ -371,5 +397,9 @@ final class MockLSPService: LSPServiceProtocol, ObservableObject {
 
     func setServerStatus(language: String, status: LSPServerStatus) {
         serverStatus[language] = status
+    }
+
+    private func notifyDiagnosticsChanged() {
+        diagnosticsChangeHandler?()
     }
 }

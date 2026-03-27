@@ -79,3 +79,39 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
     dependencies:
       - target: Rosewood
+
+schemes:
+  Rosewood:
+    build:
+      targets:
+        Rosewood: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+      gatherCoverageData: false
+      targets:
+        - RosewoodTests
+        - RosewoodUITests
+
+  RosewoodTests:
+    build:
+      targets:
+        Rosewood: all
+        RosewoodTests: [test]
+    test:
+      config: Debug
+      gatherCoverageData: false
+      targets:
+        - RosewoodTests
+
+  RosewoodUITests:
+    build:
+      targets:
+        Rosewood: all
+        RosewoodUITests: [test]
+    test:
+      config: Debug
+      gatherCoverageData: false
+      targets:
+        - RosewoodUITests

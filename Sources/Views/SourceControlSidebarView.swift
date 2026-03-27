@@ -105,7 +105,7 @@ struct SourceControlSidebarView: View {
         } else {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 14) {
-                    ForEach(projectViewModel.gitRepositoryStatus.changeSections) { section in
+                    ForEach(projectViewModel.gitChangeSections) { section in
                         SourceControlSectionView(section: section)
                     }
                 }
@@ -142,7 +142,7 @@ private struct SourceControlSectionView: View {
                 ForEach(section.files) { changedFile in
                     SourceControlChangeRowView(
                         changedFile: changedFile,
-                        rowIndex: projectViewModel.gitRepositoryStatus.changedFiles.firstIndex(of: changedFile) ?? 0
+                        rowIndex: projectViewModel.gitChangeIndex(for: changedFile)
                     )
                 }
             }

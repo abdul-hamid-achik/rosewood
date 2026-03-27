@@ -9,6 +9,7 @@ final class ConfigurationService: ObservableObject {
     @Published private(set) var settings: AppSettings = .default
     @Published private(set) var currentThemeColors: ThemeColors = .nord
     @Published private(set) var currentThemeDefinition: ThemeDefinition = .nord
+    @Published private(set) var currentEditorFont: NSFont = NSFont.monospacedSystemFont(ofSize: AppSettings.default.editor.fontSize, weight: .regular)
 
     let userConfigURL: URL
 
@@ -53,6 +54,7 @@ final class ConfigurationService: ObservableObject {
         }
 
         settings = merged
+        applyEditorFont(using: merged.editor)
         applyTheme(named: merged.theme.name)
         startWatchingConfigFiles()
     }
@@ -105,12 +107,17 @@ final class ConfigurationService: ObservableObject {
 
     func updateSettings(_ newSettings: AppSettings) {
         settings = newSettings
+        applyEditorFont(using: newSettings.editor)
         applyTheme(named: newSettings.theme.name)
         try? saveUserSettings()
     }
 
     var font: NSFont {
-        resolveFont(named: settings.editor.fontFamily, size: settings.editor.fontSize)
+        currentEditorFont
+    }
+
+    private func applyEditorFont(using editorSettings: AppSettings.Editor) {
+        currentEditorFont = resolveFont(named: editorSettings.fontFamily, size: editorSettings.fontSize)
     }
 
     private func applyTheme(named name: String) {
@@ -247,11 +254,14 @@ final class ConfigurationService: ObservableObject {
 
     private func resolveFont(named family: String, size: CGFloat) -> NSFont {
         let trimmedFamily = family.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if ["SF Mono", "SFMono-Regular", ".SFMono-Regular", ".SF NS Mono"].contains(trimmedFamily) {
+            return NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
+        }
+
         let candidates: [String]
 
         switch trimmedFamily {
-        case "SF Mono":
-            candidates = ["SFMono-Regular", ".SFMono-Regular", ".SF NS Mono"]
         case "Menlo":
             candidates = ["Menlo-Regular", "Menlo"]
         case "Monaco":

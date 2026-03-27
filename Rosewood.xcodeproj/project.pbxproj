@@ -118,6 +118,7 @@
 		E520CCC874571BBD1A4F30EA /* CommandPaletteTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74E5007CF44114B9AF082A27 /* CommandPaletteTypes.swift */; };
 		EFA607A4B99A07977420BEDB /* DockerLogsPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93A3421EECDD4060D0C003C5 /* DockerLogsPanelView.swift */; };
 		F1C00AE5DC6A3C6DB1A84DDA /* DockerCLI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8917C267743C3F77CDF2AE18 /* DockerCLI.swift */; };
+		F27A697F26C19D90B596C8C9 /* PaletteAndTerminalTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40182CD4A459201D3182C574 /* PaletteAndTerminalTests.swift */; };
 		F4EC8CC9EBEFA2151DF53945 /* EditorContextMenuState.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC8518D9D749767E192C8D2E /* EditorContextMenuState.swift */; };
 		F4F27AF31CE1671DB2477D89 /* LSPTypesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 814BFAA85C5BB7B5B8496A70 /* LSPTypesTests.swift */; };
 		F81BFE80E10CFBE912A5CAB2 /* LargeFileWarningView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 450730AE7D307634FD47073F /* LargeFileWarningView.swift */; };
@@ -165,6 +166,7 @@
 		36B03AD333CAF8A328EBA0D9 /* FileService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileService.swift; sourceTree = "<group>"; };
 		37D7CE593BD507240717F39A /* HoverPopupTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HoverPopupTests.swift; sourceTree = "<group>"; };
 		3C1ED559A640C0B57B9C65C5 /* DebugSessionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugSessionService.swift; sourceTree = "<group>"; };
+		40182CD4A459201D3182C574 /* PaletteAndTerminalTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaletteAndTerminalTests.swift; sourceTree = "<group>"; };
 		409D0416EFFD97356F7A16FB /* TerminalSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalSession.swift; sourceTree = "<group>"; };
 		429E745BD3928BEF840632A6 /* JSONValueCodec.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JSONValueCodec.swift; sourceTree = "<group>"; };
 		4446E1EFAACFE22DBF67A2E2 /* EditorRenderStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorRenderStateTests.swift; sourceTree = "<group>"; };
@@ -480,6 +482,7 @@
 				DE3A94EA6E52B4F5DCDA61D9 /* LSPServiceTests.swift */,
 				814BFAA85C5BB7B5B8496A70 /* LSPTypesTests.swift */,
 				2CFF46CA88004ADDBE513F12 /* MinimapSnapshotTests.swift */,
+				40182CD4A459201D3182C574 /* PaletteAndTerminalTests.swift */,
 				B25072856E4F991EB7945C59 /* ProjectViewModelTests.swift */,
 				6F1BB1AF8037DFEEC1B4E515 /* SessionStateTests.swift */,
 				8E7AC6B2D496D1C7E869DF96 /* WorkspaceSymbolIndexerTests.swift */,
@@ -745,6 +748,7 @@
 				F4F27AF31CE1671DB2477D89 /* LSPTypesTests.swift in Sources */,
 				8CA3CBA297EF77941D39CC05 /* LineInfoTests.swift in Sources */,
 				7B48A21B50924E5F90F47062 /* MinimapSnapshotTests.swift in Sources */,
+				F27A697F26C19D90B596C8C9 /* PaletteAndTerminalTests.swift in Sources */,
 				8008F88E4596F53955AB90E3 /* ProjectViewModelTests.swift in Sources */,
 				1EE229C88C2D31571E7BEE1F /* SessionStateTests.swift in Sources */,
 				8BF9DDB32544124024E8B08A /* WorkspaceSymbolIndexerTests.swift in Sources */,

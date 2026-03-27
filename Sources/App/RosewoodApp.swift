@@ -54,8 +54,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItem
         window.isRestorable = false
         window.delegate = self
         window.makeKeyAndOrderFront(nil)
-
-        setupMainMenu()
+        DispatchQueue.main.async { [weak self] in
+            self?.setupMainMenu()
+        }
 
         NSApp.activate(ignoringOtherApps: true)
         flushPendingOpenURLs()

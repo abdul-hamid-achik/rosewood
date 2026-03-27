@@ -3,9 +3,7 @@ import Foundation
 extension ProjectViewModel {
     var currentFileSymbols: [WorkspaceSymbolMatch] {
         guard let selectedFileURL = selectedTab?.filePath else { return [] }
-        let selectedPath = normalizedPath(for: selectedFileURL)
-        return workspaceSymbols()
-            .filter { normalizedPath(for: $0.fileURL) == selectedPath }
+        return workspaceSymbols(for: selectedFileURL)
             .sorted { lhs, rhs in
                 if lhs.line == rhs.line {
                     return lhs.column < rhs.column
@@ -30,9 +28,17 @@ extension ProjectViewModel {
         jumpToLineInSelectedTab(symbol.line)
     }
 
-    func invalidateWorkspaceSymbolCache() {
+    func invalidateWorkspaceSymbolCache(for fileURL: URL? = nil) {
         cachedWorkspaceSymbols = nil
-        cachedWorkspaceSymbolRootPath = nil
+
+        guard let fileURL else {
+            cachedWorkspaceSymbolRootPath = nil
+            cachedWorkspaceSymbolsByPath = [:]
+            workspaceSymbolIndexTask?.cancel()
+            return
+        }
+
+        cachedWorkspaceSymbolsByPath.removeValue(forKey: normalizedPath(for: fileURL))
     }
 
     func workspaceSymbols() -> [WorkspaceSymbolMatch] {
@@ -43,28 +49,131 @@ extension ProjectViewModel {
             return cachedWorkspaceSymbols
         }
 
+        cachedWorkspaceSymbolRootPath = normalizedRootPath
+        let workspaceFiles = availableWorkspaceFileURLs
         var symbols: [WorkspaceSymbolMatch] = []
-        symbols.reserveCapacity(flatFileList.count * 2)
+        symbols.reserveCapacity(workspaceFiles.count * 2)
 
-        for (index, item) in flatFileList.enumerated() where !item.isDirectory {
-            let fileURL = item.path
-            guard WorkspaceSymbolIndexer.shouldIndex(fileURL: fileURL),
-                  let contents = workspaceSymbolContents(for: fileURL) else {
-                continue
-            }
+        let workspacePaths = Set(workspaceFiles.map(normalizedPath(for:)))
+        cachedWorkspaceSymbolsByPath = cachedWorkspaceSymbolsByPath.filter { workspacePaths.contains($0.key) }
 
-            symbols.append(
-                contentsOf: WorkspaceSymbolIndexer.extractSymbols(
-                    from: contents,
-                    fileURL: fileURL,
-                    displayPath: relativeDisplayPath(for: fileURL),
-                    originalIndex: index
-                )
-            )
+        for (index, fileURL) in workspaceFiles.enumerated() {
+            symbols.append(contentsOf: workspaceSymbols(for: fileURL, originalIndex: index))
         }
 
         cachedWorkspaceSymbols = symbols
-        cachedWorkspaceSymbolRootPath = normalizedRootPath
+        return symbols
+    }
+
+    func scheduleWorkspaceSymbolIndexRefresh() {
+        workspaceSymbolIndexTask?.cancel()
+        workspaceSymbolIndexToken = UUID()
+        let token = workspaceSymbolIndexToken
+
+        guard let rootDirectory else { return }
+        let normalizedRootPath = normalizedPath(for: rootDirectory)
+        let workspaceFiles = availableWorkspaceFileURLs.enumerated().map { index, fileURL in
+            WorkspaceSymbolIndexEntry(
+                fileURL: fileURL,
+                normalizedPath: normalizedPath(for: fileURL),
+                displayPath: relativeDisplayPath(for: fileURL),
+                originalIndex: index
+            )
+        }
+        let openTabContents = Dictionary(uniqueKeysWithValues: openTabs.compactMap { tab -> (String, String)? in
+            guard let filePath = tab.filePath, tab.contentType.isText else { return nil }
+            return (normalizedPath(for: filePath), tab.content)
+        })
+
+        workspaceSymbolIndexTask = Task { [weak self] in
+            let indexedSymbols = await Task.detached(priority: .utility) {
+                workspaceFiles.reduce(into: [String: [WorkspaceSymbolMatch]]()) { partialResult, entry in
+                    guard WorkspaceSymbolIndexer.shouldIndex(fileURL: entry.fileURL) else { return }
+                    let contents = openTabContents[entry.normalizedPath] ?? (try? String(contentsOf: entry.fileURL, encoding: .utf8))
+                    guard let contents else { return }
+                    partialResult[entry.normalizedPath] = WorkspaceSymbolIndexer.extractSymbols(
+                        from: contents,
+                        fileURL: entry.fileURL,
+                        displayPath: entry.displayPath,
+                        originalIndex: entry.originalIndex
+                    )
+                }
+            }.value
+
+            guard let self,
+                  !Task.isCancelled,
+                  self.workspaceSymbolIndexToken == token,
+                  self.cachedWorkspaceSymbolRootPath == normalizedRootPath else {
+                return
+            }
+
+            self.cachedWorkspaceSymbolsByPath.merge(indexedSymbols) { _, new in new }
+            self.cachedWorkspaceSymbols = workspaceFiles.flatMap { entry in
+                self.workspaceSymbols(for: entry.fileURL, originalIndex: entry.originalIndex)
+            }
+        }
+    }
+
+    func updateWorkspaceSymbolCache(for fileURL: URL, contents: String) {
+        let normalizedFilePath = normalizedPath(for: fileURL)
+        guard availableWorkspaceFileURLs.contains(where: { normalizedPath(for: $0) == normalizedFilePath }) else {
+            invalidateWorkspaceSymbolCache(for: fileURL)
+            return
+        }
+
+        guard let originalIndex = availableWorkspaceFileURLs.firstIndex(where: { normalizedPath(for: $0) == normalizedFilePath }) else {
+            invalidateWorkspaceSymbolCache(for: fileURL)
+            return
+        }
+
+        guard WorkspaceSymbolIndexer.shouldIndex(fileURL: fileURL) else {
+            cachedWorkspaceSymbolsByPath.removeValue(forKey: normalizedFilePath)
+            cachedWorkspaceSymbols = nil
+            return
+        }
+
+        cachedWorkspaceSymbolsByPath[normalizedFilePath] = WorkspaceSymbolIndexer.extractSymbols(
+            from: contents,
+            fileURL: fileURL,
+            displayPath: relativeDisplayPath(for: fileURL),
+            originalIndex: originalIndex
+        )
+        cachedWorkspaceSymbols = nil
+    }
+
+    private func workspaceSymbols(for fileURL: URL, originalIndex: Int? = nil) -> [WorkspaceSymbolMatch] {
+        let normalizedFilePath = normalizedPath(for: fileURL)
+        let resolvedOriginalIndex = originalIndex
+            ?? availableWorkspaceFileURLs.firstIndex(where: { normalizedPath(for: $0) == normalizedFilePath })
+            ?? 0
+
+        if let cached = cachedWorkspaceSymbolsByPath[normalizedFilePath] {
+            return cached.map {
+                WorkspaceSymbolMatch(
+                    name: $0.name,
+                    kind: $0.kind,
+                    fileURL: $0.fileURL,
+                    displayPath: $0.displayPath,
+                    line: $0.line,
+                    column: $0.column,
+                    lineText: $0.lineText,
+                    originalIndex: resolvedOriginalIndex
+                )
+            }
+        }
+
+        guard WorkspaceSymbolIndexer.shouldIndex(fileURL: fileURL),
+              let contents = workspaceSymbolContents(for: fileURL) else {
+            return []
+        }
+
+        let symbols = WorkspaceSymbolIndexer.extractSymbols(
+            from: contents,
+            fileURL: fileURL,
+            displayPath: relativeDisplayPath(for: fileURL),
+            originalIndex: resolvedOriginalIndex
+        )
+        cachedWorkspaceSymbolsByPath[normalizedFilePath] = symbols
         return symbols
     }
 
@@ -78,4 +187,11 @@ extension ProjectViewModel {
 
         return try? fileService.readFile(at: fileURL)
     }
+}
+
+private struct WorkspaceSymbolIndexEntry: Sendable {
+    let fileURL: URL
+    let normalizedPath: String
+    let displayPath: String
+    let originalIndex: Int
 }

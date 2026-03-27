@@ -31,6 +31,7 @@ struct LSPServerConfig: Sendable {
 }
 
 enum LSPServerRegistry {
+    typealias DiscoveryResolver = @Sendable (String) -> String?
 
     static let configs: [LSPServerConfig] = [
         // Swift — ships with Xcode
@@ -161,6 +162,14 @@ enum LSPServerRegistry {
     ]
 
     private static var resolvedPaths: [String: String?] = [:]
+    private static var xcrunPaths: [String: String?] = [:]
+    private static var pathLookupPaths: [String: String?] = [:]
+    private static var xcrunResolver: DiscoveryResolver = { tool in
+        defaultXcrunFind(tool)
+    }
+    private static var pathResolver: DiscoveryResolver = { name in
+        defaultWhichFind(name)
+    }
     private static let lock = NSLock()
 
     static func configFor(language: String) -> LSPServerConfig? {
@@ -178,11 +187,12 @@ enum LSPServerRegistry {
         let path: String?
         switch config.discoveryMethod {
         case .xcrun(let tool):
-            path = xcrunFind(tool)
+            path = cachedDiscoveryPath(for: tool, cache: &xcrunPaths, resolver: xcrunResolver)
         case .pathLookup(let name):
-            path = whichFind(name)
+            path = cachedDiscoveryPath(for: name, cache: &pathLookupPaths, resolver: pathResolver)
         case .xcrunOrPath(let tool, let fallbackName):
-            path = xcrunFind(tool) ?? whichFind(fallbackName)
+            path = cachedDiscoveryPath(for: tool, cache: &xcrunPaths, resolver: xcrunResolver)
+                ?? cachedDiscoveryPath(for: fallbackName, cache: &pathLookupPaths, resolver: pathResolver)
         }
 
         lock.lock()
@@ -195,12 +205,72 @@ enum LSPServerRegistry {
     static func clearCache() {
         lock.lock()
         resolvedPaths.removeAll()
+        xcrunPaths.removeAll()
+        pathLookupPaths.removeAll()
+        lock.unlock()
+    }
+
+    static func prewarmServerPaths(for languages: some Sequence<String>) {
+        let uniqueConfigs = Dictionary(
+            grouping: languages.compactMap { configFor(language: $0) },
+            by: \.serverKey
+        ).compactMap { $0.value.first }
+
+        for config in uniqueConfigs {
+            _ = resolveServerPath(for: config)
+        }
+    }
+
+    static func setDiscoveryResolversForTesting(
+        xcrunResolver: @escaping DiscoveryResolver,
+        pathResolver: @escaping DiscoveryResolver
+    ) {
+        lock.lock()
+        self.xcrunResolver = xcrunResolver
+        self.pathResolver = pathResolver
+        resolvedPaths.removeAll()
+        xcrunPaths.removeAll()
+        pathLookupPaths.removeAll()
+        lock.unlock()
+    }
+
+    static func resetDiscoveryResolvers() {
+        lock.lock()
+        xcrunResolver = { tool in defaultXcrunFind(tool) }
+        pathResolver = { name in defaultWhichFind(name) }
+        resolvedPaths.removeAll()
+        xcrunPaths.removeAll()
+        pathLookupPaths.removeAll()
         lock.unlock()
     }
 
     // MARK: - Discovery
 
+    private static func cachedDiscoveryPath(
+        for key: String,
+        cache: inout [String: String?],
+        resolver: DiscoveryResolver
+    ) -> String? {
+        lock.lock()
+        if let cached = cache[key] {
+            lock.unlock()
+            return cached
+        }
+        lock.unlock()
+
+        let resolved = resolver(key)
+
+        lock.lock()
+        cache[key] = resolved
+        lock.unlock()
+        return resolved
+    }
+
     private static func xcrunFind(_ tool: String) -> String? {
+        defaultXcrunFind(tool)
+    }
+
+    private static func defaultXcrunFind(_ tool: String) -> String? {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
         process.arguments = ["--find", tool]
@@ -222,6 +292,10 @@ enum LSPServerRegistry {
     }
 
     private static func whichFind(_ name: String) -> String? {
+        defaultWhichFind(name)
+    }
+
+    private static func defaultWhichFind(_ name: String) -> String? {
         // Check common paths directly first (faster than which)
         let commonPaths = [
             "/usr/local/bin/\(name)",

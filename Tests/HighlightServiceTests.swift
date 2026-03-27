@@ -316,6 +316,30 @@ struct HighlightServiceTests {
     }
 
     @Test
+    func highlightServiceDefersHighlightrCreationUntilNeeded() {
+        var creationCount = 0
+        let service = HighlightService(
+            highlightrFactory: {
+                creationCount += 1
+                return Highlightr()
+            }
+        )
+
+        #expect(creationCount == 0)
+
+        service.setHighlightrTheme(to: "dracula")
+        #expect(creationCount == 0)
+
+        _ = service.highlightedAttributedString(
+            "let alpha = 1",
+            language: "swift",
+            themeColors: ThemeColors()
+        )
+
+        #expect(creationCount >= 1)
+    }
+
+    @Test
     func highlightServiceRebuildsWhenCachedHighlighterReturnsFlatText() throws {
         let highlightr = try #require(FlakyHighlightr())
         let service = HighlightService(highlightrFactory: { highlightr })

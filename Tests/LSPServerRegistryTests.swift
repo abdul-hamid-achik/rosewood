@@ -221,6 +221,44 @@ struct LSPServerRegistryTests {
     }
 
     @Test
+    func resolveServerPathCachesDiscoveryPerServerKey() {
+        var xcrunCalls = 0
+        LSPServerRegistry.setDiscoveryResolversForTesting(
+            xcrunResolver: { tool in
+                xcrunCalls += 1
+                return "/tmp/\(tool)"
+            },
+            pathResolver: { _ in nil }
+        )
+        defer { LSPServerRegistry.resetDiscoveryResolvers() }
+
+        let config = try! #require(LSPServerRegistry.configFor(language: "swift"))
+        #expect(LSPServerRegistry.resolveServerPath(for: config) == "/tmp/sourcekit-lsp")
+        #expect(LSPServerRegistry.resolveServerPath(for: config) == "/tmp/sourcekit-lsp")
+        #expect(xcrunCalls == 1)
+    }
+
+    @Test
+    func sharedServerConfigsReuseResolvedPath() {
+        var pathCalls = 0
+        LSPServerRegistry.setDiscoveryResolversForTesting(
+            xcrunResolver: { _ in nil },
+            pathResolver: { name in
+                pathCalls += 1
+                return "/tmp/\(name)"
+            }
+        )
+        defer { LSPServerRegistry.resetDiscoveryResolvers() }
+
+        let typeScript = try! #require(LSPServerRegistry.configFor(language: "typescript"))
+        let javaScript = try! #require(LSPServerRegistry.configFor(language: "javascript"))
+
+        #expect(LSPServerRegistry.resolveServerPath(for: typeScript) == "/tmp/typescript-language-server")
+        #expect(LSPServerRegistry.resolveServerPath(for: javaScript) == "/tmp/typescript-language-server")
+        #expect(pathCalls == 1)
+    }
+
+    @Test
     func pathDiscoveryCachesResult() {
         LSPServerRegistry.clearCache()
         let config = LSPServerRegistry.configFor(language: "swift")!

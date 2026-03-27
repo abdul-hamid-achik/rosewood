@@ -121,6 +121,25 @@ struct FileServiceTests {
     }
 
     @Test
+    func loadDirectoryUsesNaturalOrderingForNumberedNames() throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let fileTwo = rootURL.appendingPathComponent("file2.swift")
+        let fileTen = rootURL.appendingPathComponent("file10.swift")
+        let fileTwenty = rootURL.appendingPathComponent("file20.swift")
+
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        try "let two = 2".write(to: fileTwo, atomically: true, encoding: .utf8)
+        try "let ten = 10".write(to: fileTen, atomically: true, encoding: .utf8)
+        try "let twenty = 20".write(to: fileTwenty, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let tree = FileService.shared.loadDirectory(at: rootURL)
+
+        #expect(tree.map(\.name) == ["file2.swift", "file10.swift", "file20.swift"])
+    }
+
+    @Test
     func searchProjectFindsMatchesAcrossNestedFiles() throws {
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

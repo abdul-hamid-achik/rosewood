@@ -141,7 +141,8 @@ struct ContentView: View {
                 VStack(spacing: 0) {
                     FileTreeView(items: projectViewModel.fileTree)
 
-                    if projectViewModel.selectedTab?.filePath != nil {
+                    if projectViewModel.selectedTab?.filePath != nil,
+                       projectViewModel.isEditorNavigationChromeReady {
                         ThemedDivider()
 
                         OutlineSidebarView()
@@ -303,7 +304,8 @@ struct ContentView: View {
 
     @ViewBuilder
     private var editorChromeView: some View {
-        if !projectViewModel.editorBreadcrumbs.isEmpty {
+        if projectViewModel.isEditorNavigationChromeReady,
+           !projectViewModel.editorBreadcrumbs.isEmpty {
             EditorBreadcrumbBar(segments: projectViewModel.editorBreadcrumbs) { line in
                 if let line {
                     projectViewModel.jumpToLineInSelectedTab(line)

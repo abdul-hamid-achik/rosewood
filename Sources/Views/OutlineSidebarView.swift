@@ -8,19 +8,31 @@ struct OutlineSidebarView: View {
         configService.currentThemeColors
     }
 
+    private var currentSymbols: [WorkspaceSymbolMatch] {
+        projectViewModel.isOutlineSidebarDataReady ? projectViewModel.currentFileSymbols : []
+    }
+
+    private var activeSymbolID: String? {
+        projectViewModel.isOutlineSidebarDataReady ? projectViewModel.activeCurrentFileSymbolID : nil
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             headerView
 
-            if projectViewModel.currentFileSymbols.isEmpty {
-                emptyStateView
+            if !projectViewModel.isEditorNavigationModelReady {
+                emptyStateView(message: "Preparing outline...")
+            } else if !projectViewModel.isOutlineSidebarDataReady {
+                emptyStateView(message: "Loading outline...")
+            } else if currentSymbols.isEmpty {
+                emptyStateView(message: "No symbols in the current file")
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 2) {
-                        ForEach(projectViewModel.currentFileSymbols) { symbol in
+                        ForEach(currentSymbols) { symbol in
                             OutlineSymbolRow(
                                 symbol: symbol,
-                                isActive: projectViewModel.activeCurrentFileSymbolID == symbol.id
+                                isActive: activeSymbolID == symbol.id
                             ) {
                                 projectViewModel.openWorkspaceSymbol(symbol)
                             }
@@ -33,6 +45,12 @@ struct OutlineSidebarView: View {
         }
         .background(themeColors.panelBackground)
         .accessibilityIdentifier("outline-sidebar")
+        .onAppear {
+            projectViewModel.requestOutlineSidebarData()
+        }
+        .onDisappear {
+            projectViewModel.suspendOutlineSidebarData()
+        }
     }
 
     private var headerView: some View {
@@ -41,7 +59,7 @@ struct OutlineSidebarView: View {
                 .font(RosewoodType.captionStrong)
                 .foregroundColor(themeColors.subduedText)
 
-            Text("\(projectViewModel.currentFileSymbols.count)")
+            Text("\(currentSymbols.count)")
                 .font(RosewoodType.monoMicro)
                 .foregroundColor(themeColors.mutedText)
 
@@ -51,13 +69,13 @@ struct OutlineSidebarView: View {
         .padding(.vertical, 8)
     }
 
-    private var emptyStateView: some View {
+    private func emptyStateView(message: String) -> some View {
         VStack(spacing: 8) {
             Spacer()
             Image(systemName: "list.bullet.rectangle")
                 .font(.system(size: 18))
                 .foregroundColor(themeColors.mutedText)
-            Text("No symbols in the current file")
+            Text(message)
                 .font(RosewoodType.caption)
                 .foregroundColor(themeColors.mutedText)
             Spacer()

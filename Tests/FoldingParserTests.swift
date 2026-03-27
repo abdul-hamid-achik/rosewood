@@ -81,4 +81,23 @@ struct FoldingParserTests {
         #expect(snapshot.actualLine(forDisplayLine: 2) == 6)
         #expect(snapshot.displayLine(forActualLine: 6) == 2)
     }
+
+    @Test
+    func unfoldedSnapshotPreservesAllVisibleLinesWithoutParsingRegions() {
+        let text = """
+        struct Example {
+            func greet() {
+                print(\"hi\")
+            }
+        }
+        let done = true
+        """
+
+        let snapshot = FoldedTextSnapshot.unfolded(text)
+
+        #expect(snapshot.displayText == text)
+        #expect(snapshot.foldableLines.isEmpty)
+        #expect(snapshot.foldedLines.isEmpty)
+        #expect(snapshot.visibleLineNumbers == [1, 2, 3, 4, 5, 6])
+    }
 }

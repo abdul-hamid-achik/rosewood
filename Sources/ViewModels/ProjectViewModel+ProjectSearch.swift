@@ -342,7 +342,6 @@ extension ProjectViewModel {
     func syncOpenTabs(with fileURLs: [URL]) {
         let normalizedPaths = Set(fileURLs.map(normalizedPath(for:)))
         guard !normalizedPaths.isEmpty else { return }
-        invalidateWorkspaceSymbolCache()
 
         for index in openTabs.indices {
             guard let filePath = openTabs[index].filePath,
@@ -354,7 +353,10 @@ extension ProjectViewModel {
             openTabs[index].content = content
             openTabs[index].originalContent = content
             openTabs[index].isDirty = false
+            updateWorkspaceSymbolCache(for: filePath, contents: content)
         }
+
+        cachedWorkspaceSymbols = nil
     }
 
     func handleProjectSearchQueryChange(from oldValue: String) {

@@ -80,6 +80,9 @@ struct EditorView: View {
             breakpointLines: projectViewModel.currentTabBreakpointLines,
             executionLine: projectViewModel.currentExecutionLine,
             fileURL: projectViewModel.selectedTab?.filePath ?? tab.filePath,
+            documentIdentity: projectViewModel.selectedTab?.documentURI
+                ?? tab.documentURI
+                ?? (projectViewModel.selectedTab?.filePath ?? tab.filePath)?.path,
             projectRootDirectory: projectViewModel.rootDirectory,
             prefersProjectSearchNavigation: projectViewModel.canNavigateProjectSearchResults,
             isLanguageServerAvailable: lspService.serverAvailable(for: tab.language),
@@ -147,6 +150,7 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
     let breakpointLines: Set<Int>
     let executionLine: Int?
     let fileURL: URL?
+    let documentIdentity: String?
     let projectRootDirectory: URL?
     let prefersProjectSearchNavigation: Bool
     let isLanguageServerAvailable: Bool
@@ -291,11 +295,16 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
             if parent.pendingLineJump != nil {
                 foldedStartLines.removeAll()
             }
-            let foldSnapshot = FoldedTextSnapshot.make(
-                from: text,
-                language: language,
-                foldedStartLines: foldedStartLines
-            )
+            let shouldDeferInitialFolding = !containerView.isReadyForDisplay
+                && foldedStartLines.isEmpty
+                && requestedLineJump == nil
+            let foldSnapshot = shouldDeferInitialFolding
+                ? FoldedTextSnapshot.unfolded(text)
+                : FoldedTextSnapshot.make(
+                    from: text,
+                    language: language,
+                    foldedStartLines: foldedStartLines
+                )
             foldedStartLines = foldSnapshot.foldedLines
             currentFoldSnapshot = foldSnapshot
             containerView.applyFolding(foldSnapshot) { [weak self] line in
@@ -312,7 +321,12 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
             let selectedRange = textView.selectedRange()
             isApplyingExternalUpdate = true
             if shouldApplyText {
-                containerView.applyText(foldSnapshot.displayText, language: language, themeColors: parent.themeColors)
+                containerView.applyText(
+                    foldSnapshot.displayText,
+                    language: language,
+                    themeColors: parent.themeColors,
+                    documentIdentity: parent.documentIdentity
+                )
                 lineTableNeedsUpdate = true
                 renderState.recordRender(
                     text: foldSnapshot.displayText,
@@ -356,7 +370,12 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
                 scheduleDeferredHighlight(for: updatedText, language: parent.language)
             } else {
                 isApplyingExternalUpdate = true
-                containerView?.applyText(updatedText, language: parent.language, themeColors: parent.themeColors)
+                containerView?.applyText(
+                    updatedText,
+                    language: parent.language,
+                    themeColors: parent.themeColors,
+                    documentIdentity: parent.documentIdentity
+                )
                 let clampedLocation = min(selectedRange.location, (textView.string as NSString).length)
                 textView.setSelectedRange(NSRange(location: clampedLocation, length: 0))
                 isApplyingExternalUpdate = false
@@ -419,7 +438,12 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
 
                 let selectedRange = containerView.textView.selectedRange()
                 isApplyingExternalUpdate = true
-                containerView.applyText(foldSnapshot.displayText, language: language, themeColors: parent.themeColors)
+                containerView.applyText(
+                    foldSnapshot.displayText,
+                    language: language,
+                    themeColors: parent.themeColors,
+                    documentIdentity: parent.documentIdentity
+                )
                 let clampedLocation = min(selectedRange.location, (containerView.textView.string as NSString).length)
                 containerView.textView.setSelectedRange(NSRange(location: clampedLocation, length: 0))
                 isApplyingExternalUpdate = false
@@ -1168,6 +1192,18 @@ struct MinimapSnapshot {
     }
 }
 
+private struct MinimapCacheKey: Equatable {
+    let displayVersion: Int
+    let visibleOriginY: CGFloat
+    let visibleHeight: CGFloat
+    let documentHeight: CGFloat
+}
+
+private enum HighlightRequestScope {
+    case full
+    case preview(NSRange)
+}
+
 final class EditorContainerView: NSView {
     let scrollView: NSScrollView
     let textView: EditorTextView
@@ -1182,7 +1218,15 @@ final class EditorContainerView: NSView {
     var wordWrap: Bool
     var tabSize: Int
     private var currentDisplayText = ""
+    private var currentDisplayVersion = 0
     private let minimapWidthConstraint: NSLayoutConstraint
+    private var lastMinimapCacheKey: MinimapCacheKey?
+    private var lastMinimapSnapshot: MinimapSnapshot = .empty
+    private let initialHighlightIdleDelayNanoseconds: UInt64 = 1_100_000_000
+    private let fullHighlightIdleDelayNanoseconds: UInt64 = 1_250_000_000
+    private let previewHighlightCharacterLimit = 12_000
+    private let previewHighlightContextCharacters = 4_000
+    private var currentDocumentIdentity: String?
 
     init(themeColors: ThemeColors, font: NSFont, showMinimap: Bool, showLineNumbers: Bool, wordWrap: Bool, tabSize: Int = 4) {
         self.editorFont = font
@@ -1296,6 +1340,8 @@ final class EditorContainerView: NSView {
     }
 
     deinit {
+        highlightTask?.cancel()
+        fullHighlightTask?.cancel()
         NotificationCenter.default.removeObserver(self)
     }
 
@@ -1346,12 +1392,24 @@ final class EditorContainerView: NSView {
     }
 
     private var highlightTask: Task<Void, Never>?
+    private var fullHighlightTask: Task<Void, Never>?
+    private var highlightRequestID = 0
+    private var hasCompletedInitialHighlight = false
+    private var hasCompletedFullDocumentHighlight = false
     private var lastAppliedText: String = ""
     private var lastAppliedLanguage: String = ""
     private var lastAppliedThemeColors: ThemeColors = .nord
     private var lastAppliedFontSignature: String = ""
 
-    func applyText(_ text: String, language: String, themeColors: ThemeColors) {
+    func applyText(_ text: String, language: String, themeColors: ThemeColors, documentIdentity: String?) {
+        if currentDocumentIdentity != documentIdentity {
+            currentDocumentIdentity = documentIdentity
+            hasCompletedInitialHighlight = false
+            hasCompletedFullDocumentHighlight = false
+            highlightTask?.cancel()
+            fullHighlightTask?.cancel()
+        }
+
         let fontSignature = "\(editorFont.fontName):\(editorFont.pointSize)"
         let shouldReplaceText = text != lastAppliedText
         let shouldRehighlight = shouldReplaceText
@@ -1368,6 +1426,9 @@ final class EditorContainerView: NSView {
         lastAppliedThemeColors = themeColors
         lastAppliedFontSignature = fontSignature
         currentDisplayText = text
+        if shouldReplaceText {
+            currentDisplayVersion += 1
+        }
 
         guard let textStorage = textView.textStorage else { return }
         textStorage.beginEditing()
@@ -1379,58 +1440,139 @@ final class EditorContainerView: NSView {
 
         textStorage.endEditing()
         textView.setAccessibilityValue(text)
-
-        let shouldDefer = text.count > 10000
-        if shouldDefer {
-            scheduleHighlighting(text: text, language: language, themeColors: themeColors)
-        } else {
-            applyHighlighting(text: text, language: language, themeColors: themeColors)
-        }
+        applyBaseTextAttributes(themeColors: themeColors)
 
         if shouldReplaceText {
             updateTextViewFrame()
         }
+
+        let highlightScope = highlightScope(for: text)
+
+        let highlightDebounceNanoseconds = max(
+            text.count > 10_000 ? 180_000_000 : 0,
+            !hasCompletedInitialHighlight ? initialHighlightIdleDelayNanoseconds : 0
+        )
+
+        requestHighlighting(
+            text: text,
+            language: language,
+            themeColors: themeColors,
+            debounceNanoseconds: UInt64(highlightDebounceNanoseconds),
+            scope: highlightScope
+        )
+
         updateMinimap()
     }
     
-    private func scheduleHighlighting(text: String, language: String, themeColors: ThemeColors) {
+    private func applyBaseTextAttributes(themeColors: ThemeColors) {
+        guard let textStorage = textView.textStorage else { return }
+        let fullRange = NSRange(location: 0, length: textStorage.length)
+
+        textStorage.beginEditing()
+        if fullRange.length > 0 {
+            textStorage.setAttributes([
+                .font: editorFont,
+                .foregroundColor: themeColors.nsForeground
+            ], range: fullRange)
+        }
+        textStorage.endEditing()
+
+        guard let layoutManager = textView.layoutManager, fullRange.length > 0 else { return }
+        layoutManager.removeTemporaryAttribute(.foregroundColor, forCharacterRange: fullRange)
+        layoutManager.removeTemporaryAttribute(.font, forCharacterRange: fullRange)
+    }
+
+    private func requestHighlighting(
+        text: String,
+        language: String,
+        themeColors: ThemeColors,
+        debounceNanoseconds: UInt64,
+        scope: HighlightRequestScope
+    ) {
         highlightTask?.cancel()
-        highlightTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 180_000_000)  // 180ms debounce
-            guard let self = self, !Task.isCancelled else { return }
-            await MainActor.run {
-                self.applyHighlighting(text: text, language: language, themeColors: themeColors)
+        fullHighlightTask?.cancel()
+        highlightRequestID += 1
+        let requestID = highlightRequestID
+        let fontName = editorFont.fontName
+        let fontSize = editorFont.pointSize
+
+        highlightTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+
+            if debounceNanoseconds > 0 {
+                do {
+                    try await Task.sleep(nanoseconds: debounceNanoseconds)
+                } catch {
+                    return
+                }
+            }
+
+            guard !Task.isCancelled,
+                  requestID == self.highlightRequestID,
+                  text == self.currentDisplayText else { return }
+
+            let highlightedText: String
+            let offset: Int
+            let isFullDocumentHighlight: Bool
+            switch scope {
+            case .full:
+                highlightedText = text
+                offset = 0
+                isFullDocumentHighlight = true
+            case .preview(let range):
+                let nsText = text as NSString
+                let clampedLocation = min(max(range.location, 0), nsText.length)
+                let clampedLength = min(max(range.length, 0), nsText.length - clampedLocation)
+                highlightedText = nsText.substring(with: NSRange(location: clampedLocation, length: clampedLength))
+                offset = clampedLocation
+                isFullDocumentHighlight = false
+            }
+
+            let highlighted = await HighlightService.shared.highlightedAttributedStringAsync(
+                highlightedText,
+                language: language,
+                themeColors: themeColors,
+                fontName: fontName,
+                fontSize: fontSize
+            )
+
+            guard !Task.isCancelled,
+                  requestID == self.highlightRequestID else { return }
+            self.applyHighlighting(
+                highlighted,
+                text: text,
+                offset: offset,
+                clearsExisting: isFullDocumentHighlight,
+                isFullDocumentHighlight: isFullDocumentHighlight
+            )
+
+            if !isFullDocumentHighlight {
+                self.scheduleFullDocumentHighlight(text: text, language: language, themeColors: themeColors)
             }
         }
     }
-    
-    private func applyHighlighting(text: String, language: String, themeColors: ThemeColors) {
-        // Skip if text has changed since we started
-        if text != currentDisplayText {
+
+    private func applyHighlighting(
+        _ highlighted: NSAttributedString,
+        text: String,
+        offset: Int,
+        clearsExisting: Bool,
+        isFullDocumentHighlight: Bool
+    ) {
+        guard text == currentDisplayText else {
             return
         }
-        
-        let highlighted = HighlightService.shared.highlightedAttributedString(
-            text,
-            language: language,
-            themeColors: themeColors,
-            font: editorFont
-        )
-        
+
         guard let textStorage = textView.textStorage else { return }
         let fullRange = NSRange(location: 0, length: textStorage.length)
-        
-        textStorage.beginEditing()
-        textStorage.setAttributes([
-            .font: editorFont,
-            .foregroundColor: themeColors.nsForeground
-        ], range: fullRange)
-        textStorage.endEditing()
-        
+
         if let layoutManager = textView.layoutManager {
-            if fullRange.length > 0 {
+            if clearsExisting, fullRange.length > 0 {
                 layoutManager.removeTemporaryAttribute(.foregroundColor, forCharacterRange: fullRange)
                 layoutManager.removeTemporaryAttribute(.font, forCharacterRange: fullRange)
+            }
+
+            if fullRange.length > 0 {
                 highlighted.enumerateAttributes(in: NSRange(location: 0, length: highlighted.length)) { attributes, range, _ in
                     var temporaryAttributes: [NSAttributedString.Key: Any] = [:]
                     if let foregroundColor = attributes[.foregroundColor] {
@@ -1440,17 +1582,91 @@ final class EditorContainerView: NSView {
                         temporaryAttributes[.font] = font
                     }
                     guard !temporaryAttributes.isEmpty else { return }
-                    layoutManager.addTemporaryAttributes(temporaryAttributes, forCharacterRange: range)
+                    let adjustedRange = NSRange(location: range.location + offset, length: range.length)
+                    guard adjustedRange.location >= 0,
+                          NSMaxRange(adjustedRange) <= fullRange.length else {
+                        return
+                    }
+                    layoutManager.addTemporaryAttributes(temporaryAttributes, forCharacterRange: adjustedRange)
                 }
             }
         }
-        
+
         textView.needsDisplay = true
         lineNumberView.needsDisplay = true
+        hasCompletedInitialHighlight = true
+        if isFullDocumentHighlight {
+            hasCompletedFullDocumentHighlight = true
+        }
+    }
+
+    private func highlightScope(for text: String) -> HighlightRequestScope {
+        let nsText = text as NSString
+        guard nsText.length > previewHighlightCharacterLimit,
+              !hasCompletedFullDocumentHighlight else {
+            return .full
+        }
+
+        return .preview(previewHighlightRange(for: nsText))
+    }
+
+    private func previewHighlightRange(for text: NSString) -> NSRange {
+        guard isReadyForDisplay,
+              let layoutManager = textView.layoutManager,
+              let textContainer = textView.textContainer else {
+            return NSRange(location: 0, length: min(text.length, previewHighlightCharacterLimit))
+        }
+
+        layoutManager.ensureLayout(for: textContainer)
+        let expandedVisibleRect = scrollView.contentView.bounds.insetBy(dx: 0, dy: -160)
+        let visibleGlyphRange = layoutManager.glyphRange(forBoundingRect: expandedVisibleRect, in: textContainer)
+        let visibleCharacterRange = layoutManager.characterRange(forGlyphRange: visibleGlyphRange, actualGlyphRange: nil)
+
+        guard visibleCharacterRange.length > 0 else {
+            return NSRange(location: 0, length: min(text.length, previewHighlightCharacterLimit))
+        }
+
+        let location = max(0, visibleCharacterRange.location - previewHighlightContextCharacters)
+        let end = min(text.length, NSMaxRange(visibleCharacterRange) + previewHighlightContextCharacters)
+        return NSRange(location: location, length: max(end - location, 0))
+    }
+
+    private func scheduleFullDocumentHighlight(text: String, language: String, themeColors: ThemeColors) {
+        guard !hasCompletedFullDocumentHighlight else { return }
+
+        let expectedDocumentIdentity = currentDocumentIdentity
+        let expectedDisplayVersion = currentDisplayVersion
+        fullHighlightTask?.cancel()
+        fullHighlightTask = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(nanoseconds: self?.fullHighlightIdleDelayNanoseconds ?? 0)
+            } catch {
+                return
+            }
+
+            guard let self,
+                  !Task.isCancelled,
+                  self.currentDocumentIdentity == expectedDocumentIdentity,
+                  self.currentDisplayVersion == expectedDisplayVersion,
+                  self.currentDisplayText == text,
+                  !self.hasCompletedFullDocumentHighlight else {
+                return
+            }
+
+            self.fullHighlightTask = nil
+            self.requestHighlighting(
+                text: text,
+                language: language,
+                themeColors: themeColors,
+                debounceNanoseconds: 0,
+                scope: .full
+            )
+        }
     }
 
     func refreshAfterEditing(text: String, themeColors: ThemeColors) {
         currentDisplayText = text
+        currentDisplayVersion += 1
         textView.setAccessibilityValue(text)
         textView.typingAttributes = [
             .font: editorFont,
@@ -1513,21 +1729,31 @@ final class EditorContainerView: NSView {
     }
 
     private func calculateAndApplyMinimap() {
-        guard showMinimap else {
-            let snapshot = MinimapSnapshot.make(
+        let visibleRect = scrollView.contentView.bounds
+        let cacheKey = MinimapCacheKey(
+            displayVersion: currentDisplayVersion,
+            visibleOriginY: visibleRect.minY.rounded(.towardZero),
+            visibleHeight: visibleRect.height.rounded(.towardZero),
+            documentHeight: textView.bounds.height.rounded(.towardZero)
+        )
+        let snapshot: MinimapSnapshot
+        if lastMinimapCacheKey == cacheKey {
+            snapshot = lastMinimapSnapshot
+        } else {
+            snapshot = MinimapSnapshot.make(
                 text: currentDisplayText,
-                visibleRect: scrollView.contentView.bounds,
+                visibleRect: visibleRect,
                 documentHeight: textView.bounds.height
             )
+            lastMinimapCacheKey = cacheKey
+            lastMinimapSnapshot = snapshot
+        }
+
+        guard showMinimap else {
             onViewportChange?(snapshot.visibleStartLine, snapshot.visibleEndLine)
             return
         }
 
-        let snapshot = MinimapSnapshot.make(
-            text: currentDisplayText,
-            visibleRect: scrollView.contentView.bounds,
-            documentHeight: textView.bounds.height
-        )
         minimapView.apply(snapshot: snapshot)
         onViewportChange?(snapshot.visibleStartLine, snapshot.visibleEndLine)
     }
@@ -1928,6 +2154,19 @@ struct FoldedTextSnapshot {
             foldedLines: foldedLines,
             regionsByStartLine: regionsByStartLine,
             sections: sections,
+            sourceLength: sourceLength
+        )
+    }
+
+    static func unfolded(_ text: String) -> FoldedTextSnapshot {
+        let sourceLength = (text as NSString).length
+        return FoldedTextSnapshot(
+            displayText: text,
+            visibleLineNumbers: makeVisibleLineNumbers(from: [], foldedLines: [], text: text),
+            foldableLines: [],
+            foldedLines: [],
+            regionsByStartLine: [:],
+            sections: [],
             sourceLength: sourceLength
         )
     }

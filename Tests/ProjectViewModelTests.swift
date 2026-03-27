@@ -50,6 +50,38 @@ struct ProjectViewModelTests {
     }
 
     @Test
+    func sessionPersistenceDebouncesRapidContentUpdates() async throws {
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("swift")
+        try "let value = 1\n".write(to: fileURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+
+        let configURL = tempConfigURL()
+        defer { try? FileManager.default.removeItem(at: configURL) }
+
+        let defaults = makeDefaults()
+        let viewModel = makeViewModel(
+            sessionStore: defaults,
+            sessionKey: "session-debounce-test",
+            configService: ConfigurationService(userConfigURL: configURL),
+            fileWatcher: FileWatcherService(),
+            ui: TestProjectUI(),
+            sessionPersistenceDebounceNanoseconds: 50_000_000
+        )
+
+        viewModel.openFile(at: fileURL)
+        viewModel.updateTabContent("let value = 2\n")
+
+        let immediateSession = try sessionState(from: defaults, key: "session-debounce-test")
+        #expect(immediateSession.openTabs.first?.content == "let value = 1\n")
+
+        try await waitUntil {
+            ((try? sessionState(from: defaults, key: "session-debounce-test").openTabs.first?.content) ?? nil) == "let value = 2\n"
+        }
+    }
+
+    @Test
     func reloadFileTreePublishesLoadedItems() async throws {
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -80,6 +112,196 @@ struct ProjectViewModelTests {
 
         #expect(viewModel.fileTree.map(\.name) == ["Sources"])
         #expect(viewModel.fileTree.first?.children.map(\.name) == ["main.swift"])
+    }
+
+    @Test
+    func reloadFileTreeKeepsCollapsedDescendantsLazyButQuickOpenStillFindsFiles() async throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let sourcesDirectory = rootURL.appendingPathComponent("Sources", isDirectory: true)
+        let featureDirectory = sourcesDirectory.appendingPathComponent("Feature", isDirectory: true)
+        let fileURL = featureDirectory.appendingPathComponent("Deep.swift")
+
+        try FileManager.default.createDirectory(at: featureDirectory, withIntermediateDirectories: true)
+        try "print(\"hello\")".write(to: fileURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let configURL = tempConfigURL()
+        defer { try? FileManager.default.removeItem(at: configURL) }
+
+        let viewModel = makeViewModel(
+            sessionStore: makeDefaults(),
+            sessionKey: "lazy-tree-test",
+            configService: ConfigurationService(userConfigURL: configURL),
+            fileWatcher: FileWatcherService(),
+            ui: TestProjectUI()
+        )
+
+        viewModel.rootDirectory = rootURL
+        viewModel.reloadFileTree()
+
+        try await waitUntil {
+            !viewModel.fileTree.isEmpty && !viewModel.workspaceFileURLs.isEmpty && !viewModel.isLoadingFileTree
+        }
+
+        let featureItem = viewModel.fileTree.first?.children.first
+        #expect(featureItem?.name == "Feature")
+        #expect(featureItem?.children.isEmpty == true)
+
+        viewModel.quickOpenQuery = "deep"
+        #expect(viewModel.quickOpenItems.compactMap { $0.file?.name } == ["Deep.swift"])
+        #expect(viewModel.quickOpenItems.first?.displayPath == "Sources/Feature/Deep.swift")
+    }
+
+    @Test
+    func workspaceDiagnosticsRefreshAfterEditingOpenTabContent() throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let fileURL = rootURL.appendingPathComponent("Alpha.swift")
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        try "let alpha = 1\n".write(to: fileURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let configURL = tempConfigURL()
+        defer { try? FileManager.default.removeItem(at: configURL) }
+
+        let lspService = MockLSPService()
+        let viewModel = makeViewModel(
+            sessionStore: makeDefaults(),
+            sessionKey: "workspace-diagnostics-cache-test",
+            configService: ConfigurationService(userConfigURL: configURL),
+            fileWatcher: FileWatcherService(),
+            ui: TestProjectUI(),
+            lspService: lspService
+        )
+
+        viewModel.rootDirectory = rootURL
+        viewModel.openFile(at: fileURL)
+
+        lspService.injectDiagnosticsForTesting(
+            uri: fileURL.absoluteString,
+            diagnostics: [
+                LSPDiagnostic(
+                    range: LSPRange(
+                        start: LSPPosition(line: 0, character: 4),
+                        end: LSPPosition(line: 0, character: 9)
+                    ),
+                    severity: .warning,
+                    message: "warning"
+                )
+            ]
+        )
+
+        #expect(viewModel.orderedWorkspaceDiagnostics.first?.lineText == "let alpha = 1")
+
+        viewModel.updateTabContent("let beta = 2\n")
+
+        #expect(viewModel.orderedWorkspaceDiagnostics.first?.lineText == "let beta = 2")
+    }
+
+    @Test
+    func editorNavigationChromeBecomesReadyAfterVisibleRangeSettles() async throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let fileURL = rootURL.appendingPathComponent("Alpha.swift")
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        try "func alpha() {}\n".write(to: fileURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let configURL = tempConfigURL()
+        defer { try? FileManager.default.removeItem(at: configURL) }
+
+        let viewModel = makeViewModel(
+            sessionStore: makeDefaults(),
+            sessionKey: "editor-navigation-chrome-ready-test",
+            configService: ConfigurationService(userConfigURL: configURL),
+            fileWatcher: FileWatcherService(),
+            ui: TestProjectUI(),
+            editorNavigationChromeDebounceNanoseconds: 20_000_000
+        )
+
+        viewModel.rootDirectory = rootURL
+        viewModel.openFile(at: fileURL)
+
+        #expect(viewModel.isEditorNavigationChromeReady == false)
+
+        viewModel.updateEditorVisibleLineRange(startLine: 1, endLine: 8)
+        #expect(viewModel.isEditorNavigationChromeReady == false)
+
+        try await waitUntil {
+            viewModel.isEditorNavigationChromeReady
+        }
+    }
+
+    @Test
+    func outlineSidebarDataLoadsOnlyAfterExplicitRequest() async throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let fileURL = rootURL.appendingPathComponent("Alpha.swift")
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        try "func alpha() {}\n".write(to: fileURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let configURL = tempConfigURL()
+        defer { try? FileManager.default.removeItem(at: configURL) }
+
+        let viewModel = makeViewModel(
+            sessionStore: makeDefaults(),
+            sessionKey: "outline-sidebar-ready-test",
+            configService: ConfigurationService(userConfigURL: configURL),
+            fileWatcher: FileWatcherService(),
+            ui: TestProjectUI(),
+            editorNavigationChromeDebounceNanoseconds: 10_000_000,
+            outlineSidebarDataDebounceNanoseconds: 20_000_000
+        )
+
+        viewModel.rootDirectory = rootURL
+        viewModel.fileTree = [FileItem(name: "Alpha.swift", path: fileURL, isDirectory: false)]
+        viewModel.openFile(at: fileURL)
+        viewModel.updateEditorVisibleLineRange(startLine: 1, endLine: 4)
+
+        try await waitUntil {
+            viewModel.isEditorNavigationChromeReady
+        }
+
+        #expect(viewModel.isOutlineSidebarDataReady == false)
+
+        viewModel.requestOutlineSidebarData()
+
+        try await waitUntil {
+            viewModel.isOutlineSidebarDataReady
+        }
+    }
+
+    @Test
+    func statusBarDetailsBecomeReadyAfterDeferredActivation() async throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let fileURL = rootURL.appendingPathComponent("Alpha.swift")
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        try "let alpha = 1\n".write(to: fileURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let configURL = tempConfigURL()
+        defer { try? FileManager.default.removeItem(at: configURL) }
+
+        let viewModel = makeViewModel(
+            sessionStore: makeDefaults(),
+            sessionKey: "statusbar-ready-test",
+            configService: ConfigurationService(userConfigURL: configURL),
+            fileWatcher: FileWatcherService(),
+            ui: TestProjectUI(),
+            statusBarDetailDebounceNanoseconds: 20_000_000
+        )
+
+        viewModel.rootDirectory = rootURL
+        viewModel.openFile(at: fileURL)
+
+        #expect(viewModel.isStatusBarDetailsReady == false)
+
+        try await waitUntil {
+            viewModel.isStatusBarDetailsReady
+        }
     }
 
     @Test
@@ -1804,6 +2026,46 @@ struct ProjectViewModelTests {
 
         viewModel.openWorkspaceSymbol(activeSymbol)
         #expect(viewModel.selectedTab?.pendingLineJump == 2)
+    }
+
+    @Test
+    func currentFileSymbolsRefreshAfterEditingOpenTabContent() throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let sourcesURL = rootURL.appendingPathComponent("Sources", isDirectory: true)
+        let alphaURL = sourcesURL.appendingPathComponent("Alpha.swift")
+
+        try FileManager.default.createDirectory(at: sourcesURL, withIntermediateDirectories: true)
+        try "func firstThing() {}\n".write(to: alphaURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let configURL = tempConfigURL()
+        defer { try? FileManager.default.removeItem(at: configURL) }
+
+        let viewModel = makeViewModel(
+            sessionStore: makeDefaults(),
+            sessionKey: "outline-symbol-refresh-test",
+            configService: ConfigurationService(userConfigURL: configURL),
+            fileWatcher: FileWatcherService(),
+            ui: TestProjectUI()
+        )
+
+        viewModel.rootDirectory = rootURL
+        viewModel.fileTree = [
+            FileItem(
+                name: "Sources",
+                path: sourcesURL,
+                isDirectory: true,
+                children: [FileItem(name: "Alpha.swift", path: alphaURL, isDirectory: false)]
+            )
+        ]
+        viewModel.openFile(at: alphaURL)
+
+        #expect(viewModel.currentFileSymbols.map(\.name) == ["firstThing"])
+
+        viewModel.updateTabContent("func secondThing() {}\n")
+
+        #expect(viewModel.currentFileSymbols.map(\.name) == ["secondThing"])
     }
 
     @Test
@@ -4857,7 +5119,11 @@ private func makeViewModel(
     lspService: LSPServiceProtocol? = nil,
     debugSessionService: DebugSessionServiceProtocol? = nil,
     gitService: GitServiceProtocol = MockGitService(),
-    projectSearchDebounceNanoseconds: UInt64 = 250_000_000
+    projectSearchDebounceNanoseconds: UInt64 = 250_000_000,
+    sessionPersistenceDebounceNanoseconds: UInt64 = 1_000_000_000,
+    editorNavigationChromeDebounceNanoseconds: UInt64 = 400_000_000,
+    outlineSidebarDataDebounceNanoseconds: UInt64 = 350_000_000,
+    statusBarDetailDebounceNanoseconds: UInt64 = 850_000_000
 ) -> ProjectViewModel {
     ProjectViewModel(
         fileService: fileService,
@@ -4870,7 +5136,11 @@ private func makeViewModel(
         lspService: lspService ?? MockLSPService(),
         debugSessionService: debugSessionService,
         gitService: gitService,
-        projectSearchDebounceNanoseconds: projectSearchDebounceNanoseconds
+        projectSearchDebounceNanoseconds: projectSearchDebounceNanoseconds,
+        sessionPersistenceDebounceNanoseconds: sessionPersistenceDebounceNanoseconds,
+        editorNavigationChromeDebounceNanoseconds: editorNavigationChromeDebounceNanoseconds,
+        outlineSidebarDataDebounceNanoseconds: outlineSidebarDataDebounceNanoseconds,
+        statusBarDetailDebounceNanoseconds: statusBarDetailDebounceNanoseconds
     )
 }
 
@@ -4886,6 +5156,11 @@ private func tempConfigURL() -> URL {
     FileManager.default.temporaryDirectory
         .appendingPathComponent(UUID().uuidString)
         .appendingPathExtension("toml")
+}
+
+private func sessionState(from defaults: UserDefaults, key: String) throws -> ProjectSessionState {
+    let data = try #require(defaults.data(forKey: key))
+    return try JSONDecoder().decode(ProjectSessionState.self, from: data)
 }
 
 private func configuration(fontSize: Double, autoSaveDelay: Double, autoSaveEnabled: Bool) -> String {

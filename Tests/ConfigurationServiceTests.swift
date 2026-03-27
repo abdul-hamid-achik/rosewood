@@ -209,6 +209,21 @@ struct ConfigurationServiceTests {
         #expect(service.font.pointSize == 15)
         #expect(service.font.fontName.localizedCaseInsensitiveContains("Menlo"))
     }
+
+    @Test
+    func defaultSFMoNoFontUsesFixedPitchSystemFont() {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let userConfigURL = rootURL.appendingPathComponent("user.toml")
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let service = ConfigurationService(userConfigURL: userConfigURL)
+        service.load()
+
+        #expect(service.font.pointSize == AppSettings.default.editor.fontSize)
+        #expect(service.font.isFixedPitch)
+        #expect(!service.font.fontName.localizedCaseInsensitiveContains("Times"))
+    }
 }
 
 private func configuration(fontSize: Double, autoSaveDelay: Double, autoSaveEnabled: Bool) -> String {

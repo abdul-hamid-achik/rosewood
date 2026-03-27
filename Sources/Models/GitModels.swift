@@ -194,39 +194,35 @@ struct GitDiffResult: Equatable {
     let path: String
     let text: String
     let hunks: [GitDiffHunk]
+    let additionCount: Int
+    let deletionCount: Int
+    let hunkCount: Int
 
     init(path: String, text: String, hunks: [GitDiffHunk]? = nil) {
         self.path = path
         self.text = text
-        self.hunks = hunks ?? GitDiffParser.parse(text)
-    }
+        let parsedHunks = hunks ?? GitDiffParser.parse(text)
+        self.hunks = parsedHunks
+        self.hunkCount = parsedHunks.count
 
-    var additionCount: Int {
-        hunks
-            .flatMap(\.rows)
-            .reduce(into: 0) { count, row in
+        var additions = 0
+        var deletions = 0
+        for hunk in parsedHunks {
+            for row in hunk.rows {
                 if row.rightKind == .added {
-                    count += 1
+                    additions += 1
                 }
-            }
-    }
-
-    var deletionCount: Int {
-        hunks
-            .flatMap(\.rows)
-            .reduce(into: 0) { count, row in
                 if row.leftKind == .deleted {
-                    count += 1
+                    deletions += 1
                 }
             }
-    }
-
-    var hunkCount: Int {
-        hunks.count
+        }
+        self.additionCount = additions
+        self.deletionCount = deletions
     }
 
     var hasStructuredChanges: Bool {
-        !hunks.isEmpty
+        hunkCount > 0
     }
 }
 

@@ -110,6 +110,22 @@ enum NavigableProblem {
     case workspace(WorkspaceDiagnosticItem)
 }
 
+private struct EditorStickyScopeCacheKey: Equatable {
+    let filePath: String
+    let documentVersion: Int
+    let language: String
+    let focusLine: Int
+}
+
+private struct EditorBreadcrumbCacheKey: Equatable {
+    let filePath: String
+    let rootPath: String?
+    let documentVersion: Int
+    let language: String
+    let visibleTopLine: Int
+    let cursorLine: Int
+}
+
 @MainActor
 final class ProjectViewModel: ObservableObject {
     enum SidebarMode {
@@ -136,11 +152,25 @@ final class ProjectViewModel: ObservableObject {
 
     @Published var rootDirectory: URL?
     @Published var fileTree: [FileItem] = []
+    @Published private(set) var workspaceFileURLs: [URL] = []
     @Published var openTabs: [EditorTab] = []
     @Published var selectedTabIndex: Int? = nil {
         didSet {
+            editorVisibleLineRange = nil
+            isEditorNavigationChromeReady = false
+            isOutlineSidebarDataReady = false
+            isStatusBarDetailsReady = false
+            editorNavigationChromeTask?.cancel()
+            outlineSidebarDataTask?.cancel()
+            statusBarDetailTask?.cancel()
+            invalidateCurrentTabBreakpointCache()
+            invalidateEditorNavigationCaches()
             refreshCurrentLineBlame()
             synchronizeActiveDiagnosticSelection()
+
+            if selectedTabIndex != nil {
+                scheduleStatusBarDetailActivation()
+            }
         }
     }
     @Published var showNewFileSheet: Bool = false
@@ -202,6 +232,9 @@ final class ProjectViewModel: ObservableObject {
     @Published var lastProjectReplaceTransaction: ProjectReplaceTransaction?
     @Published var showSettings: Bool = false
     @Published private(set) var editorVisibleLineRange: ClosedRange<Int>?
+    @Published private(set) var isEditorNavigationChromeReady: Bool = false
+    @Published private(set) var isOutlineSidebarDataReady: Bool = false
+    @Published private(set) var isStatusBarDetailsReady: Bool = false
     @Published var debugConfigurations: [DebugConfiguration] = []
     @Published var selectedDebugConfigurationName: String?
     @Published var debugConfigurationError: String?
@@ -211,13 +244,21 @@ final class ProjectViewModel: ObservableObject {
     @Published var loadingFileProgress: Double?
     @Published var isSearchingProject: Bool = false
     @Published var isReplacingInProject: Bool = false
-    @Published var breakpoints: [Breakpoint] = []
+    @Published var breakpoints: [Breakpoint] = [] {
+        didSet {
+            invalidateCurrentTabBreakpointCache()
+        }
+    }
     @Published var debugSessionState: DebugSessionState = .idle
     @Published var debugConsoleEntries: [DebugConsoleEntry] = []
     @Published var debugStoppedFilePath: String?
     @Published var debugStoppedLine: Int?
     @Published var referenceResults: [ReferenceResult] = []
-    @Published var gitRepositoryStatus: GitRepositoryStatus = .empty
+    @Published var gitRepositoryStatus: GitRepositoryStatus = .empty {
+        didSet {
+            rebuildGitCaches()
+        }
+    }
     @Published var selectedGitDiff: GitDiffResult?
     @Published var selectedGitDiffPath: String?
     @Published var isGitDiffWorkspaceVisible: Bool = false
@@ -325,7 +366,11 @@ final class ProjectViewModel: ObservableObject {
     }
 
     var orderedWorkspaceDiagnostics: [WorkspaceDiagnosticItem] {
-        lspService.diagnosticsByURI
+        if let cachedWorkspaceDiagnostics {
+            return cachedWorkspaceDiagnostics
+        }
+
+        let diagnostics = lspService.diagnosticsByURI
             .compactMap { uri, diagnostics -> [WorkspaceDiagnosticItem]? in
                 guard let fileURL = URL(string: uri), fileURL.isFileURL else { return nil }
                 return diagnostics.map { diagnostic in
@@ -339,6 +384,9 @@ final class ProjectViewModel: ObservableObject {
             }
             .flatMap { $0 }
             .sorted(by: compareWorkspaceDiagnostics)
+
+        cachedWorkspaceDiagnostics = diagnostics
+        return diagnostics
     }
 
     var activeWorkspaceDiagnostic: WorkspaceDiagnosticItem? {
@@ -374,11 +422,18 @@ final class ProjectViewModel: ObservableObject {
 
     var currentTabBreakpointLines: Set<Int> {
         guard let filePath = selectedTab?.filePath.map(normalizedPath(for:)) else { return [] }
-        return Set(
+        if cachedCurrentTabBreakpointLinesPath == filePath {
+            return cachedCurrentTabBreakpointLines
+        }
+
+        let lines = Set(
             breakpoints
                 .filter { $0.filePath == filePath && $0.isEnabled }
                 .map(\.line)
         )
+        cachedCurrentTabBreakpointLinesPath = filePath
+        cachedCurrentTabBreakpointLines = lines
+        return lines
     }
 
     var currentExecutionLine: Int? {
@@ -500,7 +555,7 @@ final class ProjectViewModel: ObservableObject {
               let relativePath = gitRelativePath(for: item.path) else {
             return nil
         }
-        return gitRepositoryStatus.changedFiles.first { $0.path == relativePath }
+        return gitChangedFileByPath[relativePath]
     }
 
     func gitChangedDescendantCount(for item: FileItem) -> Int {
@@ -509,12 +564,7 @@ final class ProjectViewModel: ObservableObject {
             return gitChange(for: item) == nil ? 0 : 1
         }
 
-        let prefix = relativePath + "/"
-        return gitRepositoryStatus.changedFiles.reduce(into: 0) { count, changedFile in
-            if changedFile.path.hasPrefix(prefix) {
-                count += 1
-            }
-        }
+        return gitChangedDescendantCountByDirectoryPath[relativePath] ?? 0
     }
 
     func isGitIgnored(_ item: FileItem) -> Bool {
@@ -522,13 +572,21 @@ final class ProjectViewModel: ObservableObject {
             return false
         }
 
-        for ignoredPath in normalizedIgnoredGitPaths {
+        for ignoredPath in normalizedIgnoredGitPathsCache {
             if relativePath == ignoredPath || relativePath.hasPrefix(ignoredPath + "/") {
                 return true
             }
         }
 
         return false
+    }
+
+    var gitChangeSections: [GitChangeSectionGroup] {
+        cachedGitChangeSections
+    }
+
+    func gitChangeIndex(for changedFile: GitChangedFile) -> Int {
+        gitChangeIndexByPath[changedFile.path] ?? 0
     }
 
     let fileService: FileService
@@ -540,6 +598,11 @@ final class ProjectViewModel: ObservableObject {
     var expandedDirectoryPaths: Set<String> = []
     private var autoSaveTask: Task<Void, Never>?
     private var reloadFileTreeTask: Task<Void, Never>?
+    private var reloadWorkspaceFilesTask: Task<Void, Never>?
+    private var sessionPersistenceTask: Task<Void, Never>?
+    private var editorNavigationChromeTask: Task<Void, Never>?
+    private var outlineSidebarDataTask: Task<Void, Never>?
+    private var statusBarDetailTask: Task<Void, Never>?
     var projectSearchTask: Task<Void, Never>?
     var projectSearchDebounceTask: Task<Void, Never>?
     var replaceInProjectTask: Task<Void, Never>?
@@ -555,6 +618,7 @@ final class ProjectViewModel: ObservableObject {
     let gitService: GitServiceProtocol
     let commandPaletteViewModel: CommandPaletteViewModel
     private var fileTreeLoadToken = UUID()
+    private var workspaceFilesLoadToken = UUID()
     var projectSearchToken = UUID()
     var replaceInProjectToken = UUID()
     var projectSearchResultsQuery = ""
@@ -569,8 +633,28 @@ final class ProjectViewModel: ObservableObject {
     private var quickOpenAccessSequence = 0
     private var quickOpenRecentAccessByPath: [String: Int] = [:]
     private var recentCommandPaletteActionIDs: [String] = []
+    var workspaceSymbolIndexTask: Task<Void, Never>?
+    var workspaceSymbolIndexToken = UUID()
     var cachedWorkspaceSymbols: [WorkspaceSymbolMatch]?
     var cachedWorkspaceSymbolRootPath: String?
+    var cachedWorkspaceSymbolsByPath: [String: [WorkspaceSymbolMatch]] = [:]
+    private var cachedWorkspaceDiagnostics: [WorkspaceDiagnosticItem]?
+    private var cachedFileLineContents: [String: [String]] = [:]
+    private var stickyScopeCacheKey: EditorStickyScopeCacheKey?
+    private var stickyScopeCache: [EditorStickyScopeItem] = []
+    private var breadcrumbCacheKey: EditorBreadcrumbCacheKey?
+    private var breadcrumbCache: [EditorBreadcrumbSegment] = []
+    private var gitChangedFileByPath: [String: GitChangedFile] = [:]
+    private var gitChangedDescendantCountByDirectoryPath: [String: Int] = [:]
+    private var gitChangeIndexByPath: [String: Int] = [:]
+    private var cachedGitChangeSections: [GitChangeSectionGroup] = []
+    private var normalizedIgnoredGitPathsCache: [String] = []
+    private var cachedCurrentTabBreakpointLinesPath: String?
+    private var cachedCurrentTabBreakpointLines: Set<Int> = []
+    private let sessionPersistenceDebounceNanoseconds: UInt64
+    private let editorNavigationChromeDebounceNanoseconds: UInt64
+    private let outlineSidebarDataDebounceNanoseconds: UInt64
+    private let statusBarDetailDebounceNanoseconds: UInt64
     convenience init() {
         self.init(
             fileService: .shared,
@@ -585,7 +669,11 @@ final class ProjectViewModel: ObservableObject {
             breakpointStore: BreakpointStore(),
             debugConfigurationService: DebugConfigurationService(),
             debugSessionService: DebugSessionService.shared,
-            gitService: GitService.shared
+            gitService: GitService.shared,
+            sessionPersistenceDebounceNanoseconds: 1_000_000_000,
+            editorNavigationChromeDebounceNanoseconds: 650_000_000,
+            outlineSidebarDataDebounceNanoseconds: 1_100_000_000,
+            statusBarDetailDebounceNanoseconds: 1_100_000_000
         )
     }
 
@@ -603,7 +691,11 @@ final class ProjectViewModel: ObservableObject {
         debugConfigurationService: DebugConfigurationService = DebugConfigurationService(),
         debugSessionService: DebugSessionServiceProtocol? = nil,
         gitService: GitServiceProtocol = GitService.shared,
-        projectSearchDebounceNanoseconds: UInt64 = 250_000_000
+        projectSearchDebounceNanoseconds: UInt64 = 250_000_000,
+        sessionPersistenceDebounceNanoseconds: UInt64 = 1_000_000_000,
+        editorNavigationChromeDebounceNanoseconds: UInt64 = 650_000_000,
+        outlineSidebarDataDebounceNanoseconds: UInt64 = 1_100_000_000,
+        statusBarDetailDebounceNanoseconds: UInt64 = 1_100_000_000
     ) {
         self.fileService = fileService
         self.sessionStore = sessionStore
@@ -622,11 +714,19 @@ final class ProjectViewModel: ObservableObject {
         self.debugSessionService = debugSessionService ?? DebugSessionService.shared
         self.gitService = gitService
         self.projectSearchDebounceNanoseconds = projectSearchDebounceNanoseconds
+        self.sessionPersistenceDebounceNanoseconds = sessionPersistenceDebounceNanoseconds
+        self.editorNavigationChromeDebounceNanoseconds = editorNavigationChromeDebounceNanoseconds
+        self.outlineSidebarDataDebounceNanoseconds = outlineSidebarDataDebounceNanoseconds
+        self.statusBarDetailDebounceNanoseconds = statusBarDetailDebounceNanoseconds
         self.commandPaletteViewModel = CommandPaletteViewModel(commandDispatcher: commandDispatcher)
+        self.gitRepositoryStatus = .empty
         self.debugSessionService.setEventHandler { [weak self] event in
             Task { @MainActor [weak self] in
                 self?.handleDebugSessionEvent(event)
             }
+        }
+        self.lspService.setDiagnosticsChangeHandler { [weak self] in
+            self?.handleDiagnosticsChanged()
         }
 
         if ProcessInfo.processInfo.environment["ROSEWOOD_UI_TEST_RESET_SESSION"] == "1" {
@@ -649,6 +749,12 @@ final class ProjectViewModel: ObservableObject {
     deinit {
         autoSaveTask?.cancel()
         reloadFileTreeTask?.cancel()
+        reloadWorkspaceFilesTask?.cancel()
+        workspaceSymbolIndexTask?.cancel()
+        sessionPersistenceTask?.cancel()
+        editorNavigationChromeTask?.cancel()
+        outlineSidebarDataTask?.cancel()
+        statusBarDetailTask?.cancel()
         projectSearchTask?.cancel()
         projectSearchDebounceTask?.cancel()
         replaceInProjectTask?.cancel()
@@ -678,26 +784,61 @@ final class ProjectViewModel: ObservableObject {
         selectedTab?.documentMetadata.lineEnding.label
     }
 
+    var isEditorNavigationModelReady: Bool {
+        guard let selectedTab else { return false }
+        return editorVisibleLineRange != nil || selectedTab.pendingLineJump != nil
+    }
+
     var editorStickyScopes: [EditorStickyScopeItem] {
-        guard let selectedTab else { return [] }
+        guard isEditorNavigationModelReady else { return [] }
+        guard let selectedTab, let selectedFilePath = selectedTab.filePath else { return [] }
         let focusLine = editorVisibleLineRange?.lowerBound ?? selectedTab.cursorPosition.line
-        return EditorNavigationModel.stickyScopes(
-            text: selectedTab.content,
+        let cacheKey = EditorStickyScopeCacheKey(
+            filePath: normalizedPath(for: selectedFilePath),
+            documentVersion: selectedTab.documentVersion,
             language: selectedTab.language,
             focusLine: max(focusLine, 1)
         )
+        if stickyScopeCacheKey == cacheKey {
+            return stickyScopeCache
+        }
+
+        let scopes = EditorNavigationModel.stickyScopes(
+            text: selectedTab.content,
+            language: selectedTab.language,
+            focusLine: cacheKey.focusLine
+        )
+        stickyScopeCacheKey = cacheKey
+        stickyScopeCache = scopes
+        return scopes
     }
 
     var editorBreadcrumbs: [EditorBreadcrumbSegment] {
-        guard let selectedTab else { return [] }
-        return EditorNavigationModel.breadcrumbs(
-            fileURL: selectedTab.filePath,
-            rootURL: rootDirectory,
-            text: selectedTab.content,
+        guard isEditorNavigationModelReady else { return [] }
+        guard let selectedTab, let selectedFilePath = selectedTab.filePath else { return [] }
+        let cacheKey = EditorBreadcrumbCacheKey(
+            filePath: normalizedPath(for: selectedFilePath),
+            rootPath: rootDirectory.map(normalizedPath(for:)),
+            documentVersion: selectedTab.documentVersion,
             language: selectedTab.language,
             visibleTopLine: editorVisibleLineRange?.lowerBound ?? 1,
             cursorLine: selectedTab.cursorPosition.line
         )
+        if breadcrumbCacheKey == cacheKey {
+            return breadcrumbCache
+        }
+
+        let breadcrumbs = EditorNavigationModel.breadcrumbs(
+            fileURL: selectedTab.filePath,
+            rootURL: rootDirectory,
+            text: selectedTab.content,
+            language: selectedTab.language,
+            visibleTopLine: cacheKey.visibleTopLine,
+            cursorLine: cacheKey.cursorLine
+        )
+        breadcrumbCacheKey = cacheKey
+        breadcrumbCache = breadcrumbs
+        return breadcrumbs
     }
 
     var hasUnsavedChanges: Bool {
@@ -1567,11 +1708,10 @@ final class ProjectViewModel: ObservableObject {
             return quickOpenWorkspaceSymbolSections(for: trimmedQuery)
         }
 
-        let fileItems = flatFileList.enumerated().compactMap { index, item in
-            guard !item.isDirectory else { return nil }
-
-            let displayPath = relativeDisplayPath(for: item.path)
-            guard let score = quickOpenMatchScore(for: item, displayPath: displayPath, query: trimmedQuery) else {
+        let fileItems = availableWorkspaceFileURLs.enumerated().compactMap { index, fileURL in
+            let item = quickOpenFileItem(for: fileURL)
+            let displayPath = relativeDisplayPath(for: fileURL)
+            guard let score = quickOpenMatchScore(for: fileURL, fileName: item.name, displayPath: displayPath, query: trimmedQuery) else {
                 return nil
             }
 
@@ -1961,6 +2101,16 @@ final class ProjectViewModel: ObservableObject {
         flattenFileTree(fileTree)
     }
 
+    var availableWorkspaceFileURLs: [URL] {
+        if !workspaceFileURLs.isEmpty {
+            return workspaceFileURLs
+        }
+
+        return flatFileList.compactMap { item in
+            item.isDirectory ? nil : item.path
+        }
+    }
+
     var groupedProjectSearchResults: [ProjectSearchFileGroup] {
         let groupedResults = Dictionary(grouping: projectSearchResults, by: { normalizedPath(for: $0.filePath) })
 
@@ -2260,13 +2410,17 @@ final class ProjectViewModel: ObservableObject {
 
     func reloadFileTree() {
         reloadFileTreeTask?.cancel()
+        reloadWorkspaceFilesTask?.cancel()
         fileTreeLoadToken = UUID()
+        workspaceFilesLoadToken = UUID()
         let token = fileTreeLoadToken
+        let workspaceToken = workspaceFilesLoadToken
         invalidateWorkspaceSymbolCache()
 
         guard let rootDirectory else {
             isLoadingFileTree = false
             fileTree = []
+            workspaceFileURLs = []
             persistSession()
             return
         }
@@ -2274,6 +2428,47 @@ final class ProjectViewModel: ObservableObject {
         let expandedPaths = expandedDirectoryPaths
         let normalizedRootPath = normalizedPath(for: rootDirectory)
         isLoadingFileTree = true
+        workspaceFileURLs = []
+
+        reloadWorkspaceFilesTask = Task { [weak self, fileService] in
+            guard let self else { return }
+
+            do {
+                let files = try await fileService.projectFilesAsync(
+                    at: rootDirectory,
+                    includeHidden: self.showHiddenFiles
+                )
+                guard !Task.isCancelled,
+                      self.workspaceFilesLoadToken == workspaceToken,
+                      self.rootDirectory.map(self.normalizedPath(for:)) == normalizedRootPath else {
+                    return
+                }
+                self.workspaceFileURLs = files.sorted {
+                    let lhsPath = self.relativeDisplayPath(for: $0)
+                    let rhsPath = self.relativeDisplayPath(for: $1)
+                    let lhsKey = FileService.naturalSortKey(for: lhsPath)
+                    let rhsKey = FileService.naturalSortKey(for: rhsPath)
+                    if lhsKey != rhsKey {
+                        return lhsKey < rhsKey
+                    }
+                    return lhsPath < rhsPath
+                }
+                self.invalidateWorkspaceSymbolCache()
+                self.cachedWorkspaceSymbolRootPath = normalizedRootPath
+                self.scheduleWorkspaceSymbolIndexRefresh()
+
+                let workspaceLanguages = Set(files.map { EditorTab.languageFromExtension($0.pathExtension.lowercased()) })
+                    .filter { $0 != "plaintext" }
+                Task.detached(priority: .utility) {
+                    LSPServerRegistry.prewarmServerPaths(for: workspaceLanguages)
+                }
+            } catch is CancellationError {
+                guard self.workspaceFilesLoadToken == workspaceToken else { return }
+            } catch {
+                guard self.workspaceFilesLoadToken == workspaceToken else { return }
+                self.workspaceFileURLs = []
+            }
+        }
 
         reloadFileTreeTask = Task { [weak self, fileService] in
             guard let self else { return }
@@ -2377,6 +2572,7 @@ final class ProjectViewModel: ObservableObject {
         do {
             isLoadingFile = true
             loadingFileProgress = 0.0
+            invalidateCachedFileContent(for: url)
             
             let fileHandling = configService.settings.fileHandling
             let contentType = fileService.detectContentType(at: url, settings: fileHandling)
@@ -2433,6 +2629,7 @@ final class ProjectViewModel: ObservableObject {
             }
 
             recordQuickOpenAccess(for: url)
+            invalidateEditorNavigationCaches()
             persistSession()
             isLoadingFile = false
             loadingFileProgress = nil
@@ -2600,7 +2797,12 @@ final class ProjectViewModel: ObservableObject {
         guard openTabs[selectedTabIndex].contentType.isText else { return }
         openTabs[selectedTabIndex].content = content
         openTabs[selectedTabIndex].isDirty = content != openTabs[selectedTabIndex].originalContent
-        invalidateWorkspaceSymbolCache()
+        invalidateWorkspaceDiagnosticsCache()
+        if let fileURL = openTabs[selectedTabIndex].filePath {
+            invalidateCachedFileContent(for: fileURL)
+            updateWorkspaceSymbolCache(for: fileURL, contents: content)
+        }
+        invalidateEditorNavigationCaches()
 
         openTabs[selectedTabIndex].documentVersion += 1
         if let uri = openTabs[selectedTabIndex].documentURI {
@@ -2615,7 +2817,7 @@ final class ProjectViewModel: ObservableObject {
             scheduleAutoSave()
         }
 
-        persistSession()
+        scheduleSessionPersistence()
     }
 
     func updateCursorPosition(line: Int, column: Int) {
@@ -2631,10 +2833,13 @@ final class ProjectViewModel: ObservableObject {
     func updateEditorVisibleLineRange(startLine: Int, endLine: Int) {
         guard startLine > 0, endLine >= startLine else {
             editorVisibleLineRange = nil
+            isEditorNavigationChromeReady = false
+            editorNavigationChromeTask?.cancel()
             return
         }
 
         editorVisibleLineRange = startLine...endLine
+        scheduleEditorNavigationChromeActivation()
     }
 
     func jumpToLineInSelectedTab(_ line: Int) {
@@ -2950,6 +3155,9 @@ final class ProjectViewModel: ObservableObject {
 
             openTabs[index].isDirty = false
             openTabs[index].contentType = contentType
+            invalidateCachedFileContent(for: url)
+            invalidateWorkspaceDiagnosticsCache()
+            invalidateEditorNavigationCaches()
             persistSession()
             refreshGitState()
             refreshCurrentLineBlame()
@@ -3030,6 +3238,9 @@ final class ProjectViewModel: ObservableObject {
         }
 
         persistSession()
+        if rootDirectory != nil {
+            reloadFileTree()
+        }
     }
 
     private func toggleExpansion(in items: [FileItem], targetPath: String, shouldExpand: Bool) -> [FileItem] {
@@ -3110,11 +3321,10 @@ final class ProjectViewModel: ObservableObject {
     }
 
     private func quickOpenFileLineItems(for request: QuickOpenFileLineRequest) -> [QuickOpenItem] {
-        flatFileList.enumerated().compactMap { index, item in
-            guard !item.isDirectory else { return nil }
-
-            let displayPath = relativeDisplayPath(for: item.path)
-            guard let score = quickOpenMatchScore(for: item, displayPath: displayPath, query: request.fileQuery) else {
+        availableWorkspaceFileURLs.enumerated().compactMap { index, fileURL in
+            let item = quickOpenFileItem(for: fileURL)
+            let displayPath = relativeDisplayPath(for: fileURL)
+            guard let score = quickOpenMatchScore(for: fileURL, fileName: item.name, displayPath: displayPath, query: request.fileQuery) else {
                 return nil
             }
 
@@ -3305,12 +3515,16 @@ final class ProjectViewModel: ObservableObject {
         return QuickOpenFileLineRequest(fileQuery: fileQuery, line: line)
     }
 
-    private func quickOpenMatchScore(for item: FileItem, displayPath: String, query: String) -> Int? {
-        let normalizedFileName = item.name.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+    private func quickOpenFileItem(for fileURL: URL) -> FileItem {
+        FileItem(name: fileURL.lastPathComponent, path: fileURL, isDirectory: false)
+    }
+
+    private func quickOpenMatchScore(for fileURL: URL, fileName: String, displayPath: String, query: String) -> Int? {
+        let normalizedFileName = fileName.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
         let normalizedDisplayPath = displayPath.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
         let normalizedQuery = query.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
-        let openTabBoost = quickOpenOpenTabBoost(for: item.path)
-        let recencyBoost = quickOpenRecencyBoost(for: item.path)
+        let openTabBoost = quickOpenOpenTabBoost(for: fileURL)
+        let recencyBoost = quickOpenRecencyBoost(for: fileURL)
         let querySegments = normalizedQuery
             .split(whereSeparator: { $0 == "/" || $0 == "\\" || $0 == " " })
             .map(String.init)
@@ -3687,6 +3901,8 @@ final class ProjectViewModel: ObservableObject {
                 lspService.documentSaved(uri: uri, language: openTabs[index].language)
             }
 
+            invalidateCachedFileContent(for: url)
+            invalidateWorkspaceDiagnosticsCache()
             persistSession()
             refreshGitState()
             refreshCurrentLineBlame()
@@ -3844,26 +4060,34 @@ final class ProjectViewModel: ObservableObject {
     }
 
     func lineText(for fileURL: URL, lineNumber: Int) -> String {
-        let contents: String?
+        let normalizedFilePath = normalizedPath(for: fileURL)
         if let openTab = openTabs.first(where: {
             guard let filePath = $0.filePath else { return false }
-            return normalizedPath(for: filePath) == normalizedPath(for: fileURL)
+            return normalizedPath(for: filePath) == normalizedFilePath
         }) {
-            contents = openTab.content
-        } else {
-            contents = try? fileService.readFile(at: fileURL)
+            let lines = openTab.content.components(separatedBy: .newlines)
+            guard lines.indices.contains(max(lineNumber - 1, 0)) else { return "" }
+            return lines[max(lineNumber - 1, 0)].trimmingCharacters(in: .whitespaces)
         }
 
-        guard let contents else { return "" }
-        let lines = contents.components(separatedBy: .newlines)
+        let lines: [String]
+        if let cachedLines = cachedFileLineContents[normalizedFilePath] {
+            lines = cachedLines
+        } else {
+            guard let contents = try? fileService.readFile(at: fileURL) else { return "" }
+            let cachedLines = contents.components(separatedBy: .newlines)
+            cachedFileLineContents[normalizedFilePath] = cachedLines
+            lines = cachedLines
+        }
+
         guard lines.indices.contains(max(lineNumber - 1, 0)) else { return "" }
         return lines[max(lineNumber - 1, 0)].trimmingCharacters(in: .whitespaces)
     }
 
     func relativeDisplayPath(for fileURL: URL) -> String {
         guard let rootDirectory else { return fileURL.lastPathComponent }
-        let filePath = fileURL.path
-        let rootPath = rootDirectory.path
+        let filePath = normalizedPath(for: fileURL)
+        let rootPath = normalizedPath(for: rootDirectory)
         guard filePath.hasPrefix(rootPath + "/") else { return fileURL.path }
         return String(filePath.dropFirst(rootPath.count + 1))
     }
@@ -3936,6 +4160,8 @@ final class ProjectViewModel: ObservableObject {
     }
 
     func persistSession() {
+        sessionPersistenceTask?.cancel()
+        sessionPersistenceTask = nil
         let session = ProjectSessionState(
             rootDirectoryPath: rootDirectory.map(normalizedPath(for:)),
             expandedDirectoryPaths: Array(expandedDirectoryPaths).sorted(),
@@ -3959,6 +4185,163 @@ final class ProjectViewModel: ObservableObject {
 
         guard let data = try? JSONEncoder().encode(session) else { return }
         sessionStore.set(data, forKey: sessionKey)
+    }
+
+    private func scheduleSessionPersistence() {
+        sessionPersistenceTask?.cancel()
+        sessionPersistenceTask = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(nanoseconds: self?.sessionPersistenceDebounceNanoseconds ?? 0)
+            } catch {
+                return
+            }
+
+            guard let self, !Task.isCancelled else { return }
+            self.persistSession()
+        }
+    }
+
+    private func scheduleEditorNavigationChromeActivation() {
+        guard editorVisibleLineRange != nil, selectedTab != nil else {
+            isEditorNavigationChromeReady = false
+            isOutlineSidebarDataReady = false
+            editorNavigationChromeTask?.cancel()
+            outlineSidebarDataTask?.cancel()
+            return
+        }
+
+        if isEditorNavigationChromeReady {
+            return
+        }
+
+        editorNavigationChromeTask?.cancel()
+        editorNavigationChromeTask = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(nanoseconds: self?.editorNavigationChromeDebounceNanoseconds ?? 0)
+            } catch {
+                return
+            }
+
+            guard let self,
+                  !Task.isCancelled,
+                  self.editorVisibleLineRange != nil,
+                  self.selectedTab != nil else {
+                return
+            }
+
+            self.isEditorNavigationChromeReady = true
+        }
+    }
+
+    func requestOutlineSidebarData() {
+        guard isEditorNavigationChromeReady, selectedTab != nil else {
+            isOutlineSidebarDataReady = false
+            outlineSidebarDataTask?.cancel()
+            return
+        }
+
+        if isOutlineSidebarDataReady {
+            return
+        }
+
+        outlineSidebarDataTask?.cancel()
+        outlineSidebarDataTask = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(nanoseconds: self?.outlineSidebarDataDebounceNanoseconds ?? 0)
+            } catch {
+                return
+            }
+
+            guard let self,
+                  !Task.isCancelled,
+                  self.isEditorNavigationChromeReady,
+                  self.selectedTab != nil else {
+                return
+            }
+
+            self.isOutlineSidebarDataReady = true
+        }
+    }
+
+    func suspendOutlineSidebarData() {
+        outlineSidebarDataTask?.cancel()
+        isOutlineSidebarDataReady = false
+    }
+
+    private func scheduleStatusBarDetailActivation() {
+        guard selectedTab != nil else {
+            isStatusBarDetailsReady = false
+            statusBarDetailTask?.cancel()
+            return
+        }
+
+        if isStatusBarDetailsReady {
+            return
+        }
+
+        statusBarDetailTask?.cancel()
+        statusBarDetailTask = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(nanoseconds: self?.statusBarDetailDebounceNanoseconds ?? 0)
+            } catch {
+                return
+            }
+
+            guard let self, !Task.isCancelled, self.selectedTab != nil else { return }
+            self.isStatusBarDetailsReady = true
+        }
+    }
+
+    private func handleDiagnosticsChanged() {
+        invalidateWorkspaceDiagnosticsCache()
+        synchronizeActiveDiagnosticSelection()
+        objectWillChange.send()
+    }
+
+    private func invalidateWorkspaceDiagnosticsCache() {
+        cachedWorkspaceDiagnostics = nil
+    }
+
+    private func invalidateCachedFileContent(for fileURL: URL) {
+        cachedFileLineContents.removeValue(forKey: normalizedPath(for: fileURL))
+    }
+
+    private func invalidateCurrentTabBreakpointCache() {
+        cachedCurrentTabBreakpointLinesPath = nil
+        cachedCurrentTabBreakpointLines = []
+    }
+
+    private func invalidateEditorNavigationCaches() {
+        stickyScopeCacheKey = nil
+        stickyScopeCache = []
+        breadcrumbCacheKey = nil
+        breadcrumbCache = []
+    }
+
+    private func rebuildGitCaches() {
+        gitChangedFileByPath = Dictionary(uniqueKeysWithValues: gitRepositoryStatus.changedFiles.map { ($0.path, $0) })
+        gitChangeIndexByPath = Dictionary(uniqueKeysWithValues: gitRepositoryStatus.changedFiles.enumerated().map { ($0.element.path, $0.offset) })
+        normalizedIgnoredGitPathsCache = gitRepositoryStatus.ignoredPaths.map { ignoredPath in
+            ignoredPath.hasSuffix("/") ? String(ignoredPath.dropLast()) : ignoredPath
+        }
+        cachedGitChangeSections = GitChangeSection.allCases.compactMap { section in
+            let files = gitRepositoryStatus.changedFiles.filter { $0.section == section }
+            guard !files.isEmpty else { return nil }
+            return GitChangeSectionGroup(section: section, files: files)
+        }
+
+        var descendantCounts: [String: Int] = [:]
+        for changedFile in gitRepositoryStatus.changedFiles {
+            let components = changedFile.path.split(separator: "/").map(String.init)
+            guard components.count > 1 else { continue }
+
+            var currentPath = ""
+            for component in components.dropLast() {
+                currentPath = currentPath.isEmpty ? component : currentPath + "/" + component
+                descendantCounts[currentPath, default: 0] += 1
+            }
+        }
+        gitChangedDescendantCountByDirectoryPath = descendantCounts
     }
 
     private func restoreSession() {
@@ -4025,12 +4408,6 @@ final class ProjectViewModel: ObservableObject {
         }
 
         refreshGitState()
-    }
-
-    private var normalizedIgnoredGitPaths: [String] {
-        gitRepositoryStatus.ignoredPaths.map { ignoredPath in
-            ignoredPath.hasSuffix("/") ? String(ignoredPath.dropLast()) : ignoredPath
-        }
     }
 
     private func gitRelativePath(for fileURL: URL) -> String? {

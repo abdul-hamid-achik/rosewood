@@ -292,7 +292,7 @@ struct EditorSupportTests {
 
     @Test
     @MainActor
-    func editorContainerAppliesHighlightedTokenColorsToTextViewStorage() {
+    func editorContainerStartsWithPlainTextBeforeDeferredHighlightCompletes() async throws {
         let container = EditorContainerView(
             themeColors: .nord,
             font: NSFont.monospacedSystemFont(ofSize: 13, weight: .regular),
@@ -301,7 +301,73 @@ struct EditorSupportTests {
             wordWrap: false
         )
 
-        container.applyText("let alpha = 1", language: "swift", themeColors: .nord)
+        container.applyText("let alpha = 1", language: "swift", themeColors: .nord, documentIdentity: "editor-support")
+
+        let attributed = try #require(container.textView.textStorage)
+        let layoutManager = try #require(container.textView.layoutManager)
+        var distinctColors = Set<String>()
+        var index = 0
+        while index < attributed.length {
+            var effectiveRange = NSRange(location: 0, length: 0)
+            let attributes = layoutManager.temporaryAttributes(atCharacterIndex: index, effectiveRange: &effectiveRange)
+            if let color = (attributes[.foregroundColor] as? NSColor)?.usingColorSpace(.sRGB) {
+                distinctColors.insert(color.hexString)
+            }
+            let nextIndex = NSMaxRange(effectiveRange)
+            index = max(nextIndex, index + 1)
+        }
+
+        #expect(distinctColors.count <= 1)
+
+        try await waitUntilEditorSupport {
+            let attributed = try #require(container.textView.textStorage)
+            let layoutManager = try #require(container.textView.layoutManager)
+            var distinctColors = Set<String>()
+            var index = 0
+            while index < attributed.length {
+                var effectiveRange = NSRange(location: 0, length: 0)
+                let attributes = layoutManager.temporaryAttributes(atCharacterIndex: index, effectiveRange: &effectiveRange)
+                if let color = (attributes[.foregroundColor] as? NSColor)?.usingColorSpace(.sRGB) {
+                    distinctColors.insert(color.hexString)
+                }
+                let nextIndex = NSMaxRange(effectiveRange)
+                index = max(nextIndex, index + 1)
+            }
+
+            return distinctColors.count > 1
+        }
+    }
+
+    @Test
+    @MainActor
+    func editorContainerAppliesHighlightedTokenColorsToTextViewStorage() async throws {
+        let container = EditorContainerView(
+            themeColors: .nord,
+            font: NSFont.monospacedSystemFont(ofSize: 13, weight: .regular),
+            showMinimap: true,
+            showLineNumbers: true,
+            wordWrap: false
+        )
+
+        container.applyText("let alpha = 1", language: "swift", themeColors: .nord, documentIdentity: "editor-support")
+
+        try await waitUntilEditorSupport {
+            let attributed = try #require(container.textView.textStorage)
+            let layoutManager = try #require(container.textView.layoutManager)
+            var distinctColors = Set<String>()
+            var index = 0
+            while index < attributed.length {
+                var effectiveRange = NSRange(location: 0, length: 0)
+                let attributes = layoutManager.temporaryAttributes(atCharacterIndex: index, effectiveRange: &effectiveRange)
+                if let color = (attributes[.foregroundColor] as? NSColor)?.usingColorSpace(.sRGB) {
+                    distinctColors.insert(color.hexString)
+                }
+                let nextIndex = NSMaxRange(effectiveRange)
+                index = max(nextIndex, index + 1)
+            }
+
+            return distinctColors.count > 1
+        }
 
         let attributed = try! #require(container.textView.textStorage)
         let layoutManager = try! #require(container.textView.layoutManager)
@@ -319,6 +385,22 @@ struct EditorSupportTests {
 
         #expect(distinctColors.count > 1, "Editor layout should retain multiple syntax token colors after applyText")
     }
+}
+
+private func waitUntilEditorSupport(
+    timeoutNanoseconds: UInt64 = 2_000_000_000,
+    stepNanoseconds: UInt64 = 25_000_000,
+    condition: @escaping () throws -> Bool
+) async throws {
+    let iterations = Int(timeoutNanoseconds / stepNanoseconds)
+    for _ in 0..<iterations {
+        if try condition() {
+            return
+        }
+        try await Task.sleep(nanoseconds: stepNanoseconds)
+    }
+
+    Issue.record("Timed out waiting for editor support condition")
 }
 
 private final class TestEditorTextViewMenuDelegate: EditorTextViewMenuDelegate {

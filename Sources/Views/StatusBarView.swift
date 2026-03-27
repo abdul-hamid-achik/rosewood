@@ -145,43 +145,49 @@ struct StatusBarView: View {
 
                     Spacer()
 
-                    statusText(indentLabel)
-                        .accessibilityIdentifier("statusbar-indent-width")
-
-                    statusDivider
-
-                    statusText(wrapLabel)
-                        .accessibilityIdentifier("statusbar-wrap-mode")
-
-                    statusDivider
-
-                    if let lineEndingLabel = projectViewModel.selectedTabLineEndingLabel {
-                        statusText(lineEndingLabel)
-                            .accessibilityIdentifier("statusbar-line-endings")
+                    if !projectViewModel.isStatusBarDetailsReady {
+                        EmptyView()
+                    } else {
+                        statusText(indentLabel)
+                            .accessibilityIdentifier("statusbar-indent-width")
 
                         statusDivider
-                    }
 
-                    if let encodingLabel = projectViewModel.selectedTabEncodingLabel {
-                        statusText(encodingLabel)
-                            .accessibilityIdentifier("statusbar-file-encoding")
+                        statusText(wrapLabel)
+                            .accessibilityIdentifier("statusbar-wrap-mode")
 
                         statusDivider
-                    }
 
-                    statusText(tab.language.capitalized)
+                        if let lineEndingLabel = projectViewModel.selectedTabLineEndingLabel {
+                            statusText(lineEndingLabel)
+                                .accessibilityIdentifier("statusbar-line-endings")
+
+                            statusDivider
+                        }
+
+                        if let encodingLabel = projectViewModel.selectedTabEncodingLabel {
+                            statusText(encodingLabel)
+                                .accessibilityIdentifier("statusbar-file-encoding")
+
+                            statusDivider
+                        }
+
+                        statusText(tab.language.capitalized)
+                    }
                 } else {
                     statusText(tab.fileName)
                     Spacer()
                     statusText(tab.contentType.statusLabel)
 
-                    if let fileSize = fileSizeLabel(for: tab) {
+                    if projectViewModel.isStatusBarDetailsReady,
+                       let fileSize = fileSizeLabel(for: tab) {
                         statusDivider
                         statusText(fileSize)
                     }
                 }
 
-                if shouldShowGitMetadata,
+                if projectViewModel.isStatusBarDetailsReady,
+                   shouldShowGitMetadata,
                    let branchName = projectViewModel.gitRepositoryStatus.branchName {
                     statusDivider
 
@@ -193,7 +199,8 @@ struct StatusBarView: View {
                         .accessibilityIdentifier("statusbar-git-branch")
                 }
 
-                if shouldShowGitMetadata,
+                if projectViewModel.isStatusBarDetailsReady,
+                   shouldShowGitMetadata,
                    let reviewLabel = projectViewModel.selectedGitChangeReviewLabel {
                     statusDivider
 
@@ -205,7 +212,8 @@ struct StatusBarView: View {
                         .accessibilityIdentifier("statusbar-git-review")
                 }
 
-                if let lspStatusText {
+                if projectViewModel.isStatusBarDetailsReady,
+                   let lspStatusText {
                     statusDivider
 
                     Label(lspStatusText, systemImage: "network")
@@ -214,22 +222,25 @@ struct StatusBarView: View {
                         .labelStyle(.titleAndIcon)
                 }
 
-                if projectViewModel.currentTabDiagnosticCount.errors > 0
+                if projectViewModel.isStatusBarDetailsReady,
+                    (projectViewModel.currentTabDiagnosticCount.errors > 0
                     || projectViewModel.currentTabDiagnosticCount.warnings > 0
                     || projectViewModel.workspaceDiagnosticCount.errors > 0
-                    || projectViewModel.workspaceDiagnosticCount.warnings > 0 {
+                    || projectViewModel.workspaceDiagnosticCount.warnings > 0) {
                     statusDivider
 
                     diagnosticsToggle
                 }
 
-                if projectViewModel.debugSessionState != .idle {
+                if projectViewModel.isStatusBarDetailsReady,
+                   projectViewModel.debugSessionState != .idle {
                     statusDivider
 
                     statusText(projectViewModel.debugSessionState.statusText, color: themeColors.accent)
                 }
 
-                if let gitBlameText, !tab.isDirty {
+                if projectViewModel.isStatusBarDetailsReady,
+                   let gitBlameText, !tab.isDirty {
                     statusDivider
 
                     Text(gitBlameText)

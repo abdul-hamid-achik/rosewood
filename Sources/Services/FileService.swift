@@ -42,6 +42,41 @@ struct ProjectReplaceSummary: Equatable {
     let modifiedFiles: [URL]
 }
 
+private struct DirectoryEntry {
+    let url: URL
+    let name: String
+    let isDirectory: Bool
+    let sortKey: String
+}
+
+private struct RipgrepEvent: Decodable {
+    let type: String
+    let data: RipgrepEventData?
+}
+
+private struct RipgrepEventData: Decodable {
+    let path: RipgrepTextField?
+    let lines: RipgrepTextField?
+    let lineNumber: Int?
+    let submatches: [RipgrepSubmatch]?
+
+    private enum CodingKeys: String, CodingKey {
+        case path
+        case lines
+        case lineNumber = "line_number"
+        case submatches
+    }
+}
+
+private struct RipgrepTextField: Decodable {
+    let text: String
+}
+
+private struct RipgrepSubmatch: Decodable {
+    let start: Int
+    let end: Int
+}
+
 private struct ProjectSearchMatcher {
     let query: String
     let options: ProjectSearchOptions
@@ -120,6 +155,38 @@ final class FileService {
 
     var directoryLoadDelayPerItemNanoseconds: UInt64 = 0
     var projectSearchDelayPerFileNanoseconds: UInt64 = 0
+    var preferRipgrepProjectSearch: Bool = true
+    var ripgrepLaunchPath: String = "/usr/bin/env"
+    var ripgrepCommandName: String = "rg"
+
+    static func naturalSortKey(for value: String) -> String {
+        var result = ""
+        var digits = ""
+
+        func flushDigits() {
+            guard !digits.isEmpty else { return }
+            let normalizedDigits = String(digits.drop { $0 == "0" })
+            let value = normalizedDigits.isEmpty ? "0" : normalizedDigits
+            let padding = max(0, 12 - value.count)
+            result.append("{")
+            result.append(String(repeating: "0", count: padding))
+            result.append(value)
+            result.append("}")
+            digits.removeAll(keepingCapacity: true)
+        }
+
+        for character in value {
+            if character.isNumber {
+                digits.append(character)
+            } else {
+                flushDigits()
+                result.append(String(character).lowercased())
+            }
+        }
+
+        flushDigits()
+        return result
+    }
 
     init() {}
 
@@ -243,11 +310,34 @@ final class FileService {
         return files
     }
 
+    func projectFiles(
+        at rootURL: URL,
+        includeHidden: Bool = false
+    ) -> [URL] {
+        projectFiles(at: rootURL, includeHidden: includeHidden, isCancelled: { false })
+    }
+
     func loadDirectory(
         at url: URL,
         expandedPaths: Set<String> = [],
         includeHidden: Bool = false,
         isCancelled: () -> Bool = { false }
+    ) -> [FileItem] {
+        loadDirectory(
+            at: url,
+            expandedPaths: expandedPaths,
+            includeHidden: includeHidden,
+            currentDepth: 0,
+            isCancelled: isCancelled
+        )
+    }
+
+    private func loadDirectory(
+        at url: URL,
+        expandedPaths: Set<String>,
+        includeHidden: Bool,
+        currentDepth: Int,
+        isCancelled: () -> Bool
     ) -> [FileItem] {
         if isCancelled() {
             return []
@@ -262,7 +352,7 @@ final class FileService {
             return []
         }
 
-        return contents.compactMap { itemURL -> FileItem? in
+        let entries = contents.compactMap { itemURL -> DirectoryEntry? in
             if directoryLoadDelayPerItemNanoseconds > 0 {
                 Thread.sleep(forTimeInterval: TimeInterval(directoryLoadDelayPerItemNanoseconds) / 1_000_000_000)
             }
@@ -277,34 +367,54 @@ final class FileService {
 
             let name = itemURL.lastPathComponent
 
-            if isDirectory {
-                let children = loadDirectory(
-                    at: itemURL,
-                    expandedPaths: expandedPaths,
-                    includeHidden: includeHidden,
-                    isCancelled: isCancelled
-                )
+            return DirectoryEntry(
+                url: itemURL,
+                name: name,
+                isDirectory: isDirectory,
+                sortKey: Self.naturalSortKey(for: name)
+            )
+        }.sorted { lhs, rhs in
+            if lhs.isDirectory != rhs.isDirectory {
+                return lhs.isDirectory
+            }
+            if lhs.sortKey != rhs.sortKey {
+                return lhs.sortKey < rhs.sortKey
+            }
+            if lhs.name != rhs.name {
+                return lhs.name < rhs.name
+            }
+            return lhs.url.lastPathComponent < rhs.url.lastPathComponent
+        }
+
+        return entries.compactMap { entry in
+            if entry.isDirectory {
+                let itemPath = normalizedPath(for: entry.url)
+                let shouldLoadChildren = currentDepth == 0 || expandedPaths.contains(itemPath)
+                let children = shouldLoadChildren
+                    ? loadDirectory(
+                        at: entry.url,
+                        expandedPaths: expandedPaths,
+                        includeHidden: includeHidden,
+                        currentDepth: currentDepth + 1,
+                        isCancelled: isCancelled
+                    )
+                    : []
                 return FileItem(
-                    name: name,
-                    path: itemURL,
+                    name: entry.name,
+                    path: entry.url,
                     isDirectory: true,
                     children: children,
-                    isExpanded: expandedPaths.contains(normalizedPath(for: itemURL))
+                    isExpanded: expandedPaths.contains(itemPath)
                 )
             } else {
                 return FileItem(
-                    name: name,
-                    path: itemURL,
+                    name: entry.name,
+                    path: entry.url,
                     isDirectory: false,
                     children: [],
                     isExpanded: false
                 )
             }
-        }.sorted { item1, item2 in
-            if item1.isDirectory != item2.isDirectory {
-                return item1.isDirectory
-            }
-            return item1.name.localizedStandardCompare(item2.name) == .orderedAscending
         }
     }
 
@@ -323,6 +433,22 @@ final class FileService {
             )
             try Task.checkCancellation()
             return tree
+        }.value
+    }
+
+    func projectFilesAsync(
+        at rootURL: URL,
+        includeHidden: Bool = false
+    ) async throws -> [URL] {
+        try Task.checkCancellation()
+        return try await Task.detached(priority: .utility) { [self] in
+            let files = projectFiles(
+                at: rootURL,
+                includeHidden: includeHidden,
+                isCancelled: { Task.isCancelled }
+            )
+            try Task.checkCancellation()
+            return files
         }.value
     }
 
@@ -466,6 +592,34 @@ final class FileService {
             return []
         }
 
+        if preferRipgrepProjectSearch,
+           projectSearchDelayPerFileNanoseconds == 0,
+           let ripgrepResults = searchProjectWithRipgrep(
+                at: rootURL,
+                query: normalizedQuery,
+                options: options,
+                includeHidden: includeHidden,
+                isCancelled: isCancelled
+           ) {
+            return ripgrepResults
+        }
+
+        return searchProjectByScanning(
+            at: rootURL,
+            matcher: matcher,
+            options: options,
+            includeHidden: includeHidden,
+            isCancelled: isCancelled
+        )
+    }
+
+    private func searchProjectByScanning(
+        at rootURL: URL,
+        matcher: ProjectSearchMatcher,
+        options: ProjectSearchOptions,
+        includeHidden: Bool,
+        isCancelled: () -> Bool
+    ) -> [ProjectSearchResult] {
         var results: [ProjectSearchResult] = []
 
         for fileURL in projectFiles(at: rootURL, includeHidden: includeHidden, isCancelled: isCancelled) {
@@ -490,34 +644,199 @@ final class FileService {
                 let lineMatches = matcher.ranges(in: line)
                 guard !lineMatches.isEmpty else { continue }
 
-                let previewText = line.trimmingCharacters(in: .whitespaces)
-                let leadingWhitespaceCount = line.distance(
-                    from: line.startIndex,
-                    to: line.firstIndex(where: { !$0.isWhitespace }) ?? line.endIndex
-                )
-                let matchRanges = lineMatches.map { matchRange in
-                    let start = line.distance(from: line.startIndex, to: matchRange.lowerBound)
-                    let length = line.distance(from: matchRange.lowerBound, to: matchRange.upperBound)
-                    return ProjectSearchMatchRange(
-                        start: max(start - leadingWhitespaceCount, 0),
-                        length: length
-                    )
-                }
-                let firstMatchColumn = line.distance(from: line.startIndex, to: lineMatches[0].lowerBound) + 1
-
                 results.append(
                     ProjectSearchResult(
                         filePath: fileURL,
                         lineNumber: index + 1,
-                        columnNumber: firstMatchColumn,
-                        lineText: previewText,
-                        matchRanges: matchRanges
+                        columnNumber: line.distance(from: line.startIndex, to: lineMatches[0].lowerBound) + 1,
+                        lineText: line.trimmingCharacters(in: .whitespaces),
+                        matchRanges: matchRanges(for: lineMatches, in: line)
                     )
                 )
             }
         }
 
-        return results.sorted { lhs, rhs in
+        return sortedProjectSearchResults(results)
+    }
+
+    private func searchProjectWithRipgrep(
+        at rootURL: URL,
+        query: String,
+        options: ProjectSearchOptions,
+        includeHidden: Bool,
+        isCancelled: () -> Bool
+    ) -> [ProjectSearchResult]? {
+        if isCancelled() {
+            return []
+        }
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: ripgrepLaunchPath)
+        process.currentDirectoryURL = rootURL
+        process.arguments = ripgrepArguments(for: query, options: options, includeHidden: includeHidden)
+
+        let outputPipe = Pipe()
+        let errorPipe = Pipe()
+        process.standardOutput = outputPipe
+        process.standardError = errorPipe
+
+        do {
+            try process.run()
+        } catch {
+            return nil
+        }
+
+        process.waitUntilExit()
+
+        if isCancelled() {
+            process.terminate()
+            return []
+        }
+
+        let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
+        _ = errorPipe.fileHandleForReading.readDataToEndOfFile()
+
+        switch process.terminationStatus {
+        case 0:
+            guard let results = parseRipgrepResults(from: outputData, rootURL: rootURL) else {
+                return nil
+            }
+            return sortedProjectSearchResults(results)
+        case 1:
+            return []
+        default:
+            return nil
+        }
+    }
+
+    private func ripgrepArguments(
+        for query: String,
+        options: ProjectSearchOptions,
+        includeHidden: Bool
+    ) -> [String] {
+        var arguments = [ripgrepCommandName, "--json", "--line-number", "--column", "--no-ignore", "--color", "never", "--max-filesize", "1M"]
+
+        if includeHidden {
+            arguments.append("--hidden")
+        }
+
+        if !options.isCaseSensitive {
+            arguments.append("-i")
+        }
+
+        if options.isWholeWord {
+            arguments.append("-w")
+        }
+
+        if !options.isRegularExpression {
+            arguments.append("-F")
+        }
+
+        for pattern in globPatterns(from: options.includeGlob) {
+            arguments.append(contentsOf: ["-g", pattern])
+        }
+
+        for pattern in globPatterns(from: options.excludeGlob) {
+            arguments.append(contentsOf: ["-g", "!\(pattern)"])
+        }
+
+        arguments.append(query)
+        arguments.append(".")
+
+        return arguments
+    }
+
+    private func parseRipgrepResults(from data: Data, rootURL: URL) -> [ProjectSearchResult]? {
+        guard let output = String(data: data, encoding: .utf8) else {
+            return nil
+        }
+
+        let decoder = JSONDecoder()
+        var results: [ProjectSearchResult] = []
+
+        for line in output.split(whereSeparator: \ .isNewline) {
+            guard let eventData = line.data(using: .utf8),
+                  let event = try? decoder.decode(RipgrepEvent.self, from: eventData),
+                  event.type == "match",
+                  let data = event.data,
+                  let pathText = data.path?.text,
+                  let lineText = data.lines?.text,
+                  let lineNumber = data.lineNumber,
+                  let submatches = data.submatches,
+                  !submatches.isEmpty else {
+                continue
+            }
+
+            let fileURL = resolvedRipgrepFileURL(pathText: pathText, rootURL: rootURL)
+            let normalizedLineText = normalizedRipgrepLineText(lineText)
+            let matchRanges = ripgrepMatchRanges(for: submatches, in: normalizedLineText)
+            guard let firstMatch = matchRanges.first else { continue }
+
+            results.append(
+                ProjectSearchResult(
+                    filePath: fileURL,
+                    lineNumber: lineNumber,
+                    columnNumber: firstMatch.start + leadingWhitespaceCount(in: normalizedLineText) + 1,
+                    lineText: normalizedLineText.trimmingCharacters(in: .whitespaces),
+                    matchRanges: matchRanges
+                )
+            )
+        }
+
+        return results
+    }
+
+    private func normalizedRipgrepLineText(_ line: String) -> String {
+        var normalized = line
+        while let last = normalized.last, last == "\n" || last == "\r" {
+            normalized.removeLast()
+        }
+        return normalized
+    }
+
+    private func resolvedRipgrepFileURL(pathText: String, rootURL: URL) -> URL {
+        if pathText.hasPrefix("/") {
+            return URL(fileURLWithPath: pathText).standardizedFileURL
+        }
+
+        let trimmedPath = pathText.hasPrefix("./") ? String(pathText.dropFirst(2)) : pathText
+        return rootURL.appendingPathComponent(trimmedPath).standardizedFileURL
+    }
+
+    private func ripgrepMatchRanges(for submatches: [RipgrepSubmatch], in line: String) -> [ProjectSearchMatchRange] {
+        let leadingWhitespace = leadingWhitespaceCount(in: line)
+        return submatches.compactMap { submatch in
+            let start = characterDistance(in: line, utf8Offset: submatch.start)
+            let end = characterDistance(in: line, utf8Offset: submatch.end)
+            guard end >= start else { return nil }
+            return ProjectSearchMatchRange(start: max(start - leadingWhitespace, 0), length: end - start)
+        }
+    }
+
+    private func leadingWhitespaceCount(in line: String) -> Int {
+        line.distance(from: line.startIndex, to: line.firstIndex(where: { !$0.isWhitespace }) ?? line.endIndex)
+    }
+
+    private func characterDistance(in line: String, utf8Offset: Int) -> Int {
+        guard let utf8Index = line.utf8.index(line.utf8.startIndex, offsetBy: utf8Offset, limitedBy: line.utf8.endIndex),
+              let stringIndex = String.Index(utf8Index, within: line) else {
+            return line.count
+        }
+
+        return line.distance(from: line.startIndex, to: stringIndex)
+    }
+
+    private func matchRanges(for matches: [Range<String.Index>], in line: String) -> [ProjectSearchMatchRange] {
+        let leadingWhitespace = leadingWhitespaceCount(in: line)
+        return matches.map { matchRange in
+            let start = line.distance(from: line.startIndex, to: matchRange.lowerBound)
+            let length = line.distance(from: matchRange.lowerBound, to: matchRange.upperBound)
+            return ProjectSearchMatchRange(start: max(start - leadingWhitespace, 0), length: length)
+        }
+    }
+
+    private func sortedProjectSearchResults(_ results: [ProjectSearchResult]) -> [ProjectSearchResult] {
+        results.sorted { lhs, rhs in
             let lhsPath = normalizedPath(for: lhs.filePath)
             let rhsPath = normalizedPath(for: rhs.filePath)
             if lhsPath == rhsPath {

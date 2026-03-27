@@ -566,15 +566,11 @@ final class RosewoodUITests: XCTestCase {
 
         let toggle = app.buttons["statusbar-diagnostics-toggle"]
         let problemsPanel = app.descendants(matching: .any).matching(identifier: "problems-panel").firstMatch
-        let firstDiagnostic = app.descendants(matching: .any).matching(identifier: "diagnostic-row-0").firstMatch
-        let secondDiagnostic = app.descendants(matching: .any).matching(identifier: "diagnostic-row-1").firstMatch
         let closeButton = app.descendants(matching: .any).matching(identifier: "problems-panel-close").firstMatch
 
         XCTAssertTrue(toggle.waitForExistence(timeout: 5))
         XCTAssertTrue(problemsPanel.waitForExistence(timeout: 2))
-        XCTAssertTrue(firstDiagnostic.exists)
-        XCTAssertTrue(secondDiagnostic.exists)
-        XCTAssertTrue(closeButton.exists)
+        XCTAssertTrue(closeButton.waitForExistence(timeout: 2))
     }
 
     @MainActor

@@ -9,14 +9,11 @@ final class HighlightService {
 
     private var highlightr: Highlightr?
     private let highlightrFactory: () -> Highlightr?
+    private let highlightingQueue = DispatchQueue(label: "rosewood.highlighting", qos: .userInitiated)
     private(set) var currentHighlightrThemeName: String = HighlightService.defaultHighlightrThemeName
 
     init(highlightrFactory: @escaping () -> Highlightr? = { Highlightr() }) {
         self.highlightrFactory = highlightrFactory
-        highlightr = Self.makeConfiguredHighlightr(
-            using: highlightrFactory,
-            themeName: Self.defaultHighlightrThemeName
-        )
     }
 
     func makeHighlightr() -> Highlightr? {
@@ -40,28 +37,58 @@ final class HighlightService {
         themeColors: ThemeColors,
         font: NSFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
     ) -> NSAttributedString {
-        let nsForeground = themeColors.nsForeground
-
-        let highlighted: NSMutableAttributedString
-        if let attributed = highlight(code, as: language) {
-            highlighted = NSMutableAttributedString(attributedString: attributed)
-            let fullRange = NSRange(location: 0, length: highlighted.length)
-            highlighted.addAttribute(.font, value: font, range: fullRange)
-            highlighted.removeAttribute(.backgroundColor, range: fullRange)
-            if highlighted.length > 0 {
-                highlighted.enumerateAttribute(.foregroundColor, in: fullRange) { value, range, _ in
-                    guard value == nil else { return }
-                    highlighted.addAttribute(.foregroundColor, value: nsForeground, range: range)
+        Self.makeHighlightedAttributedString(
+            code,
+            language: language,
+            themeColors: themeColors,
+            font: font,
+            highlightr: resolveHighlightr(),
+            fallbackHighlighter: { [weak self] in
+                guard let self,
+                      let rebuiltHighlightr = self.resolveHighlightr(rebuild: true) else {
+                    return nil
                 }
-            }
-        } else {
-            highlighted = NSMutableAttributedString(string: code, attributes: [
-                .font: font,
-                .foregroundColor: nsForeground
-            ])
-        }
 
-        return highlighted
+                return self.highlight(code, as: language, using: rebuiltHighlightr)
+            },
+            validator: { [weak self] attributed in
+                self?.shouldAcceptHighlightedResult(attributed, language: language) ?? false
+            }
+        )
+    }
+
+    func highlightedAttributedStringAsync(
+        _ code: String,
+        language: String,
+        themeColors: ThemeColors,
+        fontName: String,
+        fontSize: CGFloat
+    ) async -> NSAttributedString {
+        let themeName = currentHighlightrThemeName
+        let factory = highlightrFactory
+
+        return await withCheckedContinuation { continuation in
+            highlightingQueue.async {
+                let font = NSFont(name: fontName, size: fontSize)
+                    ?? NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
+                let highlightr = Self.makeConfiguredHighlightr(using: factory, themeName: themeName)
+                let highlighted = Self.makeHighlightedAttributedString(
+                    code,
+                    language: language,
+                    themeColors: themeColors,
+                    font: font,
+                    highlightr: highlightr,
+                    fallbackHighlighter: {
+                        let rebuiltHighlightr = Self.makeConfiguredHighlightr(using: factory, themeName: themeName)
+                        return Self.highlight(code, as: language, using: rebuiltHighlightr)
+                    },
+                    validator: { attributed in
+                        Self.shouldAcceptHighlightedResult(attributed, language: language)
+                    }
+                )
+                continuation.resume(returning: highlighted)
+            }
+        }
     }
 
     func availableLanguages() -> [String] {
@@ -70,7 +97,7 @@ final class HighlightService {
 
     func setHighlightrTheme(to name: String) {
         currentHighlightrThemeName = name
-        resolveHighlightr()?.setTheme(to: name)
+        highlightr?.setTheme(to: name)
     }
 
     func themeColors(for definition: ThemeDefinition) -> ThemeColors {
@@ -125,10 +152,59 @@ final class HighlightService {
     }
 
     private func highlight(_ code: String, as language: String, using highlightr: Highlightr?) -> NSAttributedString? {
-        highlightr?.highlight(code, as: language)
+        Self.highlight(code, as: language, using: highlightr)
     }
 
     private func shouldAcceptHighlightedResult(_ attributed: NSAttributedString, language: String) -> Bool {
+        Self.shouldAcceptHighlightedResult(attributed, language: language)
+    }
+
+    private static func highlight(_ code: String, as language: String, using highlightr: Highlightr?) -> NSAttributedString? {
+        highlightr?.highlight(code, as: language)
+    }
+
+    private static func makeHighlightedAttributedString(
+        _ code: String,
+        language: String,
+        themeColors: ThemeColors,
+        font: NSFont,
+        highlightr: Highlightr?,
+        fallbackHighlighter: () -> NSAttributedString?,
+        validator: (NSAttributedString) -> Bool
+    ) -> NSAttributedString {
+        let nsForeground = themeColors.nsForeground
+
+        let baseHighlighted = highlight(code, as: language, using: highlightr)
+        let acceptedHighlighted: NSAttributedString?
+        if let baseHighlighted, validator(baseHighlighted) {
+            acceptedHighlighted = baseHighlighted
+        } else {
+            acceptedHighlighted = fallbackHighlighter()
+        }
+
+        let highlighted: NSMutableAttributedString
+        if let acceptedHighlighted {
+            highlighted = NSMutableAttributedString(attributedString: acceptedHighlighted)
+            let fullRange = NSRange(location: 0, length: highlighted.length)
+            highlighted.addAttribute(.font, value: font, range: fullRange)
+            highlighted.removeAttribute(.backgroundColor, range: fullRange)
+            if highlighted.length > 0 {
+                highlighted.enumerateAttribute(.foregroundColor, in: fullRange) { value, range, _ in
+                    guard value == nil else { return }
+                    highlighted.addAttribute(.foregroundColor, value: nsForeground, range: range)
+                }
+            }
+        } else {
+            highlighted = NSMutableAttributedString(string: code, attributes: [
+                .font: font,
+                .foregroundColor: nsForeground
+            ])
+        }
+
+        return highlighted
+    }
+
+    private static func shouldAcceptHighlightedResult(_ attributed: NSAttributedString, language: String) -> Bool {
         guard language != "plaintext" else { return true }
         guard attributed.length > 0 else { return true }
 
