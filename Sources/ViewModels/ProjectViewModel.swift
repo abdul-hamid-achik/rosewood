@@ -636,7 +636,6 @@ final class ProjectViewModel: ObservableObject {
             sessionStore.removeObject(forKey: debugPanelVisibilityKey)
         }
         setupFileWatcher()
-        setupCommandObservers()
         restoreSession()
         reloadDebuggerState(resetConsole: false)
         installUITestEditorFixturesIfNeeded()
