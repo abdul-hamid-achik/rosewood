@@ -562,6 +562,7 @@ final class ProjectViewModel: ObservableObject {
     let debugConfigurationService: DebugConfigurationService
     let debugSessionService: DebugSessionServiceProtocol
     let gitService: GitServiceProtocol
+    let commandPaletteViewModel: CommandPaletteViewModel
     private var settingsCommandCancellable: AnyCancellable?
     private var fileTreeLoadToken = UUID()
     var projectSearchToken = UUID()
@@ -635,6 +636,7 @@ final class ProjectViewModel: ObservableObject {
                 self?.handleDebugSessionEvent(event)
             }
         }
+        self.commandPaletteViewModel = CommandPaletteViewModel(commandDispatcher: commandDispatcher)
 
         if ProcessInfo.processInfo.environment["ROSEWOOD_UI_TEST_RESET_SESSION"] == "1" {
             sessionStore.removeObject(forKey: sessionKey)
@@ -722,7 +724,7 @@ final class ProjectViewModel: ObservableObject {
     }
 
     var showCommandPalette: Bool {
-        activePalette == .commandPalette
+        commandPaletteViewModel.activePalette == .commandPalette
     }
 
     var showQuickOpen: Bool {
@@ -1517,43 +1519,7 @@ final class ProjectViewModel: ObservableObject {
     }
 
     var commandPaletteSections: [CommandPaletteSection] {
-        let actions = commandPaletteActions
-        guard !actions.isEmpty else { return [] }
-
-        let queryContext = self.commandPaletteQueryContext(for: commandPaletteQuery)
-        let normalizedQuery = queryContext.searchText
-        let decorate: (CommandPaletteAction) -> CommandPaletteAction = { action in
-            self.decoratedCommandPaletteAction(action, query: normalizedQuery)
-        }
-
-        if normalizedQuery.isEmpty {
-            let recentActions = actions
-                .filter { self.commandPaletteRecencyBoost(for: $0.id) > 0 }
-                .prefix(5)
-                .map(decorate)
-            let recentIDs = Set(recentActions.map(\.id))
-            let remainingActions = actions.filter { !recentIDs.contains($0.id) }
-            var sections: [CommandPaletteSection] = []
-
-            if !recentActions.isEmpty {
-                sections.append(CommandPaletteSection(title: "Recent", actions: Array(recentActions)))
-            }
-
-            sections.append(contentsOf: self.commandPaletteCategorySections(for: remainingActions, query: normalizedQuery))
-            return sections
-        }
-
-        let shouldGroupByCategory = self.commandPaletteShouldGroupByCategory(actions: actions, normalizedQuery: normalizedQuery)
-        if shouldGroupByCategory {
-            return self.commandPaletteCategorySections(for: actions, query: normalizedQuery)
-        }
-
-        return [
-            CommandPaletteSection(
-                title: queryContext.scope.map { "\($0.title) Commands" } ?? "Commands",
-                actions: actions.map(decorate)
-            )
-        ]
+        commandPaletteViewModel.commandPaletteSections
     }
 
     var quickOpenSections: [QuickOpenSection] {
@@ -2703,26 +2669,15 @@ final class ProjectViewModel: ObservableObject {
     }
 
     func executeCommandPaletteAction(_ action: CommandPaletteAction) {
-        let previousPalette = activePalette
-        action.action()
-
-        if activePalette == previousPalette {
-            closeCommandPalette()
-        }
+        commandPaletteViewModel.executeCommand(action)
     }
 
     func toggleCommandPalette() {
-        if activePalette == .commandPalette {
-            activePalette = nil
-            return
-        }
-
-        activePalette = .commandPalette
-        commandPaletteQuery = ""
+        commandPaletteViewModel.toggleCommandPalette()
     }
 
     func closeCommandPalette() {
-        activePalette = nil
+        commandPaletteViewModel.closeCommandPalette()
     }
 
     func showExplorerSidebar() {
