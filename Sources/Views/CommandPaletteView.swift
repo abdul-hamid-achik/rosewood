@@ -1,10 +1,8 @@
 import SwiftUI
 
 struct CommandPaletteView: View {
-    @EnvironmentObject var projectViewModel: ProjectViewModel
+    @EnvironmentObject var commandPaletteViewModel: CommandPaletteViewModel
     @EnvironmentObject private var configService: ConfigurationService
-
-    let mode: ProjectViewModel.PaletteMode
 
     @State private var selectedIndex: Int = 0
     @FocusState private var isQueryFieldFocused: Bool
@@ -14,18 +12,10 @@ struct CommandPaletteView: View {
     }
 
     private var queryBinding: Binding<String> {
-        switch mode {
-        case .commandPalette:
-            Binding(
-                get: { projectViewModel.commandPaletteQuery },
-                set: { projectViewModel.commandPaletteQuery = $0 }
-            )
-        case .quickOpen:
-            Binding(
-                get: { projectViewModel.quickOpenQuery },
-                set: { projectViewModel.quickOpenQuery = $0 }
-            )
-        }
+        Binding(
+            get: { commandPaletteViewModel.commandPaletteQuery },
+            set: { commandPaletteViewModel.commandPaletteQuery = $0 }
+        )
     }
 
     private var titleIcon: String {
