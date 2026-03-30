@@ -3,6 +3,26 @@ import Testing
 @testable import Rosewood
 
 struct LSPClientTests {
+    private actor DiagnosticsRecorder {
+        private var received: (String, [LSPDiagnostic])?
+        private var latest: [LSPDiagnostic]?
+
+        func setReceived(uri: String, diagnostics: [LSPDiagnostic]) {
+            received = (uri, diagnostics)
+        }
+
+        func setLatest(_ diagnostics: [LSPDiagnostic]) {
+            latest = diagnostics
+        }
+
+        func receivedDiagnostics() -> (String, [LSPDiagnostic])? {
+            received
+        }
+
+        func latestDiagnostics() -> [LSPDiagnostic]? {
+            latest
+        }
+    }
 
     private func makeClient(transport: MockJSONRPCTransport = MockJSONRPCTransport()) -> LSPClient {
         let config = LSPServerConfig(
@@ -48,7 +68,7 @@ struct LSPClientTests {
 
         try await client.start()
         let state = await client.state
-        #expect(state == .ready)
+        #expect(stateEquals(state, .ready))
     }
 
     @Test
@@ -507,10 +527,12 @@ struct LSPClientTests {
         let transport = MockJSONRPCTransport()
         let client = makeClient(transport: transport)
 
-        var receivedDiagnostics: (String, [LSPDiagnostic])?
+        let recorder = DiagnosticsRecorder()
 
         await client.setOnDiagnostics { uri, diagnostics in
-            receivedDiagnostics = (uri, diagnostics)
+            Task {
+                await recorder.setReceived(uri: uri, diagnostics: diagnostics)
+            }
         }
 
         Task {
@@ -539,6 +561,7 @@ struct LSPClientTests {
         // Wait for processing
         try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
 
+        let receivedDiagnostics = await recorder.receivedDiagnostics()
         #expect(receivedDiagnostics?.0 == "file:///test.swift")
         #expect(receivedDiagnostics?.1.count == 1)
         #expect(receivedDiagnostics?.1[0].message == "cannot find 'foo' in scope")
@@ -550,9 +573,11 @@ struct LSPClientTests {
         let transport = MockJSONRPCTransport()
         let client = makeClient(transport: transport)
 
-        var latestDiagnostics: [LSPDiagnostic]?
+        let recorder = DiagnosticsRecorder()
         await client.setOnDiagnostics { _, diagnostics in
-            latestDiagnostics = diagnostics
+            Task {
+                await recorder.setLatest(diagnostics)
+            }
         }
 
         Task {
@@ -570,7 +595,7 @@ struct LSPClientTests {
         )
 
         try? await Task.sleep(nanoseconds: 100_000_000)
-        #expect(latestDiagnostics?.isEmpty == true)
+        #expect(await recorder.latestDiagnostics()?.isEmpty == true)
     }
 
     // MARK: - Request ID
@@ -648,7 +673,7 @@ struct LSPClientTests {
         let client = makeClient(transport: transport)
 
         let state1 = await client.state
-        #expect(state1 == .starting)
+        #expect(stateEquals(state1, .starting))
 
         Task {
             try? await Task.sleep(nanoseconds: 50_000_000)
@@ -659,7 +684,7 @@ struct LSPClientTests {
         try await client.start()
 
         let state2 = await client.state
-        #expect(state2 == .ready)
+        #expect(stateEquals(state2, .ready))
     }
 
     @Test
@@ -687,7 +712,7 @@ struct LSPClientTests {
 
         await client.shutdown()
         let state = await client.state
-        #expect(state == .shutdown)
+        #expect(stateEquals(state, .shutdown))
     }
 
     // MARK: - Not Ready State
@@ -735,16 +760,13 @@ struct LSPClientTests {
     }
 }
 
-// MARK: - LSPClient State Equatable
-
-extension LSPClient.State: Equatable {
-    public static func == (lhs: LSPClient.State, rhs: LSPClient.State) -> Bool {
-        switch (lhs, rhs) {
-        case (.starting, .starting): return true
-        case (.ready, .ready): return true
-        case (.shutdown, .shutdown): return true
-        case (.failed(let l), .failed(let r)): return l == r
-        default: return false
-        }
+private func stateEquals(_ lhs: LSPClient.State, _ rhs: LSPClient.State) -> Bool {
+    switch (lhs, rhs) {
+    case (.starting, .starting), (.ready, .ready), (.shutdown, .shutdown):
+        return true
+    case (.failed(let l), .failed(let r)):
+        return l == r
+    default:
+        return false
     }
 }

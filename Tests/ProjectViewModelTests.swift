@@ -50,7 +50,7 @@ struct ProjectViewModelTests {
     }
 
     @Test
-    func sessionPersistenceDebouncesRapidContentUpdates() async throws {
+    func sessionPersistenceDoesNotSerializeEditorBuffers() async throws {
         let fileURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
             .appendingPathExtension("swift")
@@ -73,12 +73,20 @@ struct ProjectViewModelTests {
         viewModel.openFile(at: fileURL)
         viewModel.updateTabContent("let value = 2\n")
 
-        let immediateSession = try sessionState(from: defaults, key: "session-debounce-test")
-        #expect(immediateSession.openTabs.first?.content == "let value = 1\n")
-
         try await waitUntil {
-            ((try? sessionState(from: defaults, key: "session-debounce-test").openTabs.first?.content) ?? nil) == "let value = 2\n"
+            (try? sessionState(from: defaults, key: "session-debounce-test").openTabs.first?.filePath) == fileURL.path
         }
+
+        let session = try sessionState(from: defaults, key: "session-debounce-test")
+        let encodedSession = try #require(defaults.data(forKey: "session-debounce-test"))
+        let encodedSessionText = try #require(String(data: encodedSession, encoding: .utf8))
+
+        #expect(session.openTabs.first?.filePath == fileURL.path)
+        #expect(session.openTabs.first?.fileName == fileURL.lastPathComponent)
+        #expect(session.openTabs.first?.cursorLine == 1)
+        #expect(session.openTabs.first?.cursorColumn == 1)
+        #expect(encodedSessionText.contains("let value = 1") == false)
+        #expect(encodedSessionText.contains("let value = 2") == false)
     }
 
     @Test
@@ -334,6 +342,46 @@ struct ProjectViewModelTests {
             !viewModel.projectSearchResults.isEmpty && !viewModel.isSearchingProject
         }
 
+        #expect(viewModel.projectSearchResults.count == 1)
+        #expect(viewModel.projectSearchResults.first?.filePath.standardizedFileURL.path == guideURL.standardizedFileURL.path)
+    }
+
+    @Test
+    func performProjectSearchMarksRipgrepUnavailableAndFallsBackToScanner() async throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let docsDirectory = rootURL.appendingPathComponent("Docs", isDirectory: true)
+        let guideURL = docsDirectory.appendingPathComponent("Guide.md")
+
+        try FileManager.default.createDirectory(at: docsDirectory, withIntermediateDirectories: true)
+        try "Rosewood fallback search target".write(to: guideURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let configURL = tempConfigURL()
+        defer { try? FileManager.default.removeItem(at: configURL) }
+
+        let fileService = FileService()
+        fileService.ripgrepLaunchPath = "/usr/bin/env"
+        fileService.ripgrepCommandName = "rg-command-that-does-not-exist"
+
+        let viewModel = makeViewModel(
+            fileService: fileService,
+            sessionStore: makeDefaults(),
+            sessionKey: "search-ripgrep-fallback-test",
+            configService: ConfigurationService(userConfigURL: configURL),
+            fileWatcher: FileWatcherService(),
+            ui: TestProjectUI()
+        )
+
+        viewModel.rootDirectory = rootURL
+        viewModel.projectSearchQuery = "rosewood"
+        viewModel.performProjectSearch()
+
+        try await waitUntil {
+            !viewModel.projectSearchResults.isEmpty && !viewModel.isSearchingProject
+        }
+
+        #expect(viewModel.isRipgrepToolAvailable == false)
         #expect(viewModel.projectSearchResults.count == 1)
         #expect(viewModel.projectSearchResults.first?.filePath.standardizedFileURL.path == guideURL.standardizedFileURL.path)
     }
@@ -644,9 +692,8 @@ struct ProjectViewModelTests {
                 ProjectSessionTabState(
                     filePath: fileURL.path,
                     fileName: fileURL.lastPathComponent,
-                    content: "print(\"hello\")",
-                    originalContent: "print(\"hello\")",
-                    isDirty: false
+                    cursorLine: 3,
+                    cursorColumn: 7
                 )
             ],
             selectedTabPath: fileURL.path
@@ -663,7 +710,80 @@ struct ProjectViewModelTests {
 
         #expect(viewModel.openTabs.count == 1)
         #expect(viewModel.selectedTab?.filePath == fileURL)
+        #expect(viewModel.selectedTab?.cursorPosition.line == 3)
+        #expect(viewModel.selectedTab?.cursorPosition.column == 7)
         #expect(fileWatcher.watchedURLs == Set([fileURL]))
+    }
+
+    @Test
+    func openFilesUsesPanelSelectionAndOpensPickedFiles() throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let alphaURL = rootURL.appendingPathComponent("Alpha.swift")
+        let betaURL = rootURL.appendingPathComponent("Beta.swift")
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        try "let alpha = 1\n".write(to: alphaURL, atomically: true, encoding: .utf8)
+        try "let beta = 2\n".write(to: betaURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let configURL = tempConfigURL()
+        defer { try? FileManager.default.removeItem(at: configURL) }
+
+        let ui = TestProjectUI(openPanelSelections: [[alphaURL, betaURL]])
+        let viewModel = makeViewModel(
+            sessionStore: makeDefaults(),
+            sessionKey: "open-files-panel-test",
+            configService: ConfigurationService(userConfigURL: configURL),
+            fileWatcher: FileWatcherService(),
+            ui: ui
+        )
+
+        viewModel.openFiles()
+
+        #expect(viewModel.rootDirectory?.standardizedFileURL.path == rootURL.standardizedFileURL.path)
+        #expect(viewModel.openTabs.compactMap { $0.filePath?.standardizedFileURL.path } == [alphaURL.path, betaURL.path])
+        #expect(viewModel.selectedTab?.filePath?.standardizedFileURL.path == betaURL.standardizedFileURL.path)
+    }
+
+    @Test
+    func saveCurrentFileAsWritesToNewLocationAndRetargetsWatchers() throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let sourceURL = rootURL.appendingPathComponent("Alpha.swift")
+        let destinationURL = rootURL.appendingPathComponent("Beta.swift")
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        try "let alpha = 1\n".write(to: sourceURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let configURL = tempConfigURL()
+        defer { try? FileManager.default.removeItem(at: configURL) }
+
+        let fileWatcher = FileWatcherService()
+        let defaults = makeDefaults()
+        let ui = TestProjectUI(savePanelURLs: [destinationURL])
+        let viewModel = makeViewModel(
+            sessionStore: defaults,
+            sessionKey: "save-as-test",
+            configService: ConfigurationService(userConfigURL: configURL),
+            fileWatcher: fileWatcher,
+            ui: ui
+        )
+
+        viewModel.rootDirectory = rootURL
+        viewModel.openFile(at: sourceURL)
+        viewModel.updateTabContent("let beta = 2\n")
+
+        viewModel.saveCurrentFileAs()
+
+        #expect(try String(contentsOf: sourceURL, encoding: .utf8) == "let alpha = 1\n")
+        #expect(try String(contentsOf: destinationURL, encoding: .utf8) == "let beta = 2\n")
+        #expect(viewModel.selectedTab?.filePath?.standardizedFileURL.path == destinationURL.standardizedFileURL.path)
+        #expect(viewModel.selectedTab?.fileName == destinationURL.lastPathComponent)
+        #expect(viewModel.selectedTab?.isDirty == false)
+        #expect(fileWatcher.watchedURLs == Set([destinationURL]))
+
+        let session = try sessionState(from: defaults, key: "save-as-test")
+        #expect(session.openTabs.first?.filePath == destinationURL.path)
     }
 
     @Test
@@ -2440,6 +2560,53 @@ struct ProjectViewModelTests {
     }
 
     @Test
+    func refreshGitStateMarksGitUnavailableWhenToolIsMissing() async throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let configURL = tempConfigURL()
+        defer { try? FileManager.default.removeItem(at: configURL) }
+
+        let gitService = MockGitService()
+        gitService.toolAvailableResult = false
+        gitService.repositoryStatusResult = GitRepositoryStatus(
+            repositoryRoot: rootURL,
+            branchName: "main",
+            changedFiles: [
+                GitChangedFile(
+                    path: "Tracked.swift",
+                    previousPath: nil,
+                    kind: .modified,
+                    indexStatus: " ",
+                    workingTreeStatus: "M"
+                )
+            ],
+            ignoredPaths: []
+        )
+
+        let viewModel = makeViewModel(
+            sessionStore: makeDefaults(),
+            sessionKey: "git-unavailable-test",
+            configService: ConfigurationService(userConfigURL: configURL),
+            fileWatcher: FileWatcherService(),
+            ui: TestProjectUI(),
+            gitService: gitService
+        )
+
+        viewModel.rootDirectory = rootURL
+        viewModel.refreshGitState()
+
+        try await waitUntil {
+            viewModel.isRefreshingGitStatus == false && viewModel.isGitToolAvailable == false
+        }
+
+        #expect(viewModel.isGitToolAvailable == false)
+        #expect(viewModel.gitRepositoryStatus.isRepository == false)
+    }
+
+    @Test
     func openGitChangedFileLoadsDiffAndShowsWorkspaceDiff() async throws {
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -2956,6 +3123,73 @@ struct ProjectViewModelTests {
         #expect(viewModel.openTabs.isEmpty)
         #expect(fileWatcher.watchedURLs.isEmpty)
         #expect(try String(contentsOf: fileURL, encoding: .utf8) == "print(\"after\")")
+    }
+
+    @Test
+    func reopenLastClosedTabRestoresClosedFileTab() throws {
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("swift")
+        try "print(\"before\")".write(to: fileURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+
+        let configURL = tempConfigURL()
+        defer { try? FileManager.default.removeItem(at: configURL) }
+
+        let fileWatcher = FileWatcherService()
+        let viewModel = makeViewModel(
+            sessionStore: makeDefaults(),
+            sessionKey: "reopen-closed-tab-test",
+            configService: ConfigurationService(userConfigURL: configURL),
+            fileWatcher: fileWatcher,
+            ui: TestProjectUI()
+        )
+
+        viewModel.openFile(at: fileURL)
+        viewModel.updateCursorPosition(line: 1, column: 6)
+
+        #expect(viewModel.closeTab(at: 0, confirmUnsavedChanges: false) == true)
+        #expect(viewModel.canReopenClosedTab == true)
+        #expect(viewModel.openTabs.isEmpty)
+
+        viewModel.reopenLastClosedTab()
+
+        #expect(viewModel.openTabs.count == 1)
+        #expect(viewModel.selectedTab?.filePath?.standardizedFileURL == fileURL.standardizedFileURL)
+        #expect(viewModel.selectedTab?.cursorPosition.line == 1)
+        #expect(viewModel.selectedTab?.cursorPosition.column == 6)
+        #expect(viewModel.canReopenClosedTab == false)
+        #expect(fileWatcher.watchedURLs == Set([fileURL]))
+    }
+
+    @Test
+    func reopenLastClosedTabUsesSavedContentAfterDiscardingDirtyChanges() throws {
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("swift")
+        try "print(\"before\")".write(to: fileURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+
+        let configURL = tempConfigURL()
+        defer { try? FileManager.default.removeItem(at: configURL) }
+
+        let ui = TestProjectUI(confirmResponses: [.alertSecondButtonReturn])
+        let viewModel = makeViewModel(
+            sessionStore: makeDefaults(),
+            sessionKey: "reopen-discarded-tab-test",
+            configService: ConfigurationService(userConfigURL: configURL),
+            fileWatcher: FileWatcherService(),
+            ui: ui
+        )
+
+        viewModel.openFile(at: fileURL)
+        viewModel.updateTabContent("print(\"dirty\")")
+
+        #expect(viewModel.closeTab(at: 0) == true)
+        viewModel.reopenLastClosedTab()
+
+        #expect(viewModel.selectedTab?.content == "print(\"before\")")
+        #expect(viewModel.selectedTab?.isDirty == false)
     }
 
     @Test
@@ -5076,30 +5310,44 @@ private final class TestProjectUI {
     }
 
     var openPanelURLs: [URL?]
+    var openPanelSelections: [[URL]]
+    var savePanelURLs: [URL?]
     var confirmResponses: [NSApplication.ModalResponse]
     private(set) var alerts: [AlertRecord] = []
     private(set) var confirms: [ConfirmRecord] = []
 
     init(
         openPanelURLs: [URL?] = [],
+        openPanelSelections: [[URL]] = [],
+        savePanelURLs: [URL?] = [],
         confirmResponses: [NSApplication.ModalResponse] = []
     ) {
         self.openPanelURLs = openPanelURLs
+        self.openPanelSelections = openPanelSelections
+        self.savePanelURLs = savePanelURLs
         self.confirmResponses = confirmResponses
     }
 
     var handlers: ProjectViewModelUI {
         ProjectViewModelUI(
-            openPanel: { [weak self] _, _, _ in
-                guard let self, !self.openPanelURLs.isEmpty else { return nil }
+            openPanel: { _, _, _ in
+                guard !self.openPanelURLs.isEmpty else { return nil }
                 return self.openPanelURLs.removeFirst()
             },
-            alert: { [weak self] title, message, style in
-                self?.alerts.append(AlertRecord(title: title, message: message, style: style))
+            openPanelURLs: { _, _, _ in
+                guard !self.openPanelSelections.isEmpty else { return [] }
+                return self.openPanelSelections.removeFirst()
             },
-            confirm: { [weak self] title, message, style, buttons in
-                self?.confirms.append(ConfirmRecord(title: title, message: message, style: style, buttons: buttons))
-                guard let self, !self.confirmResponses.isEmpty else {
+            savePanel: { _, _ in
+                guard !self.savePanelURLs.isEmpty else { return nil }
+                return self.savePanelURLs.removeFirst()
+            },
+            alert: { title, message, style in
+                self.alerts.append(AlertRecord(title: title, message: message, style: style))
+            },
+            confirm: { title, message, style, buttons in
+                self.confirms.append(ConfirmRecord(title: title, message: message, style: style, buttons: buttons))
+                guard !self.confirmResponses.isEmpty else {
                     return .alertSecondButtonReturn
                 }
                 return self.confirmResponses.removeFirst()
@@ -5196,6 +5444,7 @@ private func waitUntil(
 }
 
 private final class MockGitService: GitServiceProtocol {
+    var toolAvailableResult: Bool = true
     var repositoryStatusResult: GitRepositoryStatus = .empty
     var diffResults: [String: GitDiffResult] = [:]
     var blameResults: [String: GitBlameInfo] = [:]
@@ -5212,56 +5461,58 @@ private final class MockGitService: GitServiceProtocol {
     private(set) var unstageCalls: [String] = []
     private(set) var discardCalls: [String] = []
 
+    private func withLock<T>(_ body: () -> T) -> T {
+        lock.lock()
+        defer { lock.unlock() }
+        return body()
+    }
+
+    func toolAvailable() async -> Bool {
+        withLock { toolAvailableResult }
+    }
+
     func repositoryStatus(for projectRoot: URL?) async -> GitRepositoryStatus {
         if let projectRoot {
-            lock.lock()
-            repositoryStatusCalls.append(projectRoot)
-            lock.unlock()
+            withLock {
+                repositoryStatusCalls.append(projectRoot)
+            }
         }
-        lock.lock()
-        let result = repositoryStatusResult
-        lock.unlock()
-        return result
+        return withLock { repositoryStatusResult }
     }
 
     func diff(for changedFile: GitChangedFile, projectRoot: URL?) async -> GitDiffResult? {
-        lock.lock()
-        diffCalls.append(changedFile.path)
-        let result = diffResults[changedFile.path]
-        lock.unlock()
-        return result
+        return withLock {
+            diffCalls.append(changedFile.path)
+            return diffResults[changedFile.path]
+        }
     }
 
     func blame(for fileURL: URL?, line: Int, projectRoot: URL?) async -> GitBlameInfo? {
         guard let fileURL else { return nil }
-        lock.lock()
-        blameCalls.append((fileURL, line))
-        let result = blameResults["\(fileURL.standardizedFileURL.path):\(line)"]
-        lock.unlock()
-        return result
+        return withLock {
+            blameCalls.append((fileURL, line))
+            return blameResults["\(fileURL.standardizedFileURL.path):\(line)"]
+        }
     }
 
     func stage(changedFile: GitChangedFile, projectRoot: URL?) async -> GitOperationResult {
-        lock.lock()
-        stageCalls.append(changedFile.path)
-        let result = stageResult
-        lock.unlock()
-        return result
+        return withLock {
+            stageCalls.append(changedFile.path)
+            return stageResult
+        }
     }
 
     func unstage(changedFile: GitChangedFile, projectRoot: URL?) async -> GitOperationResult {
-        lock.lock()
-        unstageCalls.append(changedFile.path)
-        let result = unstageResult
-        lock.unlock()
-        return result
+        return withLock {
+            unstageCalls.append(changedFile.path)
+            return unstageResult
+        }
     }
 
     func discard(changedFile: GitChangedFile, projectRoot: URL?) async -> GitOperationResult {
-        lock.lock()
-        discardCalls.append(changedFile.path)
-        let result = discardResult
-        lock.unlock()
-        return result
+        return withLock {
+            discardCalls.append(changedFile.path)
+            return discardResult
+        }
     }
 }

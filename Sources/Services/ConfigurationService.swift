@@ -12,6 +12,7 @@ final class ConfigurationService: ObservableObject {
     @Published private(set) var currentEditorFont: NSFont = NSFont.monospacedSystemFont(ofSize: AppSettings.default.editor.fontSize, weight: .regular)
 
     let userConfigURL: URL
+    let legacyUserConfigURL: URL?
 
     private(set) var projectConfigURL: URL?
     private var projectRoot: URL?
@@ -25,13 +26,9 @@ final class ConfigurationService: ObservableObject {
         Set(fileWatchers.keys)
     }
 
-    init(userConfigURL: URL? = nil) {
-        if let userConfigURL {
-            self.userConfigURL = userConfigURL
-        } else {
-            let homeDir = FileManager.default.homeDirectoryForCurrentUser
-            self.userConfigURL = homeDir.appendingPathComponent(".config/rosewood/config.toml")
-        }
+    init(userConfigURL: URL? = nil, legacyUserConfigURL: URL? = nil) {
+        self.userConfigURL = userConfigURL ?? Self.defaultUserConfigURL()
+        self.legacyUserConfigURL = legacyUserConfigURL ?? (userConfigURL == nil ? Self.defaultLegacyUserConfigURL() : nil)
     }
 
     deinit {
@@ -43,6 +40,8 @@ final class ConfigurationService: ObservableObject {
     }
 
     func load() {
+        migrateLegacyUserConfigIfNeeded()
+
         var merged = AppSettings.default
 
         if let userConfig = loadUserConfig() {
@@ -92,6 +91,7 @@ final class ConfigurationService: ObservableObject {
         let encoder = TOMLEncoder()
         let tomlString = try encoder.encode(settings)
         try tomlString.write(to: projectConfigURL, atomically: true, encoding: .utf8)
+        startWatchingConfigFiles()
     }
 
     func saveUserSettings() throws {
@@ -103,6 +103,7 @@ final class ConfigurationService: ObservableObject {
         let encoder = TOMLEncoder()
         let tomlString = try encoder.encode(settings)
         try tomlString.write(to: userConfigURL, atomically: true, encoding: .utf8)
+        startWatchingConfigFiles()
     }
 
     func updateSettings(_ newSettings: AppSettings) {
@@ -283,5 +284,40 @@ final class ConfigurationService: ObservableObject {
         }
 
         return NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
+    }
+
+    private func migrateLegacyUserConfigIfNeeded() {
+        guard let legacyUserConfigURL else { return }
+
+        let standardizedLegacyURL = legacyUserConfigURL.standardizedFileURL
+        let standardizedUserURL = userConfigURL.standardizedFileURL
+        guard standardizedLegacyURL != standardizedUserURL else { return }
+        guard FileManager.default.fileExists(atPath: standardizedLegacyURL.path) else { return }
+        guard !FileManager.default.fileExists(atPath: standardizedUserURL.path) else { return }
+
+        do {
+            let destinationDirectory = standardizedUserURL.deletingLastPathComponent()
+            if !FileManager.default.fileExists(atPath: destinationDirectory.path) {
+                try FileManager.default.createDirectory(at: destinationDirectory, withIntermediateDirectories: true)
+            }
+            try FileManager.default.copyItem(at: standardizedLegacyURL, to: standardizedUserURL)
+        } catch {
+            print("Failed to migrate user config: \(error)")
+        }
+    }
+
+    private static func defaultUserConfigURL() -> URL {
+        let fileManager = FileManager.default
+        let applicationSupportURL = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? fileManager.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support", isDirectory: true)
+
+        return applicationSupportURL
+            .appendingPathComponent("Rosewood", isDirectory: true)
+            .appendingPathComponent("config.toml")
+    }
+
+    private static func defaultLegacyUserConfigURL() -> URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".config/rosewood/config.toml")
     }
 }

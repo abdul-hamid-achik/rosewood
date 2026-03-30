@@ -19,6 +19,7 @@ extension ProjectViewModel {
         let searchOptions = currentProjectSearchOptions
 
         guard let rootDirectory else {
+            updateRipgrepToolAvailability(true)
             isSearchingProject = false
             clearProjectSearchResults()
             return
@@ -26,6 +27,7 @@ extension ProjectViewModel {
 
         let trimmedQuery = projectSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedQuery.isEmpty else {
+            updateRipgrepToolAvailability(true)
             isSearchingProject = false
             clearProjectSearchResults()
             return
@@ -38,6 +40,9 @@ extension ProjectViewModel {
             guard let self else { return }
 
             do {
+                let ripgrepAvailable = fileService.preferRipgrepProjectSearch
+                    ? await fileService.ripgrepAvailableAsync()
+                    : true
                 let results = try await fileService.searchProjectAsync(
                     at: rootDirectory,
                     query: trimmedQuery,
@@ -51,6 +56,7 @@ extension ProjectViewModel {
                       self.currentProjectSearchOptions == searchOptions else {
                     return
                 }
+                self.updateRipgrepToolAvailability(ripgrepAvailable)
                 self.updateProjectSearchResults(results, query: trimmedQuery, options: searchOptions)
                 self.isSearchingProject = false
             } catch is CancellationError {

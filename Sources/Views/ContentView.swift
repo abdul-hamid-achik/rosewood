@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject var projectViewModel: ProjectViewModel
+    @EnvironmentObject private var lspService: LSPService
     @EnvironmentObject private var commandPaletteViewModel: CommandPaletteViewModel
     @EnvironmentObject private var configService: ConfigurationService
     @EnvironmentObject private var commandDispatcher: AppCommandDispatcher
@@ -52,10 +53,16 @@ struct ContentView: View {
         switch command {
         case .newFile:
             projectViewModel.createNewFile()
+        case .openFile:
+            projectViewModel.openFiles()
         case .openFolder:
             projectViewModel.openFolder()
         case .save:
             projectViewModel.saveCurrentFile()
+        case .saveAs:
+            projectViewModel.saveCurrentFileAs()
+        case .reopenClosedTab:
+            projectViewModel.reopenLastClosedTab()
         case .quickOpen:
             projectViewModel.toggleQuickOpen()
         case .commandPalette:
@@ -114,6 +121,7 @@ struct ContentView: View {
             StatusBarView()
         }
         .frame(minWidth: 800, minHeight: 600)
+        .accessibilityIdentifier("rosewood-main-shell")
         .overlay {
             if let paletteMode = commandPaletteViewModel.activePalette {
                 CommandPaletteView(mode: paletteMode)

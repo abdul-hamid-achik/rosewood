@@ -3,8 +3,11 @@ import Combine
 
 enum AppCommand: Equatable {
     case newFile
+    case openFile
     case openFolder
     case save
+    case saveAs
+    case reopenClosedTab
     case quickOpen
     case commandPalette
     case toggleProblems

@@ -55,7 +55,7 @@ enum WorkspaceSymbolIndexer {
             pattern: #"^\s*(?:(?:public|private|protected|internal|open|final|sealed|abstract|data|async|static|const)\s+)*(class|struct|enum|interface|trait|namespace|module|type|func|function|def|fn|let|var|const|object|fun)\s+([A-Za-z_][A-Za-z0-9_]*)"#,
             indexedExtensions: nil
         )
-    ]
+    ].compactMap { $0 }
 
     static func shouldIndex(fileURL: URL) -> Bool {
         let pathExtension = fileURL.pathExtension.lowercased()
@@ -130,14 +130,17 @@ private struct Pattern {
     let nameGroup: Int
     let fixedKind: String?
 
-    init(
+    init?(
         pattern: String,
         indexedExtensions: Set<String>? = nil,
         kindGroup: Int? = 1,
         nameGroup: Int = 2,
         fixedKind: String? = nil
     ) {
-        self.regularExpression = try! NSRegularExpression(pattern: pattern, options: [])
+        guard let regularExpression = try? NSRegularExpression(pattern: pattern, options: []) else {
+            return nil
+        }
+        self.regularExpression = regularExpression
         self.indexedExtensions = indexedExtensions
         self.kindGroup = kindGroup
         self.nameGroup = nameGroup

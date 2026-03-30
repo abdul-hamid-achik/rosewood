@@ -3,6 +3,18 @@ import SwiftUI
 
 struct Extensions {
     static func openPanel(canChooseDirectories: Bool = true, canChooseFiles: Bool = true, allowsMultipleSelection: Bool = false) -> URL? {
+        openPanelURLs(
+            canChooseDirectories: canChooseDirectories,
+            canChooseFiles: canChooseFiles,
+            allowsMultipleSelection: allowsMultipleSelection
+        ).first
+    }
+
+    static func openPanelURLs(
+        canChooseDirectories: Bool = true,
+        canChooseFiles: Bool = true,
+        allowsMultipleSelection: Bool = false
+    ) -> [URL] {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = canChooseDirectories
         panel.canChooseFiles = canChooseFiles
@@ -10,7 +22,8 @@ struct Extensions {
         panel.canCreateDirectories = true
 
         let response = panel.runModal()
-        return response == .OK ? panel.url : nil
+        guard response == .OK else { return [] }
+        return allowsMultipleSelection ? panel.urls : panel.url.map { [$0] } ?? []
     }
 
     static func savePanel(defaultName: String = "untitled", allowedTypes: [String]? = nil) -> URL? {

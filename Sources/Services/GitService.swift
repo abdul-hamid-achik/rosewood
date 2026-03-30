@@ -1,6 +1,7 @@
 import Foundation
 
 protocol GitServiceProtocol: AnyObject {
+    func toolAvailable() async -> Bool
     func repositoryStatus(for projectRoot: URL?) async -> GitRepositoryStatus
     func diff(for changedFile: GitChangedFile, projectRoot: URL?) async -> GitDiffResult?
     func blame(for fileURL: URL?, line: Int, projectRoot: URL?) async -> GitBlameInfo?
@@ -13,6 +14,20 @@ final class GitService: GitServiceProtocol {
     static let shared = GitService()
 
     init() {}
+
+    func toolAvailable() async -> Bool {
+        await Task.detached(priority: .utility) {
+            guard let result = try? ProcessRunner.run(
+                executableURL: URL(fileURLWithPath: "/usr/bin/env"),
+                arguments: ["git", "--version"],
+                timeout: 2.0
+            ) else {
+                return false
+            }
+
+            return result.terminationStatus == 0
+        }.value
+    }
 
     func repositoryStatus(for projectRoot: URL?) async -> GitRepositoryStatus {
         guard let projectRoot else {
@@ -335,38 +350,24 @@ final class GitService: GitServiceProtocol {
         in workingDirectory: URL,
         allowNonZeroExit: Bool = false
     ) throws -> String {
-        let process = Process()
-        let stdoutPipe = Pipe()
-        let stderrPipe = Pipe()
-
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = ["git"] + arguments
-        process.currentDirectoryURL = workingDirectory
-        process.standardOutput = stdoutPipe
-        process.standardError = stderrPipe
-        process.environment = (ProcessInfo.processInfo.environment).merging([
+        let environment = (ProcessInfo.processInfo.environment).merging([
             "GIT_PAGER": "cat"
         ]) { _, newValue in
             newValue
         }
 
-        try process.run()
-        process.waitUntilExit()
+        let result = try ProcessRunner.run(
+            executableURL: URL(fileURLWithPath: "/usr/bin/env"),
+            arguments: ["git"] + arguments,
+            currentDirectoryURL: workingDirectory,
+            environment: environment
+        )
 
-        let stdout = String(
-            data: stdoutPipe.fileHandleForReading.readDataToEndOfFile(),
-            encoding: .utf8
-        ) ?? ""
-        let stderr = String(
-            data: stderrPipe.fileHandleForReading.readDataToEndOfFile(),
-            encoding: .utf8
-        ) ?? ""
-
-        if process.terminationStatus != 0 && !allowNonZeroExit {
-            throw GitServiceError.commandFailed(stderr.trimmingCharacters(in: .whitespacesAndNewlines))
+        if result.terminationStatus != 0 && !allowNonZeroExit {
+            throw GitServiceError.commandFailed(result.stderr.trimmingCharacters(in: .whitespacesAndNewlines))
         }
 
-        return stdout
+        return result.stdout
     }
 }
 

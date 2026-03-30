@@ -112,6 +112,7 @@ extension ProjectViewModel {
         let token = gitStatusToken
 
         guard let rootDirectory else {
+            updateGitToolAvailability(true)
             resetGitState()
             return
         }
@@ -121,10 +122,17 @@ extension ProjectViewModel {
 
         gitStatusTask = Task { [weak self] in
             guard let self else { return }
+            let gitAvailable = await self.gitService.toolAvailable()
             let status = await self.gitService.repositoryStatus(for: rootDirectory)
             guard !Task.isCancelled,
                   self.gitStatusToken == token,
                   self.rootDirectory.map(self.normalizedPath(for:)) == normalizedRootPath else {
+                return
+            }
+
+            self.updateGitToolAvailability(gitAvailable)
+            guard gitAvailable else {
+                self.resetGitState()
                 return
             }
 

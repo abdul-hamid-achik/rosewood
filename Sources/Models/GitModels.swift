@@ -269,7 +269,7 @@ enum GitDiffLineKind: String, Equatable {
 }
 
 enum GitDiffParser {
-    private static let hunkPattern = try! NSRegularExpression(
+    private static let hunkPattern = try? NSRegularExpression(
         pattern: #"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(?:\s?(.*))?$"#
     )
 
@@ -392,6 +392,7 @@ enum GitDiffParser {
     }
 
     private static func parseHunkHeader(_ line: String) -> (oldStart: Int, oldCount: Int, newStart: Int, newCount: Int, context: String?)? {
+        guard let hunkPattern else { return nil }
         let range = NSRange(line.startIndex..<line.endIndex, in: line)
         guard let match = hunkPattern.firstMatch(in: line, options: [], range: range) else {
             return nil

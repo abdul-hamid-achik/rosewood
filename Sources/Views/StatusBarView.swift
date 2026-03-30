@@ -3,7 +3,7 @@ import SwiftUI
 struct StatusBarView: View {
     @EnvironmentObject var projectViewModel: ProjectViewModel
     @EnvironmentObject private var configService: ConfigurationService
-    @ObservedObject private var lspService = LSPService.shared
+    @EnvironmentObject private var lspService: LSPService
 
     private var themeColors: ThemeColors {
         configService.currentThemeColors
@@ -45,6 +45,25 @@ struct StatusBarView: View {
             return themeColors.danger
         case .unavailable:
             return themeColors.subduedText
+        }
+    }
+
+    private var lspStatusHelpText: String? {
+        guard let lspStatus,
+              let language = projectViewModel.selectedTab?.language,
+              let serverConfig = LSPServerRegistry.configFor(language: language) else {
+            return nil
+        }
+
+        switch lspStatus {
+        case .starting:
+            return "Starting \(serverConfig.command) for \(language)."
+        case .ready:
+            return "\(serverConfig.command) is ready for \(language)."
+        case .failed(let message):
+            return message
+        case .unavailable:
+            return "Install \(serverConfig.command) and ensure it is on your PATH to enable \(language) language features."
         }
     }
 
@@ -188,6 +207,29 @@ struct StatusBarView: View {
 
                 if projectViewModel.isStatusBarDetailsReady,
                    shouldShowGitMetadata,
+                   !projectViewModel.isGitToolAvailable {
+                    statusDivider
+
+                    Label("Git Missing", systemImage: "exclamationmark.triangle.fill")
+                        .font(RosewoodType.caption)
+                        .foregroundColor(themeColors.warning)
+                        .labelStyle(.titleAndIcon)
+                        .help("Install Git or ensure it is on your PATH to enable source control features.")
+                }
+
+                if projectViewModel.isStatusBarDetailsReady,
+                   !projectViewModel.isRipgrepToolAvailable {
+                    statusDivider
+
+                    Label("rg Missing", systemImage: "magnifyingglass")
+                        .font(RosewoodType.caption)
+                        .foregroundColor(themeColors.warning)
+                        .labelStyle(.titleAndIcon)
+                        .help("Install ripgrep (`rg`) to speed up project search.")
+                }
+
+                if projectViewModel.isStatusBarDetailsReady,
+                   shouldShowGitMetadata,
                    let branchName = projectViewModel.gitRepositoryStatus.branchName {
                     statusDivider
 
@@ -220,6 +262,7 @@ struct StatusBarView: View {
                         .font(RosewoodType.caption)
                         .foregroundColor(lspStatusColor)
                         .labelStyle(.titleAndIcon)
+                        .help(lspStatusHelpText ?? lspStatusText)
                 }
 
                 if projectViewModel.isStatusBarDetailsReady,

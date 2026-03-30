@@ -49,6 +49,7 @@ final class LSPService: ObservableObject, LSPServiceProtocol {
     private var debounceTimers: [String: Task<Void, Never>] = [:]  // keyed by URI
     private var serverStartTasks: [String: Task<Void, Never>] = [:]  // keyed by serverKey
     private var diagnosticsChangeHandler: (@MainActor () -> Void)?
+    private var presentedServerIssueKeys: Set<String> = []
 
     private init() {}
 
@@ -130,8 +131,6 @@ final class LSPService: ObservableObject, LSPServiceProtocol {
         debounceTimers.removeValue(forKey: uri)
         documentVersions.removeValue(forKey: uri)
         documentLanguages.removeValue(forKey: uri)
-        diagnosticsByURI.removeValue(forKey: uri)
-        notifyDiagnosticsChanged()
 
         Task {
             let client = existingClient(for: language)
@@ -256,6 +255,11 @@ final class LSPService: ObservableObject, LSPServiceProtocol {
         }.value
         guard let serverPath else {
             serverStatus[serverKey] = .unavailable
+            presentServerIssueIfNeeded(
+                key: "\(serverKey)-unavailable",
+                title: "Language Server Missing",
+                message: "Install \(config.command) and ensure it is on your PATH to enable \(config.languageId) language features."
+            )
             return nil
         }
 
@@ -286,8 +290,26 @@ final class LSPService: ObservableObject, LSPServiceProtocol {
             return client
         } catch {
             serverStatus[serverKey] = .failed(error.localizedDescription)
+            presentServerIssueIfNeeded(
+                key: "\(serverKey)-failed",
+                title: "Language Server Failed",
+                message: error.localizedDescription
+            )
             return nil
         }
+    }
+
+    private func presentServerIssueIfNeeded(key: String, title: String, message: String) {
+        guard presentedServerIssueKeys.insert(key).inserted else { return }
+
+        NotificationManager.shared.show(
+            NotificationItem(
+                type: .warning,
+                title: title,
+                message: message,
+                duration: 6.0
+            )
+        )
     }
 
     private func handleDiagnostics(uri: String, diagnostics: [LSPDiagnostic]) {

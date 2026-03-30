@@ -80,6 +80,12 @@ task ui
 
 # Build a release app
 task release
+
+# Archive and sign a direct-download release
+task archive-release
+
+# Submit the signed release for notarization and staple it
+task notarize-release
 ```
 
 ### Run Tests
@@ -87,6 +93,30 @@ task release
 ```bash
 xcodebuild test -scheme RosewoodTests -destination 'platform=macOS'
 ```
+
+### Direct Distribution
+
+To produce a signed direct-download build, export these environment variables first:
+
+```bash
+export APPLE_TEAM_ID="YOUR_TEAM_ID"
+export DEVELOPER_ID_APPLICATION="Developer ID Application: Your Name (TEAMID)"
+```
+
+Then archive a signed release:
+
+```bash
+task archive-release
+```
+
+To notarize and staple that build, create a `notarytool` keychain profile and export:
+
+```bash
+export NOTARY_KEYCHAIN_PROFILE="your-notary-profile"
+task notarize-release
+```
+
+Release artifacts are written to `dist/`.
 
 Local Taskfile builds are written to:
 
@@ -111,9 +141,13 @@ export PATH="$HOME/.local/bin:$PATH"
 
 | Shortcut | Action |
 |----------|--------|
-| Cmd+O | Open Folder |
+| Cmd+O | Open File |
+| Cmd+Shift+O | Open Folder |
 | Cmd+N | New File |
+| Cmd+Shift+N | New Window |
 | Cmd+S | Save |
+| Cmd+Shift+S | Save As |
+| Cmd+Shift+T | Reopen Last Closed Tab |
 | Cmd+W | Close Tab |
 | Cmd+P | Quick Open |
 | Cmd+Shift+P | Command Palette |

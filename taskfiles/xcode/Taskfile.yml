@@ -58,6 +58,18 @@ tasks:
     cmds:
       - xcodebuild build -project "{{.PROJECT}}" -scheme "{{.APP}}" -configuration Release -derivedDataPath "{{.DATA}}" -destination "{{.DEST}}"
 
+  archive-release:
+    desc: Archive and sign a direct-distribution release
+    deps: [gen]
+    cmds:
+      - ./scripts/archive-release.sh
+
+  notarize-release:
+    desc: Notarize and staple the direct-distribution release
+    deps: [archive-release]
+    cmds:
+      - ./scripts/notarize-release.sh
+
   install:
     desc: Install the app and CLI launcher for the current user
     deps: [build]

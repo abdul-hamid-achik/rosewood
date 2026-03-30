@@ -31,29 +31,21 @@ final class DAPAdapterLocator {
     }
 
     func locateLLDBDAP() throws -> String {
-        let process = Process()
-        let stdoutPipe = Pipe()
-        let stderrPipe = Pipe()
-
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
-        process.arguments = ["--find", "lldb-dap"]
-        process.standardOutput = stdoutPipe
-        process.standardError = stderrPipe
-
+        let result: ProcessRunnerResult
         do {
-            try process.run()
+            result = try ProcessRunner.run(
+                executableURL: URL(fileURLWithPath: "/usr/bin/xcrun"),
+                arguments: ["--find", "lldb-dap"],
+                timeout: 5.0
+            )
         } catch {
             throw DAPAdapterLocatorError.commandFailed("Failed to launch xcrun: \(error.localizedDescription)")
         }
 
-        process.waitUntilExit()
+        let stdout = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+        let stderr = result.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        let stdout = String(data: stdoutPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let stderr = String(data: stderrPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-
-        guard process.terminationStatus == 0, !stdout.isEmpty else {
+        guard result.terminationStatus == 0, !stdout.isEmpty else {
             if !stderr.isEmpty {
                 throw DAPAdapterLocatorError.commandFailed(stderr)
             }

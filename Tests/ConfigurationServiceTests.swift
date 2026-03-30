@@ -211,6 +211,29 @@ struct ConfigurationServiceTests {
     }
 
     @Test
+    func migratesLegacyUserConfigIntoApplicationSupportLocation() {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let legacyConfigURL = rootURL.appendingPathComponent("legacy/config.toml")
+        let migratedConfigURL = rootURL.appendingPathComponent("Application Support/Rosewood/config.toml")
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        try? FileManager.default.createDirectory(at: legacyConfigURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? configuration(fontSize: 17, autoSaveDelay: 0.3, autoSaveEnabled: false).write(
+            to: legacyConfigURL,
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let service = ConfigurationService(userConfigURL: migratedConfigURL, legacyUserConfigURL: legacyConfigURL)
+        service.load()
+
+        #expect(FileManager.default.fileExists(atPath: migratedConfigURL.path))
+        #expect(service.settings.editor.fontSize == 17)
+        #expect(service.settings.editor.autoSaveEnabled == false)
+    }
+
+    @Test
     func defaultSFMoNoFontUsesFixedPitchSystemFont() {
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

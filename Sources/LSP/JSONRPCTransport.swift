@@ -28,6 +28,7 @@ final class JSONRPCTransport: JSONRPCTransportProtocol, @unchecked Sendable {
     private let stdoutPipe: Pipe
     private let stderrPipe: Pipe
     private let readQueue: DispatchQueue
+    private let stderrQueue: DispatchQueue
     private let writeQueue: DispatchQueue
     private var continuation: AsyncStream<Data>.Continuation?
     private let _messages: AsyncStream<Data>
@@ -41,6 +42,7 @@ final class JSONRPCTransport: JSONRPCTransportProtocol, @unchecked Sendable {
         self.stdoutPipe = stdoutPipe
         self.stderrPipe = stderrPipe
         self.readQueue = DispatchQueue(label: "rosewood.lsp.transport.read", qos: .utility)
+        self.stderrQueue = DispatchQueue(label: "rosewood.lsp.transport.stderr", qos: .utility)
         self.writeQueue = DispatchQueue(label: "rosewood.lsp.transport.write", qos: .utility)
 
         var captured: AsyncStream<Data>.Continuation?
@@ -50,6 +52,7 @@ final class JSONRPCTransport: JSONRPCTransportProtocol, @unchecked Sendable {
         self.continuation = captured
 
         startReadLoop()
+        startErrorDrainLoop()
     }
 
     func send(_ data: Data) throws {
@@ -81,6 +84,12 @@ final class JSONRPCTransport: JSONRPCTransportProtocol, @unchecked Sendable {
         }
     }
 
+    private func startErrorDrainLoop() {
+        stderrQueue.async { [weak self] in
+            self?.drainErrorOutput()
+        }
+    }
+
     private func readMessages() {
         let handle = stdoutPipe.fileHandleForReading
 
@@ -105,6 +114,17 @@ final class JSONRPCTransport: JSONRPCTransportProtocol, @unchecked Sendable {
         }
 
         continuation?.finish()
+    }
+
+    private func drainErrorOutput() {
+        let handle = stderrPipe.fileHandleForReading
+
+        while !isClosed {
+            let data = handle.readData(ofLength: 4096)
+            if data.isEmpty {
+                break
+            }
+        }
     }
 
     private func readContentLength(from handle: FileHandle) -> Int? {

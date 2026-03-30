@@ -205,34 +205,25 @@ final class DebugSessionService: DebugSessionServiceProtocol {
 
     private func runShellCommand(_ command: String, in workingDirectory: URL) async throws {
         try await Task.detached(priority: .utility) {
-            let process = Process()
-            let stdoutPipe = Pipe()
-            let stderrPipe = Pipe()
-
-            process.executableURL = URL(fileURLWithPath: "/bin/zsh")
-            process.arguments = ["-lc", command]
-            process.currentDirectoryURL = workingDirectory
-            process.standardOutput = stdoutPipe
-            process.standardError = stderrPipe
-
+            let result: ProcessRunnerResult
             do {
-                try process.run()
+                result = try ProcessRunner.run(
+                    executableURL: URL(fileURLWithPath: "/bin/zsh"),
+                    arguments: ["-lc", command],
+                    currentDirectoryURL: workingDirectory,
+                    timeout: 600.0
+                )
             } catch {
                 throw DebugSessionServiceError.preLaunchTaskFailed(
                     "Failed to start preLaunchTask: \(error.localizedDescription)"
                 )
             }
 
-            process.waitUntilExit()
-
-            let stderr = String(data: stderrPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
-                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            if process.terminationStatus != 0 {
-                let message = stderr.isEmpty ? "preLaunchTask failed with exit code \(process.terminationStatus)." : stderr
+            let stderr = result.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+            if result.terminationStatus != 0 {
+                let message = stderr.isEmpty ? "preLaunchTask failed with exit code \(result.terminationStatus)." : stderr
                 throw DebugSessionServiceError.preLaunchTaskFailed(message)
             }
-
-            _ = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
         }.value
     }
 }

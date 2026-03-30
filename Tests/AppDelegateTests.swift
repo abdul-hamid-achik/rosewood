@@ -12,8 +12,12 @@ struct AppDelegateTests {
 
         let notifications: [Notification.Name] = [
             .handleNewFile,
+            .handleNewWindow,
+            .handleOpenFile,
             .handleOpenFolder,
             .handleSave,
+            .handleSaveAs,
+            .handleReopenClosedTab,
             .handleQuickOpen,
             .handleCommandPalette,
             .handleToggleProblems,
@@ -45,8 +49,12 @@ struct AppDelegateTests {
         }
 
         delegate.handleNewFile()
+        delegate.handleNewWindow()
+        delegate.handleOpenFile()
         delegate.handleOpenFolder()
         delegate.handleSave()
+        delegate.handleSaveAs()
+        delegate.handleReopenClosedTab()
         delegate.handleQuickOpen()
         delegate.handleCommandPalette()
         delegate.handleToggleProblems()
@@ -164,6 +172,35 @@ struct AppDelegateTests {
         viewModel.selectedTabIndex = 0
 
         #expect(delegate.validateMenuItem(item) == true)
+    }
+
+    @Test
+    func reopenClosedTabMenuValidationTracksViewModelState() {
+        let viewModel = ProjectViewModel(
+            fileService: FileService(),
+            sessionStore: makeDefaults(),
+            sessionKey: "app-delegate-reopen-tab-validation",
+            configService: ConfigurationService(
+                userConfigURL: FileManager.default.temporaryDirectory
+                    .appendingPathComponent(UUID().uuidString)
+                    .appendingPathExtension("toml")
+            ),
+            fileWatcher: FileWatcherService(),
+            notificationCenter: NotificationCenter(),
+            ui: .test
+        )
+
+        viewModel.openTabs = [EditorTab(fileName: "Sample.swift")]
+        viewModel.selectedTabIndex = 0
+        _ = viewModel.closeTab(at: 0, confirmUnsavedChanges: false)
+
+        let delegate = AppDelegate(notificationCenter: NotificationCenter(), projectViewModel: viewModel)
+        let item = NSMenuItem(title: "Reopen Last Closed Tab", action: #selector(AppDelegate.handleReopenClosedTab), keyEquivalent: "")
+
+        #expect(delegate.validateMenuItem(item) == true)
+
+        viewModel.reopenLastClosedTab()
+        #expect(delegate.validateMenuItem(item) == false)
     }
 
     @Test
@@ -287,6 +324,101 @@ struct AppDelegateTests {
 
         #expect(viewModel.rootDirectory?.standardizedFileURL.path == rootURL.standardizedFileURL.path)
     }
+
+    @Test
+    func openFilesRecordsRecentDocuments() throws {
+        let rootURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let configURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("toml")
+        defer { try? FileManager.default.removeItem(at: configURL) }
+
+        let defaults = makeDefaults()
+        let viewModel = ProjectViewModel(
+            fileService: FileService(),
+            sessionStore: makeDefaults(),
+            sessionKey: "app-delegate-open-files-recents",
+            configService: ConfigurationService(userConfigURL: configURL),
+            fileWatcher: FileWatcherService(),
+            notificationCenter: NotificationCenter(),
+            ui: .test
+        )
+
+        let delegate = AppDelegate(
+            notificationCenter: NotificationCenter(),
+            projectViewModel: viewModel,
+            recentDocumentsStore: defaults
+        )
+        delegate.application(NSApp, openFiles: [rootURL.path])
+
+        #expect(delegate.recentDocumentURLsForTesting.map(\.standardizedFileURL.path) == [rootURL.standardizedFileURL.path])
+    }
+
+    @Test
+    func recentDocumentNotificationUpdatesRecentList() throws {
+        let rootURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let center = NotificationCenter()
+        let delegate = AppDelegate(notificationCenter: center, recentDocumentsStore: makeDefaults())
+        center.post(name: .projectDidOpenURLs, object: [rootURL])
+
+        #expect(delegate.recentDocumentURLsForTesting.map(\.standardizedFileURL.path) == [rootURL.standardizedFileURL.path])
+    }
+
+    @Test
+    func openRecentDocumentForwardsToProjectViewModel() throws {
+        let rootURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let configURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("toml")
+        defer { try? FileManager.default.removeItem(at: configURL) }
+
+        let viewModel = ProjectViewModel(
+            fileService: FileService(),
+            sessionStore: makeDefaults(),
+            sessionKey: "app-delegate-open-recent",
+            configService: ConfigurationService(userConfigURL: configURL),
+            fileWatcher: FileWatcherService(),
+            notificationCenter: NotificationCenter(),
+            ui: .test
+        )
+
+        let delegate = AppDelegate(notificationCenter: NotificationCenter(), projectViewModel: viewModel)
+        let item = NSMenuItem(title: rootURL.lastPathComponent, action: #selector(AppDelegate.handleOpenRecentDocument(_:)), keyEquivalent: "")
+        item.representedObject = rootURL.path
+
+        delegate.handleOpenRecentDocument(item)
+
+        #expect(viewModel.rootDirectory?.standardizedFileURL.path == rootURL.standardizedFileURL.path)
+    }
+
+    @Test
+    func helpActionsUseInjectedPresenter() {
+        var presented: [(String, String)] = []
+        let delegate = AppDelegate(
+            notificationCenter: NotificationCenter(),
+            helpPresenter: { title, message in
+                presented.append((title, message))
+            }
+        )
+
+        delegate.handleShowHelp()
+        delegate.handleShowKeyboardShortcuts()
+
+        #expect(presented.count == 2)
+        #expect(presented[0].0 == "Rosewood Help")
+        #expect(presented[0].1 == AppDelegate.helpMessageForTesting)
+        #expect(presented[1].0 == "Keyboard Shortcuts")
+        #expect(presented[1].1 == AppDelegate.keyboardShortcutsMessageForTesting)
+    }
 }
 
 @MainActor
@@ -300,6 +432,8 @@ private func makeDefaults() -> UserDefaults {
 private extension ProjectViewModelUI {
     static let test = ProjectViewModelUI(
         openPanel: { _, _, _ in nil },
+        openPanelURLs: { _, _, _ in [] },
+        savePanel: { _, _ in nil },
         alert: { _, _, _ in },
         confirm: { _, _, _, _ in .alertFirstButtonReturn }
     )

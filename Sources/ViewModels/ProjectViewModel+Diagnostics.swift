@@ -87,6 +87,8 @@ extension ProjectViewModel {
         case .currentFile:
             let diagnostics = orderedCurrentTabDiagnostics
             guard !diagnostics.isEmpty else { return nil }
+            let firstDiagnostic = diagnostics[0]
+            let lastDiagnostic = diagnostics[diagnostics.count - 1]
 
             if let activeCurrentDiagnostic,
                let currentIndex = diagnostics.firstIndex(of: activeCurrentDiagnostic) {
@@ -102,7 +104,7 @@ extension ProjectViewModel {
                         let position = diagnosticSortPosition(for: diagnostic)
                         return position.line > currentPosition.line
                             || (position.line == currentPosition.line && position.column > currentPosition.column)
-                    }) ?? diagnostics.first!
+                    }) ?? firstDiagnostic
                 )
             }
 
@@ -111,7 +113,7 @@ extension ProjectViewModel {
                     let position = diagnosticSortPosition(for: diagnostic)
                     return position.line < currentPosition.line
                         || (position.line == currentPosition.line && position.column < currentPosition.column)
-                }) ?? diagnostics.last!
+                }) ?? lastDiagnostic
             )
         case .workspace:
             let diagnostics = orderedWorkspaceDiagnostics
@@ -123,7 +125,7 @@ extension ProjectViewModel {
                 return .workspace(diagnostics[nextIndex])
             }
 
-            return .workspace(inferredWorkspaceDiagnostic(in: diagnostics) ?? diagnostics.first!)
+            return .workspace(inferredWorkspaceDiagnostic(in: diagnostics) ?? diagnostics[0])
         }
     }
 }

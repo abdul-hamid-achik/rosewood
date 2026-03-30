@@ -1,64 +1,118 @@
 import Cocoa
 import SwiftUI
 
+private final class AppWindowContext {
+    let sessionKey: String
+    let window: NSWindow
+    let projectViewModel: ProjectViewModel
+    let commandDispatcher: AppCommandDispatcher
+    let configService: ConfigurationService
+
+    init(
+        sessionKey: String,
+        window: NSWindow,
+        projectViewModel: ProjectViewModel,
+        commandDispatcher: AppCommandDispatcher,
+        configService: ConfigurationService
+    ) {
+        self.sessionKey = sessionKey
+        self.window = window
+        self.projectViewModel = projectViewModel
+        self.commandDispatcher = commandDispatcher
+        self.configService = configService
+    }
+}
+
 class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItemValidation {
     var window: NSWindow!
     private var projectViewModel: ProjectViewModel!
     private let notificationCenter: NotificationCenter?
     private let commandDispatcher: AppCommandDispatcher
+    private let recentDocumentsStore: UserDefaults
+    private let helpPresenter: (String, String) -> Void
     private var pendingOpenURLs: [URL] = []
+    private var recentDocumentsObserver: NSObjectProtocol?
+    private weak var openRecentMenu: NSMenu?
+    private var windowContexts: [ObjectIdentifier: AppWindowContext] = [:]
+    private var pendingInitialProjectViewModel: ProjectViewModel?
+
+    private static let recentDocumentsKey = "rosewood.recentDocuments"
+    private static let maxRecentDocuments = 10
+    private static let defaultSessionKey = "rosewood.session"
+    private static let helpMessage = """
+    Rosewood is a native macOS code editor for project-based development.
+
+    Use Cmd+P for Quick Open, Cmd+Shift+P for the Command Palette, Cmd+Shift+F for Find in Project, and Cmd+Shift+T to reopen the last closed tab.
+
+    The status bar shows cursor position, Git and ripgrep availability, and language-server state for the current file.
+    """
+    private static let keyboardShortcutsMessage = """
+    Cmd+O - Open File
+    Cmd+Shift+O - Open Folder
+    Cmd+P - Quick Open
+    Cmd+Shift+P - Command Palette
+    Cmd+Shift+F - Find in Project
+    Cmd+Shift+T - Reopen Last Closed Tab
+    Cmd+S - Save
+    Cmd+Shift+S - Save As
+    F12 - Go to Definition
+    Shift+F12 - Find References
+    """
 
     override init() {
         self.notificationCenter = nil
         self.commandDispatcher = .shared
+        self.recentDocumentsStore = .standard
+        self.helpPresenter = AppDelegate.defaultHelpPresenter
         super.init()
+        configureRecentDocumentsObserver()
     }
 
     init(
         notificationCenter: NotificationCenter,
         projectViewModel: ProjectViewModel? = nil,
-        commandDispatcher: AppCommandDispatcher = AppCommandDispatcher()
+        commandDispatcher: AppCommandDispatcher = AppCommandDispatcher(),
+        recentDocumentsStore: UserDefaults = .standard,
+        helpPresenter: @escaping (String, String) -> Void = AppDelegate.defaultHelpPresenter
     ) {
         self.notificationCenter = notificationCenter
         self.commandDispatcher = commandDispatcher
+        self.pendingInitialProjectViewModel = projectViewModel
         self.projectViewModel = projectViewModel
+        self.recentDocumentsStore = recentDocumentsStore
+        self.helpPresenter = helpPresenter
         super.init()
+        configureRecentDocumentsObserver()
+    }
+
+    deinit {
+        if let recentDocumentsObserver {
+            effectiveNotificationCenter.removeObserver(recentDocumentsObserver)
+        }
     }
 
     @MainActor
     func applicationDidFinishLaunching(_ notification: Notification) {
-        ConfigurationService.shared.load()
-
-        if projectViewModel == nil {
-            projectViewModel = ProjectViewModel()
+        if ProcessInfo.processInfo.environment["ROSEWOOD_UI_TEST_RESET_SESSION"] == "1" {
+            recentDocumentsStore.removeObject(forKey: Self.recentDocumentsKey)
         }
 
-        let contentView = ContentView()
-            .environmentObject(projectViewModel)
-            .environmentObject(projectViewModel.commandPaletteViewModel)
-            .environmentObject(ConfigurationService.shared)
-            .environmentObject(commandDispatcher)
+        if windowContexts.isEmpty {
+            _ = makeWindowContext(
+                projectViewModel: pendingInitialProjectViewModel,
+                sessionKey: Self.defaultSessionKey,
+                makeKey: true
+            )
+            pendingInitialProjectViewModel = nil
+        }
 
-        window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 1200, height: 800),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
-            backing: .buffered,
-            defer: false
-        )
-
-        window.center()
-        window.setFrameAutosaveName("RosewoodMainWindow")
-        window.contentView = NSHostingView(rootView: contentView)
-        window.title = "Rosewood"
-        window.titlebarAppearsTransparent = false
-        window.isRestorable = false
-        window.delegate = self
-        window.makeKeyAndOrderFront(nil)
         DispatchQueue.main.async { [weak self] in
             self?.setupMainMenu()
         }
 
-        NSApp.activate(ignoringOtherApps: true)
+        if !isRunningUITests {
+            NSApp.activate(ignoringOtherApps: true)
+        }
         flushPendingOpenURLs()
     }
 
@@ -82,11 +136,37 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItem
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        projectViewModel.canCloseWindow() ? .terminateNow : .terminateCancel
+        let contexts = Array(windowContexts.values)
+        for context in contexts where !context.projectViewModel.canCloseWindow() {
+            return .terminateCancel
+        }
+        return .terminateNow
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
-        projectViewModel.canCloseWindow()
+        if let context = windowContexts[ObjectIdentifier(sender)] {
+            return context.projectViewModel.canCloseWindow()
+        }
+        return projectViewModel?.canCloseWindow() ?? true
+    }
+
+    func windowDidBecomeKey(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow else { return }
+        updateActiveContext(for: window)
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow else { return }
+        windowContexts.removeValue(forKey: ObjectIdentifier(window))
+        if self.window === window {
+            updateActiveContext(for: NSApp.keyWindow ?? Array(windowContexts.values).last?.window)
+        }
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        guard !flag else { return false }
+        _ = makeWindowContext(sessionKey: nextWindowSessionKey(), makeKey: true)
+        return true
     }
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
@@ -107,8 +187,151 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItem
              #selector(handleShowReplace),
              #selector(handleGoToLine):
             return projectViewModel?.hasOpenFile ?? false
+        case #selector(handleSave),
+             #selector(handleSaveAs),
+             #selector(handleCloseTab):
+            return projectViewModel?.hasOpenFile ?? false
+        case #selector(handleReopenClosedTab):
+            return projectViewModel?.canReopenClosedTab ?? false
         default:
             return true
+        }
+    }
+
+    private var isRunningUITests: Bool {
+        ProcessInfo.processInfo.environment.keys.contains { $0.hasPrefix("ROSEWOOD_UI_TEST_") }
+    }
+
+    private var activeWindowContext: AppWindowContext? {
+        if let keyWindow = NSApp.keyWindow,
+           let context = windowContexts[ObjectIdentifier(keyWindow)] {
+            return context
+        }
+
+        if let window,
+           let context = windowContexts[ObjectIdentifier(window)] {
+            return context
+        }
+
+        return Array(windowContexts.values).last
+    }
+
+    private func nextWindowSessionKey() -> String {
+        "\(Self.defaultSessionKey).window.\(UUID().uuidString)"
+    }
+
+    @MainActor
+    @discardableResult
+    private func makeWindowContext(
+        projectViewModel providedProjectViewModel: ProjectViewModel? = nil,
+        sessionKey: String,
+        makeKey: Bool
+    ) -> AppWindowContext {
+        let dispatcher: AppCommandDispatcher
+        let configService: ConfigurationService
+        let projectViewModel: ProjectViewModel
+
+        if let providedProjectViewModel {
+            dispatcher = commandDispatcher
+            configService = providedProjectViewModel.configService
+            projectViewModel = providedProjectViewModel
+        } else {
+            dispatcher = AppCommandDispatcher()
+            configService = ConfigurationService()
+            configService.load()
+            projectViewModel = ProjectViewModel(
+                fileService: .shared,
+                sessionStore: .standard,
+                sessionKey: sessionKey,
+                configService: configService,
+                fileWatcher: FileWatcherService(),
+                notificationCenter: effectiveNotificationCenter,
+                commandDispatcher: dispatcher,
+                ui: .live,
+                lspService: LSPService(forTesting: false),
+                breakpointStore: BreakpointStore(),
+                debugConfigurationService: DebugConfigurationService(),
+                debugSessionService: DebugSessionService(),
+                gitService: GitService.shared
+            )
+        }
+
+        let baseContentView = ContentView()
+            .environmentObject(projectViewModel)
+            .environmentObject(projectViewModel.commandPaletteViewModel)
+            .environmentObject(configService)
+            .environmentObject(dispatcher)
+        let contentView: AnyView
+        if let lspService = projectViewModel.lspService as? LSPService {
+            contentView = AnyView(baseContentView.environmentObject(lspService))
+        } else {
+            contentView = AnyView(baseContentView)
+        }
+
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 1200, height: 800),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+
+        window.center()
+        if sessionKey == Self.defaultSessionKey {
+            window.setFrameAutosaveName("RosewoodMainWindow")
+        }
+        window.contentView = NSHostingView(rootView: contentView)
+        window.title = "Rosewood"
+        window.titlebarAppearsTransparent = false
+        window.isRestorable = false
+        window.delegate = self
+        window.identifier = NSUserInterfaceItemIdentifier(sessionKey)
+
+        let context = AppWindowContext(
+            sessionKey: sessionKey,
+            window: window,
+            projectViewModel: projectViewModel,
+            commandDispatcher: dispatcher,
+            configService: configService
+        )
+        windowContexts[ObjectIdentifier(window)] = context
+
+        if makeKey {
+            window.makeKeyAndOrderFront(nil)
+        } else {
+            window.orderFront(nil)
+        }
+        updateActiveContext(for: window)
+        return context
+    }
+
+    @MainActor
+    private func updateActiveContext(for window: NSWindow?) {
+        guard let window,
+              let context = windowContexts[ObjectIdentifier(window)] else {
+            let fallbackContext = Array(windowContexts.values).last
+            self.window = fallbackContext?.window
+            projectViewModel = fallbackContext?.projectViewModel
+            return
+        }
+
+        self.window = context.window
+        projectViewModel = context.projectViewModel
+    }
+
+    @MainActor
+    private func cloneCurrentWorkspace(from sourceContext: AppWindowContext?, into context: AppWindowContext) {
+        guard let sourceContext else { return }
+
+        if let rootDirectory = sourceContext.projectViewModel.rootDirectory {
+            context.projectViewModel.openExternalItems([rootDirectory])
+            if let selectedFile = sourceContext.projectViewModel.selectedTab?.filePath {
+                context.projectViewModel.openFile(at: selectedFile)
+            }
+            return
+        }
+
+        if let selectedFile = sourceContext.projectViewModel.selectedTab?.filePath {
+            context.projectViewModel.openExternalItems([selectedFile])
         }
     }
 
@@ -134,12 +357,26 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItem
         fileMenuItem.submenu = fileMenu
 
         fileMenu.addItem(withTitle: "New File", action: #selector(handleNewFile), keyEquivalent: "n")
-        fileMenu.addItem(withTitle: "Open Folder...", action: #selector(handleOpenFolder), keyEquivalent: "o")
+        let newWindowItem = fileMenu.addItem(withTitle: "New Window", action: #selector(handleNewWindow), keyEquivalent: "N")
+        newWindowItem.keyEquivalentModifierMask = [.command, .shift]
+        fileMenu.addItem(withTitle: "Open File...", action: #selector(handleOpenFile), keyEquivalent: "o")
+        let openFolderItem = fileMenu.addItem(withTitle: "Open Folder...", action: #selector(handleOpenFolder), keyEquivalent: "O")
+        openFolderItem.keyEquivalentModifierMask = [.command, .shift]
+        let openRecentItem = NSMenuItem(title: "Open Recent", action: nil, keyEquivalent: "")
+        let openRecentMenu = NSMenu(title: "Open Recent")
+        openRecentItem.submenu = openRecentMenu
+        fileMenu.addItem(openRecentItem)
+        self.openRecentMenu = openRecentMenu
+        rebuildOpenRecentMenu()
         fileMenu.addItem(withTitle: "Quick Open...", action: #selector(handleQuickOpen), keyEquivalent: "p")
         fileMenu.addItem(NSMenuItem.separator())
         fileMenu.addItem(withTitle: "Save", action: #selector(handleSave), keyEquivalent: "s")
+        let saveAsItem = fileMenu.addItem(withTitle: "Save As...", action: #selector(handleSaveAs), keyEquivalent: "S")
+        saveAsItem.keyEquivalentModifierMask = [.command, .shift]
         fileMenu.addItem(NSMenuItem.separator())
         fileMenu.addItem(withTitle: "Close Tab", action: #selector(handleCloseTab), keyEquivalent: "w")
+        let reopenClosedTabItem = fileMenu.addItem(withTitle: "Reopen Last Closed Tab", action: #selector(handleReopenClosedTab), keyEquivalent: "T")
+        reopenClosedTabItem.keyEquivalentModifierMask = [.command, .shift]
 
         let editMenuItem = NSMenuItem()
         mainMenu.addItem(editMenuItem)
@@ -231,11 +468,42 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItem
         previousProblemItem.keyEquivalentModifierMask = [.shift]
         goMenu.addItem(previousProblemItem)
 
+        let windowMenuItem = NSMenuItem()
+        mainMenu.addItem(windowMenuItem)
+
+        let windowMenu = NSMenu(title: "Window")
+        windowMenuItem.submenu = windowMenu
+        NSApp.windowsMenu = windowMenu
+        windowMenu.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
+        windowMenu.addItem(withTitle: "Zoom", action: #selector(NSWindow.performZoom(_:)), keyEquivalent: "")
+        windowMenu.addItem(NSMenuItem.separator())
+        windowMenu.addItem(withTitle: "Bring All to Front", action: #selector(NSApplication.arrangeInFront(_:)), keyEquivalent: "")
+
+        let helpMenuItem = NSMenuItem()
+        mainMenu.addItem(helpMenuItem)
+
+        let helpMenu = NSMenu(title: "Help")
+        helpMenuItem.submenu = helpMenu
+        helpMenu.addItem(withTitle: "Rosewood Help", action: #selector(handleShowHelp), keyEquivalent: "")
+        helpMenu.addItem(withTitle: "Keyboard Shortcuts", action: #selector(handleShowKeyboardShortcuts), keyEquivalent: "")
+
         NSApp.mainMenu = mainMenu
     }
 
     @objc func handleNewFile() {
         dispatch(.newFile, legacyNotification: .handleNewFile)
+    }
+
+    @MainActor
+    @objc func handleNewWindow() {
+        let sourceContext = activeWindowContext
+        let context = makeWindowContext(sessionKey: nextWindowSessionKey(), makeKey: true)
+        cloneCurrentWorkspace(from: sourceContext, into: context)
+        notificationCenter?.post(name: .handleNewWindow, object: nil)
+    }
+
+    @objc func handleOpenFile() {
+        dispatch(.openFile, legacyNotification: .handleOpenFile)
     }
 
     @objc func handleOpenFolder() {
@@ -244,6 +512,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItem
 
     @objc func handleSave() {
         dispatch(.save, legacyNotification: .handleSave)
+    }
+
+    @objc func handleSaveAs() {
+        dispatch(.saveAs, legacyNotification: .handleSaveAs)
     }
 
     @objc func handleQuickOpen() {
@@ -260,6 +532,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItem
 
     @objc func handleCloseTab() {
         dispatch(.closeTab, legacyNotification: .handleCloseTab)
+    }
+
+    @objc func handleReopenClosedTab() {
+        dispatch(.reopenClosedTab, legacyNotification: .handleReopenClosedTab)
     }
 
     @objc func handleProjectSearch() {
@@ -294,6 +570,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItem
         dispatch(.settings, legacyNotification: .handleSettings)
     }
 
+    @objc func handleShowHelp() {
+        helpPresenter("Rosewood Help", Self.helpMessage)
+    }
+
+    @objc func handleShowKeyboardShortcuts() {
+        helpPresenter("Keyboard Shortcuts", Self.keyboardShortcutsMessage)
+    }
+
     @objc func handleGoToDefinition() {
         dispatch(.goToDefinition, legacyNotification: .handleGoToDefinition)
     }
@@ -310,8 +594,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItem
         dispatch(.previousProblem, legacyNotification: .handlePreviousProblem)
     }
 
+    @MainActor
+    @objc func handleOpenRecentDocument(_ sender: NSMenuItem) {
+        guard let path = sender.representedObject as? String else { return }
+        handleOpenRequests([URL(fileURLWithPath: path)])
+    }
+
+    @objc func handleClearRecentDocuments() {
+        recentDocumentsStore.removeObject(forKey: Self.recentDocumentsKey)
+        rebuildOpenRecentMenu()
+    }
+
     private func dispatch(_ command: AppCommand, legacyNotification: Notification.Name) {
-        commandDispatcher.send(command)
+        (activeWindowContext?.commandDispatcher ?? commandDispatcher).send(command)
         notificationCenter?.post(name: legacyNotification, object: nil)
     }
 
@@ -320,12 +615,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItem
         let fileURLs = urls.filter(\.isFileURL)
         guard !fileURLs.isEmpty else { return }
 
-        guard let projectViewModel else {
+        recordRecentDocuments(fileURLs)
+
+        guard let targetContext = activeWindowContext ?? (projectViewModel == nil ? nil : makeWindowContext(projectViewModel: projectViewModel, sessionKey: Self.defaultSessionKey, makeKey: true)) else {
             pendingOpenURLs.append(contentsOf: fileURLs)
             return
         }
 
-        projectViewModel.openExternalItems(fileURLs)
+        updateActiveContext(for: targetContext.window)
+        targetContext.projectViewModel.openExternalItems(fileURLs)
     }
 
     @MainActor
@@ -333,7 +631,101 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItem
         guard !pendingOpenURLs.isEmpty else { return }
         let urls = pendingOpenURLs
         pendingOpenURLs.removeAll()
-        projectViewModel.openExternalItems(urls)
+        handleOpenRequests(urls)
+    }
+
+    private var effectiveNotificationCenter: NotificationCenter {
+        notificationCenter ?? .default
+    }
+
+    private func configureRecentDocumentsObserver() {
+        recentDocumentsObserver = effectiveNotificationCenter.addObserver(
+            forName: .projectDidOpenURLs,
+            object: nil,
+            queue: nil
+        ) { [weak self] notification in
+            guard let urls = notification.object as? [URL] else { return }
+            if Thread.isMainThread {
+                self?.recordRecentDocuments(urls)
+            } else {
+                Task { @MainActor in
+                    self?.recordRecentDocuments(urls)
+                }
+            }
+        }
+    }
+
+    private func recordRecentDocuments(_ urls: [URL]) {
+        let standardizedPaths = urls
+            .map(\.standardizedFileURL.path)
+            .filter { !$0.isEmpty }
+
+        guard !standardizedPaths.isEmpty else { return }
+
+        var recentPaths = recentDocumentsStore.stringArray(forKey: Self.recentDocumentsKey) ?? []
+        for path in standardizedPaths.reversed() {
+            recentPaths.removeAll { $0 == path }
+            recentPaths.insert(path, at: 0)
+        }
+        recentPaths = Array(recentPaths.prefix(Self.maxRecentDocuments))
+        recentDocumentsStore.set(recentPaths, forKey: Self.recentDocumentsKey)
+        rebuildOpenRecentMenu()
+    }
+
+    private func recentDocumentURLs() -> [URL] {
+        let recentPaths = recentDocumentsStore.stringArray(forKey: Self.recentDocumentsKey) ?? []
+        return recentPaths.map { URL(fileURLWithPath: $0) }
+    }
+
+    private func rebuildOpenRecentMenu() {
+        guard let openRecentMenu else { return }
+        openRecentMenu.removeAllItems()
+
+        let recentURLs = recentDocumentURLs().filter { FileManager.default.fileExists(atPath: $0.path) }
+        guard !recentURLs.isEmpty else {
+            let emptyItem = NSMenuItem(title: "No Recent Items", action: nil, keyEquivalent: "")
+            emptyItem.isEnabled = false
+            openRecentMenu.addItem(emptyItem)
+            return
+        }
+
+        for url in recentURLs {
+            let item = NSMenuItem(title: url.lastPathComponent, action: #selector(handleOpenRecentDocument(_:)), keyEquivalent: "")
+            item.target = self
+            item.toolTip = url.path
+            item.representedObject = url.path
+            openRecentMenu.addItem(item)
+        }
+
+        openRecentMenu.addItem(NSMenuItem.separator())
+        let clearItem = NSMenuItem(title: "Clear Menu", action: #selector(handleClearRecentDocuments), keyEquivalent: "")
+        clearItem.target = self
+        openRecentMenu.addItem(clearItem)
+    }
+
+    var recentDocumentURLsForTesting: [URL] {
+        recentDocumentURLs()
+    }
+
+    var openWindowCountForTesting: Int {
+        windowContexts.count
+    }
+
+    static var helpMessageForTesting: String {
+        helpMessage
+    }
+
+    static var keyboardShortcutsMessageForTesting: String {
+        keyboardShortcutsMessage
+    }
+
+    private static func defaultHelpPresenter(title: String, message: String) {
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        alert.messageText = title
+        alert.informativeText = message
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
     }
 }
 
@@ -349,12 +741,17 @@ extension Notification.Name {
     static let handleGoToDefinition = Notification.Name("handleGoToDefinition")
     static let handleFindReferences = Notification.Name("handleFindReferences")
     static let handleNewFile = Notification.Name("handleNewFile")
+    static let handleNewWindow = Notification.Name("handleNewWindow")
+    static let handleOpenFile = Notification.Name("handleOpenFile")
     static let handleOpenFolder = Notification.Name("handleOpenFolder")
     static let handleSave = Notification.Name("handleSave")
+    static let handleSaveAs = Notification.Name("handleSaveAs")
     static let handleQuickOpen = Notification.Name("handleQuickOpen")
     static let handleCommandPalette = Notification.Name("handleCommandPalette")
     static let handleToggleProblems = Notification.Name("handleToggleProblems")
     static let handleCloseTab = Notification.Name("handleCloseTab")
+    static let handleReopenClosedTab = Notification.Name("handleReopenClosedTab")
     static let handleProjectSearch = Notification.Name("handleProjectSearch")
     static let handleSettings = Notification.Name("handleSettings")
+    static let projectDidOpenURLs = Notification.Name("projectDidOpenURLs")
 }

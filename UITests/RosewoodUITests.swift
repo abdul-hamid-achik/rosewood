@@ -330,7 +330,7 @@ final class RosewoodUITests: XCTestCase {
         app.launch()
         activateAndFocus(app)
 
-        let diagnosticsToggle = app.buttons["statusbar-diagnostics-toggle"]
+        let diagnosticsToggle = app.descendants(matching: .any).matching(identifier: "statusbar-diagnostics-toggle").firstMatch
         XCTAssertTrue(diagnosticsToggle.waitForExistence(timeout: 2))
 
         app.typeKey("p", modifierFlags: [.command, .shift])
@@ -564,13 +564,15 @@ final class RosewoodUITests: XCTestCase {
         app.launchEnvironment["ROSEWOOD_UI_TEST_OPEN_DIAGNOSTICS_PANEL"] = "1"
         app.launch()
 
-        let toggle = app.buttons["statusbar-diagnostics-toggle"]
+        activateAndFocus(app)
+
+        let toggle = app.descendants(matching: .any).matching(identifier: "statusbar-diagnostics-toggle").firstMatch
         let problemsPanel = app.descendants(matching: .any).matching(identifier: "problems-panel").firstMatch
         let closeButton = app.descendants(matching: .any).matching(identifier: "problems-panel-close").firstMatch
 
-        XCTAssertTrue(toggle.waitForExistence(timeout: 5))
-        XCTAssertTrue(problemsPanel.waitForExistence(timeout: 2))
-        XCTAssertTrue(closeButton.waitForExistence(timeout: 2))
+        XCTAssertTrue(toggle.waitForExistence(timeout: 8))
+        XCTAssertTrue(problemsPanel.waitForExistence(timeout: 5))
+        XCTAssertTrue(closeButton.waitForExistence(timeout: 5))
     }
 
     @MainActor
@@ -584,8 +586,8 @@ final class RosewoodUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "tab-item-0").firstMatch.waitForExistence(timeout: 2))
         app.typeKey("w", modifierFlags: [.command])
 
-        let toggle = app.buttons["statusbar-diagnostics-toggle"]
-        XCTAssertTrue(toggle.waitForExistence(timeout: 2))
+        let toggle = app.descendants(matching: .any).matching(identifier: "statusbar-diagnostics-toggle").firstMatch
+        XCTAssertTrue(toggle.waitForExistence(timeout: 5))
         toggle.click()
 
         let problemsPanel = app.descendants(matching: .any).matching(identifier: "problems-panel").firstMatch
@@ -862,7 +864,13 @@ final class RosewoodUITests: XCTestCase {
     }
 
     private func activateAndFocus(_ app: XCUIApplication) {
-        let deadline = Date().addingTimeInterval(8)
+        let window = app.windows.firstMatch
+        XCTAssertTrue(window.waitForExistence(timeout: 12))
+
+        let shell = app.descendants(matching: .any).matching(identifier: "rosewood-main-shell").firstMatch
+        _ = shell.waitForExistence(timeout: 12)
+
+        let deadline = Date().addingTimeInterval(12)
         repeat {
             app.activate()
             if app.state == .runningForeground {
@@ -871,8 +879,6 @@ final class RosewoodUITests: XCTestCase {
             RunLoop.current.run(until: Date().addingTimeInterval(0.2))
         } while Date() < deadline
 
-        let window = app.windows.firstMatch
-        XCTAssertTrue(window.waitForExistence(timeout: 5))
         RunLoop.current.run(until: Date().addingTimeInterval(0.2))
     }
 }

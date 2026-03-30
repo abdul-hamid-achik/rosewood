@@ -12,9 +12,8 @@ struct SessionStateTests {
                 ProjectSessionTabState(
                     filePath: "/tmp/project/Sources/main.swift",
                     fileName: "main.swift",
-                    content: "print(\"hello\")",
-                    originalContent: "print(\"hi\")",
-                    isDirty: true
+                    cursorLine: 12,
+                    cursorColumn: 4
                 )
             ],
             selectedTabPath: "/tmp/project/Sources/main.swift"

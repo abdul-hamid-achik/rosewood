@@ -4,6 +4,8 @@ import Combine
 
 struct ProjectViewModelUI {
     var openPanel: (_ canChooseDirectories: Bool, _ canChooseFiles: Bool, _ allowsMultipleSelection: Bool) -> URL?
+    var openPanelURLs: (_ canChooseDirectories: Bool, _ canChooseFiles: Bool, _ allowsMultipleSelection: Bool) -> [URL]
+    var savePanel: (_ defaultName: String, _ allowedTypes: [String]?) -> URL?
     var alert: (_ title: String, _ message: String, _ style: NSAlert.Style) -> Void
     var confirm: (_ title: String, _ message: String, _ style: NSAlert.Style, _ buttons: [String]) -> NSApplication.ModalResponse
 
@@ -14,6 +16,16 @@ struct ProjectViewModelUI {
                 canChooseFiles: canChooseFiles,
                 allowsMultipleSelection: allowsMultipleSelection
             )
+        },
+        openPanelURLs: { canChooseDirectories, canChooseFiles, allowsMultipleSelection in
+            Extensions.openPanelURLs(
+                canChooseDirectories: canChooseDirectories,
+                canChooseFiles: canChooseFiles,
+                allowsMultipleSelection: allowsMultipleSelection
+            )
+        },
+        savePanel: { defaultName, allowedTypes in
+            Extensions.savePanel(defaultName: defaultName, allowedTypes: allowedTypes)
         },
         alert: { title, message, style in
             Extensions.alert(title: title, message: message, style: style)
@@ -265,6 +277,8 @@ final class ProjectViewModel: ObservableObject {
     @Published var currentLineBlame: GitBlameInfo?
     @Published var isRefreshingGitStatus: Bool = false
     @Published var isLoadingGitDiff: Bool = false
+    @Published var isGitToolAvailable: Bool = true
+    @Published var isRipgrepToolAvailable: Bool = true
     @Published var activeCurrentDiagnosticID: String?
     @Published var activeWorkspaceDiagnosticID: String?
     @Published var diagnosticsPanelScope: DiagnosticsPanelScope = .currentFile
@@ -534,6 +548,10 @@ final class ProjectViewModel: ObservableObject {
         selectedTab != nil
     }
 
+    var canReopenClosedTab: Bool {
+        !recentlyClosedTabs.isEmpty
+    }
+
     var canAccessDebugControls: Bool {
         rootDirectory != nil && hasOpenFile
     }
@@ -649,6 +667,8 @@ final class ProjectViewModel: ObservableObject {
     private var gitChangeIndexByPath: [String: Int] = [:]
     private var cachedGitChangeSections: [GitChangeSectionGroup] = []
     private var normalizedIgnoredGitPathsCache: [String] = []
+    var presentedDependencyWarningIDs: Set<String> = []
+    private var recentlyClosedTabs: [EditorTab] = []
     private var cachedCurrentTabBreakpointLinesPath: String?
     private var cachedCurrentTabBreakpointLines: Set<Int> = []
     private let sessionPersistenceDebounceNanoseconds: UInt64
@@ -2344,6 +2364,12 @@ final class ProjectViewModel: ObservableObject {
         openFolder(at: url)
     }
 
+    func openFiles() {
+        let urls = ui.openPanelURLs(false, true, true)
+        guard !urls.isEmpty else { return }
+        openExternalItems(urls)
+    }
+
     func openExternalItems(_ urls: [URL]) {
         let existingURLs = urls
             .map(\.standardizedFileURL)
@@ -2376,11 +2402,42 @@ final class ProjectViewModel: ObservableObject {
         }
     }
 
+    private func recordRecentlyOpenedURLs(_ urls: [URL]) {
+        let standardizedURLs = urls
+            .map(\.standardizedFileURL)
+            .filter(\.isFileURL)
+        guard !standardizedURLs.isEmpty else { return }
+
+        notificationCenter.post(name: .projectDidOpenURLs, object: standardizedURLs)
+    }
+
+    private func recentlyClosedTabSnapshot(from tab: EditorTab, discardedUnsavedChanges: Bool) -> EditorTab? {
+        if discardedUnsavedChanges {
+            if tab.contentType.isText, let filePath = tab.filePath {
+                var restoredTab = tab
+                restoredTab.filePath = filePath.standardizedFileURL
+                restoredTab.content = tab.originalContent
+                restoredTab.isDirty = false
+                restoredTab.documentVersion = 0
+                return restoredTab
+            }
+
+            return nil
+        }
+
+        var snapshot = tab
+        if let filePath = snapshot.filePath {
+            snapshot.filePath = filePath.standardizedFileURL
+        }
+        return snapshot
+    }
+
     private func openFolder(at url: URL) {
         fileWatcher.unwatchAll()
         rootDirectory = url
         expandedDirectoryPaths = []
         openTabs = []
+        recentlyClosedTabs = []
         selectedTabIndex = nil
         closeReferencesPanel()
         pendingNewItemDirectory = nil
@@ -2406,6 +2463,7 @@ final class ProjectViewModel: ObservableObject {
         reloadFileTree()
         refreshGitState()
         persistSession()
+        recordRecentlyOpenedURLs([url])
     }
 
     func reloadFileTree() {
@@ -2566,6 +2624,7 @@ final class ProjectViewModel: ObservableObject {
             revealInExplorer(url)
             recordQuickOpenAccess(for: url)
             persistSession()
+            recordRecentlyOpenedURLs([url])
             return
         }
 
@@ -2633,6 +2692,7 @@ final class ProjectViewModel: ObservableObject {
             persistSession()
             isLoadingFile = false
             loadingFileProgress = nil
+            recordRecentlyOpenedURLs([url])
         } catch {
             ui.alert("Error", "Could not open file: \(error.localizedDescription)", .warning)
             isLoadingFile = false
@@ -2730,6 +2790,7 @@ final class ProjectViewModel: ObservableObject {
     func closeTab(at index: Int, confirmUnsavedChanges: Bool = true) -> Bool {
         guard openTabs.indices.contains(index) else { return false }
         let shouldCloseGitDiff = isGitDiffWorkspaceVisible && selectedTabIndex == index
+        var discardedUnsavedChanges = false
 
         if confirmUnsavedChanges && openTabs[index].isDirty {
             let response = ui.confirm(
@@ -2743,10 +2804,39 @@ final class ProjectViewModel: ObservableObject {
             case .alertFirstButtonReturn:
                 guard saveTab(at: index) else { return false }
             case .alertSecondButtonReturn:
+                discardedUnsavedChanges = true
                 break
             default:
                 return false
             }
+        }
+
+        guard let recentlyClosedTab = recentlyClosedTabSnapshot(
+            from: openTabs[index],
+            discardedUnsavedChanges: discardedUnsavedChanges
+        ) else {
+            if let url = openTabs[index].filePath {
+                fileWatcher.unwatch(url: url)
+            }
+
+            if openTabs[index].contentType.isText, let uri = openTabs[index].documentURI {
+                lspService.documentClosed(uri: uri, language: openTabs[index].language)
+            }
+
+            openTabs.remove(at: index)
+
+            if openTabs.isEmpty {
+                selectedTabIndex = nil
+            } else if let selectedTabIndex {
+                if selectedTabIndex == index {
+                    self.selectedTabIndex = min(index, openTabs.count - 1)
+                } else if selectedTabIndex > index {
+                    self.selectedTabIndex = selectedTabIndex - 1
+                }
+            }
+
+            persistSession()
+            return true
         }
 
         if shouldCloseGitDiff {
@@ -2760,6 +2850,11 @@ final class ProjectViewModel: ObservableObject {
         // Notify LSP service of document close
         if openTabs[index].contentType.isText, let uri = openTabs[index].documentURI {
             lspService.documentClosed(uri: uri, language: openTabs[index].language)
+        }
+
+        recentlyClosedTabs.append(recentlyClosedTab)
+        if recentlyClosedTabs.count > 20 {
+            recentlyClosedTabs.removeFirst(recentlyClosedTabs.count - 20)
         }
 
         openTabs.remove(at: index)
@@ -2778,9 +2873,59 @@ final class ProjectViewModel: ObservableObject {
         return true
     }
 
+    func reopenLastClosedTab() {
+        guard let tab = recentlyClosedTabs.popLast() else { return }
+
+        if let fileURL = tab.filePath?.standardizedFileURL,
+           let existingIndex = openTabs.firstIndex(where: { existingTab in
+               guard let existingPath = existingTab.filePath else { return false }
+               return normalizedPath(for: existingPath) == normalizedPath(for: fileURL)
+           }) {
+            selectedTabIndex = existingIndex
+            revealInExplorer(fileURL)
+            recordQuickOpenAccess(for: fileURL)
+            recordRecentlyOpenedURLs([fileURL])
+            persistSession()
+            return
+        }
+
+        openTabs.append(tab)
+        selectedTabIndex = openTabs.count - 1
+
+        if let fileURL = tab.filePath?.standardizedFileURL {
+            fileWatcher.watch(url: fileURL)
+            revealInExplorer(fileURL)
+            recordQuickOpenAccess(for: fileURL)
+            recordRecentlyOpenedURLs([fileURL])
+        }
+
+        let reopenedTab = openTabs[openTabs.count - 1]
+        if reopenedTab.contentType.isText, let uri = reopenedTab.documentURI {
+            lspService.documentOpened(uri: uri, language: reopenedTab.language, text: reopenedTab.content)
+        }
+
+        invalidateEditorNavigationCaches()
+        refreshCurrentLineBlame()
+        persistSession()
+    }
+
     func saveCurrentFile() {
         guard let selectedTabIndex else { return }
         _ = saveTab(at: selectedTabIndex)
+    }
+
+    func saveCurrentFileAs() {
+        guard let selectedTabIndex, openTabs.indices.contains(selectedTabIndex) else { return }
+        guard openTabs[selectedTabIndex].contentType.isText else { return }
+
+        let currentURL = openTabs[selectedTabIndex].filePath
+        let defaultName = currentURL?.lastPathComponent ?? openTabs[selectedTabIndex].fileName
+        let allowedTypes = currentURL.flatMap { url in
+            url.pathExtension.isEmpty ? nil : [url.pathExtension]
+        }
+
+        guard let destinationURL = ui.savePanel(defaultName, allowedTypes) else { return }
+        _ = saveTab(at: selectedTabIndex, destinationURL: destinationURL)
     }
 
     @discardableResult
@@ -3888,12 +4033,36 @@ final class ProjectViewModel: ObservableObject {
     }
 
     @discardableResult
-    private func saveTab(at index: Int) -> Bool {
-        guard openTabs.indices.contains(index), let url = openTabs[index].filePath else { return false }
+    private func saveTab(at index: Int, destinationURL: URL? = nil) -> Bool {
+        guard openTabs.indices.contains(index) else { return false }
         guard openTabs[index].contentType.isText else { return true }
+
+        let previousURL = openTabs[index].filePath?.standardizedFileURL
+        let previousLanguage = openTabs[index].language
+        let resolvedURL = (destinationURL ?? previousURL)?.standardizedFileURL
+        guard let url = resolvedURL else { return false }
+        let didChangeURL = previousURL != url
 
         do {
             try fileService.writeDocument(content: openTabs[index].content, metadata: openTabs[index].documentMetadata, to: url)
+
+            if didChangeURL {
+                if let previousURL {
+                    fileWatcher.unwatch(url: previousURL)
+                    invalidateCachedFileContent(for: previousURL)
+                    invalidateWorkspaceSymbolCache(for: previousURL)
+                    lspService.documentClosed(uri: previousURL.absoluteString, language: previousLanguage)
+                }
+
+                openTabs[index].filePath = url
+                openTabs[index].fileName = url.lastPathComponent
+                fileWatcher.watch(url: url)
+
+                if let uri = openTabs[index].documentURI {
+                    lspService.documentOpened(uri: uri, language: openTabs[index].language, text: openTabs[index].content)
+                }
+            }
+
             openTabs[index].originalContent = openTabs[index].content
             openTabs[index].isDirty = false
 
@@ -3902,7 +4071,18 @@ final class ProjectViewModel: ObservableObject {
             }
 
             invalidateCachedFileContent(for: url)
+            updateWorkspaceSymbolCache(for: url, contents: openTabs[index].content)
             invalidateWorkspaceDiagnosticsCache()
+
+            if let rootDirectory {
+                let normalizedRootPath = normalizedPath(for: rootDirectory)
+                let newPath = normalizedPath(for: url)
+                let previousPath = previousURL.map(normalizedPath(for:))
+                if newPath.hasPrefix(normalizedRootPath + "/") || previousPath?.hasPrefix(normalizedRootPath + "/") == true {
+                    reloadFileTree()
+                }
+            }
+
             persistSession()
             refreshGitState()
             refreshCurrentLineBlame()
@@ -3910,7 +4090,7 @@ final class ProjectViewModel: ObservableObject {
             // Show success notification
             NotificationManager.shared.show(NotificationItem(
                 type: .success,
-                title: "File Saved",
+                title: didChangeURL ? "File Saved As" : "File Saved",
                 message: "\(openTabs[index].fileName) saved successfully",
                 duration: 2.0
             ))
@@ -4170,9 +4350,8 @@ final class ProjectViewModel: ObservableObject {
                 return ProjectSessionTabState(
                     filePath: normalizedPath(for: filePath),
                     fileName: tab.fileName,
-                    content: tab.content,
-                    originalContent: tab.originalContent,
-                    isDirty: tab.isDirty,
+                    cursorLine: tab.cursorPosition.line,
+                    cursorColumn: tab.cursorPosition.column,
                     encodingRawValue: tab.documentMetadata.encodingRawValue,
                     encodingLabel: tab.documentMetadata.encodingLabel,
                     lineEndingRawValue: tab.documentMetadata.lineEnding.rawValue,
@@ -4371,28 +4550,36 @@ final class ProjectViewModel: ObservableObject {
             guard FileManager.default.fileExists(atPath: tabState.filePath) else { return nil }
             let fileURL = URL(fileURLWithPath: tabState.filePath)
             let contentType = restoredContentType(for: tabState, fileURL: fileURL)
-            let fileData: Data?
             switch contentType {
+            case .text:
+                guard let document = try? fileService.readDocument(at: fileURL) else { return nil }
+                return EditorTab(
+                    filePath: fileURL,
+                    fileName: tabState.fileName,
+                    content: document.content,
+                    originalContent: document.content,
+                    cursorPosition: restoredCursorPosition(for: tabState),
+                    documentMetadata: document.metadata,
+                    contentType: contentType
+                )
             case .image, .binary(.hex):
-                fileData = try? fileService.readFileAsData(at: fileURL)
-            default:
-                fileData = nil
+                return EditorTab(
+                    filePath: fileURL,
+                    fileName: tabState.fileName,
+                    cursorPosition: restoredCursorPosition(for: tabState),
+                    documentMetadata: restoredDocumentMetadata(for: tabState),
+                    contentType: contentType,
+                    fileData: try? fileService.readFileAsData(at: fileURL)
+                )
+            case .binary, .excluded:
+                return EditorTab(
+                    filePath: fileURL,
+                    fileName: tabState.fileName,
+                    cursorPosition: restoredCursorPosition(for: tabState),
+                    documentMetadata: restoredDocumentMetadata(for: tabState),
+                    contentType: contentType
+                )
             }
-
-            return EditorTab(
-                filePath: fileURL,
-                fileName: tabState.fileName,
-                content: contentType.isText ? tabState.content : "",
-                originalContent: contentType.isText ? tabState.originalContent : "",
-                isDirty: contentType.isText ? tabState.isDirty : false,
-                documentMetadata: FileDocumentMetadata(
-                    encoding: String.Encoding(rawValue: tabState.encodingRawValue ?? String.Encoding.utf8.rawValue),
-                    encodingLabel: tabState.encodingLabel ?? String.Encoding.utf8.displayLabel,
-                    lineEnding: LineEndingStyle(rawValue: tabState.lineEndingRawValue ?? LineEndingStyle.lf.rawValue) ?? .lf
-                ),
-                contentType: contentType,
-                fileData: fileData
-            )
         }
         for tab in openTabs {
             if let filePath = tab.filePath {
@@ -4426,6 +4613,21 @@ final class ProjectViewModel: ObservableObject {
         var isDirectory = ObjCBool(false)
         FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory)
         return isDirectory.boolValue
+    }
+
+    private func restoredCursorPosition(for tabState: ProjectSessionTabState) -> CursorPosition {
+        CursorPosition(
+            line: max(tabState.cursorLine ?? 1, 1),
+            column: max(tabState.cursorColumn ?? 1, 1)
+        )
+    }
+
+    private func restoredDocumentMetadata(for tabState: ProjectSessionTabState) -> FileDocumentMetadata {
+        FileDocumentMetadata(
+            encoding: String.Encoding(rawValue: tabState.encodingRawValue ?? String.Encoding.utf8.rawValue),
+            encodingLabel: tabState.encodingLabel ?? String.Encoding.utf8.displayLabel,
+            lineEnding: LineEndingStyle(rawValue: tabState.lineEndingRawValue ?? LineEndingStyle.lf.rawValue) ?? .lf
+        )
     }
 
     private func shouldPromptToCreateProjectConfig(for url: URL) -> Bool {

@@ -262,29 +262,31 @@ actor DockerCLI {
     }
     
     private func runProcess(_ process: Process) async throws {
-        try await withCheckedThrowingContinuation { continuation in
-            let pipe = Pipe()
-            process.standardOutput = pipe
-            process.standardError = pipe
-            
-            process.terminationHandler = { proc in
-                if proc.terminationStatus == 0 {
-                    continuation.resume()
-                } else {
-                    continuation.resume(throwing: NSError(
-                        domain: "DockerCLI",
-                        code: Int(proc.terminationStatus),
-                        userInfo: [NSLocalizedDescriptionKey: "Docker command failed with exit code \(proc.terminationStatus)"]
-                    ))
-                }
-            }
-            
-            do {
-                try process.run()
-            } catch {
-                continuation.resume(throwing: error)
-            }
+        guard let executableURL = process.executableURL else {
+            throw NSError(domain: "DockerCLI", code: 0, userInfo: [NSLocalizedDescriptionKey: "Docker executable is not configured"])
         }
+
+        try await Task.detached(priority: .utility) {
+            let result = try ProcessRunner.run(
+                executableURL: executableURL,
+                arguments: process.arguments ?? [],
+                currentDirectoryURL: process.currentDirectoryURL,
+                environment: process.environment
+            )
+
+            if result.terminationStatus != 0 {
+                let message = result.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+                throw NSError(
+                    domain: "DockerCLI",
+                    code: Int(result.terminationStatus),
+                    userInfo: [
+                        NSLocalizedDescriptionKey: message.isEmpty
+                            ? "Docker command failed with exit code \(result.terminationStatus)"
+                            : message
+                    ]
+                )
+            }
+        }.value
     }
 }
 

@@ -271,20 +271,15 @@ enum LSPServerRegistry {
     }
 
     private static func defaultXcrunFind(_ tool: String) -> String? {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
-        process.arguments = ["--find", tool]
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = Pipe()
-
         do {
-            try process.run()
-            process.waitUntilExit()
-            guard process.terminationStatus == 0 else { return nil }
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            let path = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard let path, !path.isEmpty else { return nil }
+            let result = try ProcessRunner.run(
+                executableURL: URL(fileURLWithPath: "/usr/bin/xcrun"),
+                arguments: ["--find", tool],
+                timeout: 5.0
+            )
+            guard result.terminationStatus == 0 else { return nil }
+            let path = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !path.isEmpty else { return nil }
             return path
         } catch {
             return nil
@@ -312,13 +307,6 @@ enum LSPServerRegistry {
         }
 
         // Fall back to `which`
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/which")
-        process.arguments = [name]
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = Pipe()
-
         // Inherit a useful PATH
         var env = ProcessInfo.processInfo.environment
         let extraPaths = [
@@ -329,15 +317,16 @@ enum LSPServerRegistry {
         ]
         let existingPath = env["PATH"] ?? "/usr/bin:/bin"
         env["PATH"] = (extraPaths + [existingPath]).joined(separator: ":")
-        process.environment = env
-
         do {
-            try process.run()
-            process.waitUntilExit()
-            guard process.terminationStatus == 0 else { return nil }
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            let path = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard let path, !path.isEmpty else { return nil }
+            let result = try ProcessRunner.run(
+                executableURL: URL(fileURLWithPath: "/usr/bin/which"),
+                arguments: [name],
+                environment: env,
+                timeout: 5.0
+            )
+            guard result.terminationStatus == 0 else { return nil }
+            let path = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !path.isEmpty else { return nil }
             return path
         } catch {
             return nil

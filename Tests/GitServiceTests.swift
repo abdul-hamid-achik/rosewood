@@ -70,7 +70,7 @@ struct GitServiceTests {
         #expect(diff.additionCount == 2)
         #expect(diff.deletionCount == 2)
 
-        let hunk = try? #require(diff.hunks.first)
+        let hunk = diff.hunks.first
         #expect(hunk?.rows.count == 4)
         #expect(hunk?.rows[0].leftKind == .context)
         #expect(hunk?.rows[1].leftText == "    let oldValue = 1")

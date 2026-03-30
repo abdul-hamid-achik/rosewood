@@ -49,6 +49,30 @@ private struct DirectoryEntry {
     let sortKey: String
 }
 
+private let defaultExcludedSearchDirectoryNames: Set<String> = [
+    ".git",
+    ".build",
+    ".next",
+    ".swiftpm",
+    "DerivedData",
+    "build",
+    "dist",
+    "node_modules",
+    "Pods"
+]
+
+private let defaultExcludedSearchGlobPatterns: [String] = [
+    "!.git/**",
+    "!.build/**",
+    "!.next/**",
+    "!.swiftpm/**",
+    "!DerivedData/**",
+    "!build/**",
+    "!dist/**",
+    "!node_modules/**",
+    "!Pods/**"
+]
+
 private struct RipgrepEvent: Decodable {
     let type: String
     let data: RipgrepEventData?
@@ -158,6 +182,31 @@ final class FileService {
     var preferRipgrepProjectSearch: Bool = true
     var ripgrepLaunchPath: String = "/usr/bin/env"
     var ripgrepCommandName: String = "rg"
+
+    func ripgrepAvailable() -> Bool {
+        let arguments: [String]
+        if ripgrepLaunchPath == "/usr/bin/env" {
+            arguments = [ripgrepCommandName, "--version"]
+        } else {
+            arguments = ["--version"]
+        }
+
+        guard let result = try? ProcessRunner.run(
+            executableURL: URL(fileURLWithPath: ripgrepLaunchPath),
+            arguments: arguments,
+            timeout: 2.0
+        ) else {
+            return false
+        }
+
+        return result.terminationStatus == 0
+    }
+
+    func ripgrepAvailableAsync() async -> Bool {
+        await Task.detached(priority: .utility) { [self] in
+            ripgrepAvailable()
+        }.value
+    }
 
     static func naturalSortKey(for value: String) -> String {
         var result = ""
@@ -285,7 +334,7 @@ final class FileService {
     private func projectFiles(
         at rootURL: URL,
         includeHidden: Bool = false,
-        isCancelled: () -> Bool = { false }
+        isCancelled: @escaping () -> Bool = { false }
     ) -> [URL] {
         guard let enumerator = FileManager.default.enumerator(
             at: rootURL,
@@ -300,11 +349,19 @@ final class FileService {
             if isCancelled() {
                 break
             }
-            guard let resourceValues = try? fileURL.resourceValues(forKeys: [.isDirectoryKey, .isRegularFileKey]),
-                  resourceValues.isDirectory != true,
-                  resourceValues.isRegularFile == true else {
+
+            guard let resourceValues = try? fileURL.resourceValues(forKeys: [.isDirectoryKey, .isRegularFileKey]) else {
                 continue
             }
+
+            if resourceValues.isDirectory == true {
+                if shouldSkipProjectDirectory(fileURL, rootURL: rootURL) {
+                    enumerator.skipDescendants()
+                }
+                continue
+            }
+
+            guard resourceValues.isRegularFile == true else { continue }
             files.append(fileURL)
         }
         return files
@@ -321,7 +378,7 @@ final class FileService {
         at url: URL,
         expandedPaths: Set<String> = [],
         includeHidden: Bool = false,
-        isCancelled: () -> Bool = { false }
+        isCancelled: @escaping () -> Bool = { false }
     ) -> [FileItem] {
         loadDirectory(
             at: url,
@@ -337,7 +394,7 @@ final class FileService {
         expandedPaths: Set<String>,
         includeHidden: Bool,
         currentDepth: Int,
-        isCancelled: () -> Bool
+        isCancelled: @escaping () -> Bool
     ) -> [FileItem] {
         if isCancelled() {
             return []
@@ -582,7 +639,7 @@ final class FileService {
         query: String,
         options: ProjectSearchOptions = ProjectSearchOptions(),
         includeHidden: Bool = false,
-        isCancelled: () -> Bool = { false }
+        isCancelled: @escaping () -> Bool = { false }
     ) -> [ProjectSearchResult] {
         let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalizedQuery.isEmpty else {
@@ -618,7 +675,7 @@ final class FileService {
         matcher: ProjectSearchMatcher,
         options: ProjectSearchOptions,
         includeHidden: Bool,
-        isCancelled: () -> Bool
+        isCancelled: @escaping () -> Bool
     ) -> [ProjectSearchResult] {
         var results: [ProjectSearchResult] = []
 
@@ -664,47 +721,35 @@ final class FileService {
         query: String,
         options: ProjectSearchOptions,
         includeHidden: Bool,
-        isCancelled: () -> Bool
+        isCancelled: @escaping () -> Bool
     ) -> [ProjectSearchResult]? {
         if isCancelled() {
             return []
         }
 
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: ripgrepLaunchPath)
-        process.currentDirectoryURL = rootURL
-        process.arguments = ripgrepArguments(for: query, options: options, includeHidden: includeHidden)
-
-        let outputPipe = Pipe()
-        let errorPipe = Pipe()
-        process.standardOutput = outputPipe
-        process.standardError = errorPipe
-
         do {
-            try process.run()
-        } catch {
-            return nil
-        }
+            let result = try ProcessRunner.run(
+                executableURL: URL(fileURLWithPath: ripgrepLaunchPath),
+                arguments: ripgrepArguments(for: query, options: options, includeHidden: includeHidden),
+                currentDirectoryURL: rootURL,
+                timeout: 30.0,
+                cancellationCheck: isCancelled
+            )
 
-        process.waitUntilExit()
-
-        if isCancelled() {
-            process.terminate()
-            return []
-        }
-
-        let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
-        _ = errorPipe.fileHandleForReading.readDataToEndOfFile()
-
-        switch process.terminationStatus {
-        case 0:
-            guard let results = parseRipgrepResults(from: outputData, rootURL: rootURL) else {
+            switch result.terminationStatus {
+            case 0:
+                guard let results = parseRipgrepResults(from: result.stdoutData, rootURL: rootURL) else {
+                    return nil
+                }
+                return sortedProjectSearchResults(results)
+            case 1:
+                return []
+            default:
                 return nil
             }
-            return sortedProjectSearchResults(results)
-        case 1:
+        } catch ProcessRunnerError.cancelled {
             return []
-        default:
+        } catch {
             return nil
         }
     }
@@ -714,7 +759,7 @@ final class FileService {
         options: ProjectSearchOptions,
         includeHidden: Bool
     ) -> [String] {
-        var arguments = [ripgrepCommandName, "--json", "--line-number", "--column", "--no-ignore", "--color", "never", "--max-filesize", "1M"]
+        var arguments = [ripgrepCommandName, "--json", "--line-number", "--column", "--color", "never", "--max-filesize", "1M"]
 
         if includeHidden {
             arguments.append("--hidden")
@@ -736,6 +781,10 @@ final class FileService {
             arguments.append(contentsOf: ["-g", pattern])
         }
 
+        for pattern in defaultExcludedSearchGlobPatterns {
+            arguments.append(contentsOf: ["-g", pattern])
+        }
+
         for pattern in globPatterns(from: options.excludeGlob) {
             arguments.append(contentsOf: ["-g", "!\(pattern)"])
         }
@@ -744,6 +793,15 @@ final class FileService {
         arguments.append(".")
 
         return arguments
+    }
+
+    private func shouldSkipProjectDirectory(_ directoryURL: URL, rootURL: URL) -> Bool {
+        let standardizedDirectoryURL = directoryURL.standardizedFileURL
+        guard standardizedDirectoryURL != rootURL.standardizedFileURL else {
+            return false
+        }
+
+        return defaultExcludedSearchDirectoryNames.contains(directoryURL.lastPathComponent)
     }
 
     private func parseRipgrepResults(from data: Data, rootURL: URL) -> [ProjectSearchResult]? {

@@ -2,6 +2,24 @@ import Foundation
 import Testing
 @testable import Rosewood
 
+private final class ResolverCallCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+
+    func increment() {
+        lock.lock()
+        count += 1
+        lock.unlock()
+    }
+
+    func value() -> Int {
+        lock.lock()
+        let snapshot = count
+        lock.unlock()
+        return snapshot
+    }
+}
+
 struct LSPServerRegistryTests {
 
     // MARK: - Server Config Lookup
@@ -222,10 +240,10 @@ struct LSPServerRegistryTests {
 
     @Test
     func resolveServerPathCachesDiscoveryPerServerKey() {
-        var xcrunCalls = 0
+        let xcrunCalls = ResolverCallCounter()
         LSPServerRegistry.setDiscoveryResolversForTesting(
             xcrunResolver: { tool in
-                xcrunCalls += 1
+                xcrunCalls.increment()
                 return "/tmp/\(tool)"
             },
             pathResolver: { _ in nil }
@@ -235,16 +253,16 @@ struct LSPServerRegistryTests {
         let config = try! #require(LSPServerRegistry.configFor(language: "swift"))
         #expect(LSPServerRegistry.resolveServerPath(for: config) == "/tmp/sourcekit-lsp")
         #expect(LSPServerRegistry.resolveServerPath(for: config) == "/tmp/sourcekit-lsp")
-        #expect(xcrunCalls == 1)
+        #expect(xcrunCalls.value() == 1)
     }
 
     @Test
     func sharedServerConfigsReuseResolvedPath() {
-        var pathCalls = 0
+        let pathCalls = ResolverCallCounter()
         LSPServerRegistry.setDiscoveryResolversForTesting(
             xcrunResolver: { _ in nil },
             pathResolver: { name in
-                pathCalls += 1
+                pathCalls.increment()
                 return "/tmp/\(name)"
             }
         )
@@ -255,7 +273,7 @@ struct LSPServerRegistryTests {
 
         #expect(LSPServerRegistry.resolveServerPath(for: typeScript) == "/tmp/typescript-language-server")
         #expect(LSPServerRegistry.resolveServerPath(for: javaScript) == "/tmp/typescript-language-server")
-        #expect(pathCalls == 1)
+        #expect(pathCalls.value() == 1)
     }
 
     @Test

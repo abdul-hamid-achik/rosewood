@@ -46,7 +46,7 @@ extension ProjectViewModel {
         Task {
             do {
                 try await dockerService.startContainer(id: container.id)
-                await refreshDockerState()
+                refreshDockerState()
                 NotificationManager.shared.show(NotificationItem(
                     type: .success,
                     title: "Container Started",
@@ -70,7 +70,7 @@ extension ProjectViewModel {
         Task {
             do {
                 try await dockerService.stopContainer(id: container.id)
-                await refreshDockerState()
+                refreshDockerState()
                 NotificationManager.shared.show(NotificationItem(
                     type: .success,
                     title: "Container Stopped",
@@ -94,7 +94,7 @@ extension ProjectViewModel {
         Task {
             do {
                 try await dockerService.restartContainer(id: container.id)
-                await refreshDockerState()
+                refreshDockerState()
                 NotificationManager.shared.show(NotificationItem(
                     type: .success,
                     title: "Container Restarted",
@@ -125,7 +125,7 @@ extension ProjectViewModel {
                     Task {
                         do {
                             try await self?.dockerService.removeContainer(id: container.id, force: force)
-                            await self?.refreshDockerState()
+                            self?.refreshDockerState()
                             NotificationManager.shared.show(NotificationItem(
                                 type: .success,
                                 title: "Container Removed",
@@ -163,7 +163,7 @@ extension ProjectViewModel {
                     Task {
                         do {
                             try await self?.dockerService.removeImage(id: image.id, force: force)
-                            await self?.refreshDockerState()
+                            self?.refreshDockerState()
                             NotificationManager.shared.show(NotificationItem(
                                 type: .success,
                                 title: "Image Removed",
@@ -195,7 +195,7 @@ extension ProjectViewModel {
         Task {
             do {
                 try await dockerService.composeUp(projectPath: project.configPath)
-                await refreshDockerState()
+                refreshDockerState()
                 NotificationManager.shared.show(NotificationItem(
                     type: .success,
                     title: "Compose Started",
@@ -225,7 +225,7 @@ extension ProjectViewModel {
                     Task {
                         do {
                             try await self?.dockerService.composeDown(projectPath: project.configPath)
-                            await self?.refreshDockerState()
+                            self?.refreshDockerState()
                             NotificationManager.shared.show(NotificationItem(
                                 type: .success,
                                 title: "Compose Stopped",

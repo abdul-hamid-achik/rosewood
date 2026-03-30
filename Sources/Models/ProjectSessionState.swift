@@ -10,9 +10,8 @@ struct ProjectSessionState: Codable, Equatable {
 struct ProjectSessionTabState: Codable, Equatable {
     let filePath: String
     let fileName: String
-    let content: String
-    let originalContent: String
-    let isDirty: Bool
+    let cursorLine: Int?
+    let cursorColumn: Int?
     let encodingRawValue: UInt?
     let encodingLabel: String?
     let lineEndingRawValue: String?
@@ -22,9 +21,8 @@ struct ProjectSessionTabState: Codable, Equatable {
     init(
         filePath: String,
         fileName: String,
-        content: String,
-        originalContent: String,
-        isDirty: Bool,
+        cursorLine: Int? = nil,
+        cursorColumn: Int? = nil,
         encodingRawValue: UInt? = nil,
         encodingLabel: String? = nil,
         lineEndingRawValue: String? = nil,
@@ -33,9 +31,8 @@ struct ProjectSessionTabState: Codable, Equatable {
     ) {
         self.filePath = filePath
         self.fileName = fileName
-        self.content = content
-        self.originalContent = originalContent
-        self.isDirty = isDirty
+        self.cursorLine = cursorLine
+        self.cursorColumn = cursorColumn
         self.encodingRawValue = encodingRawValue
         self.encodingLabel = encodingLabel
         self.lineEndingRawValue = lineEndingRawValue

@@ -6,7 +6,7 @@ struct EditorView: View {
     @EnvironmentObject var projectViewModel: ProjectViewModel
     @EnvironmentObject private var configService: ConfigurationService
     @EnvironmentObject private var commandDispatcher: AppCommandDispatcher
-    @ObservedObject private var lspService = LSPService.shared
+    @EnvironmentObject private var lspService: LSPService
     let tab: EditorTab
 
     private var themeColors: ThemeColors {
@@ -2648,11 +2648,18 @@ enum EditorInputHandler {
 
     private static func previousCharacter(at location: Int, in text: NSString) -> Character? {
         guard location > 0 else { return nil }
-        return Character(UnicodeScalar(text.character(at: location - 1))!)
+        let string = text as String
+        let cursorIndex = String.Index(utf16Offset: location, in: string)
+        guard cursorIndex > string.startIndex else { return nil }
+        let previousIndex = string.index(before: cursorIndex)
+        return string[previousIndex]
     }
 
     private static func nextCharacter(at location: Int, in text: NSString) -> Character? {
         guard location < text.length else { return nil }
-        return Character(UnicodeScalar(text.character(at: location))!)
+        let string = text as String
+        let cursorIndex = String.Index(utf16Offset: location, in: string)
+        guard cursorIndex < string.endIndex else { return nil }
+        return string[cursorIndex]
     }
 }

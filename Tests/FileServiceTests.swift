@@ -279,6 +279,35 @@ struct FileServiceTests {
     }
 
     @Test
+    func searchProjectSkipsCommonGeneratedDirectories() throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let sourcesDirectory = rootURL.appendingPathComponent("Sources", isDirectory: true)
+        let nodeModulesDirectory = rootURL.appendingPathComponent("node_modules", isDirectory: true)
+        let buildDirectory = rootURL.appendingPathComponent(".build", isDirectory: true)
+        let sourceFile = sourcesDirectory.appendingPathComponent("Alpha.swift")
+        let nodeModuleFile = nodeModulesDirectory.appendingPathComponent("index.js")
+        let buildFile = buildDirectory.appendingPathComponent("Generated.swift")
+
+        try FileManager.default.createDirectory(at: sourcesDirectory, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: nodeModulesDirectory, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: buildDirectory, withIntermediateDirectories: true)
+        try "let rosewoodSource = true\n".write(to: sourceFile, atomically: true, encoding: .utf8)
+        try "const rosewoodDependency = true\n".write(to: nodeModuleFile, atomically: true, encoding: .utf8)
+        try "let rosewoodGenerated = true\n".write(to: buildFile, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let projectFiles = FileService.shared.projectFiles(at: rootURL, includeHidden: true)
+        let results = FileService.shared.searchProject(at: rootURL, query: "rosewood", includeHidden: true)
+
+        #expect(projectFiles.contains(where: { $0.standardizedFileURL == sourceFile.standardizedFileURL }))
+        #expect(projectFiles.contains(nodeModuleFile) == false)
+        #expect(projectFiles.contains(buildFile) == false)
+        #expect(results.count == 1)
+        #expect(results.first?.filePath.standardizedFileURL == sourceFile.standardizedFileURL)
+    }
+
+    @Test
     func detectContentTypeRecognizesImagesAndBinaryFiles() throws {
         let directoryURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

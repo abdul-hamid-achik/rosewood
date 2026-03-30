@@ -32,7 +32,7 @@ struct DockerLogsPanelView: View {
         .onDisappear {
             stopStreamingLogs()
         }
-        .onChange(of: projectViewModel.selectedContainer?.id) { _ in
+        .onChange(of: projectViewModel.selectedContainer?.id) {
             startStreamingLogs()
         }
     }
@@ -132,7 +132,7 @@ struct DockerLogsPanelView: View {
                 }
                 .padding(8)
             }
-            .onChange(of: logLines.count) { _ in
+            .onChange(of: logLines.count) {
                 if autoScroll, let lastId = logLines.last?.id {
                     withAnimation {
                         proxy.scrollTo(lastId, anchor: .bottom)
