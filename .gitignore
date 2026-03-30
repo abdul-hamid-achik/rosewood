@@ -10,7 +10,6 @@ xcuserdata/
 build/
 DerivedData/
 .derived/
-dist/
 
 # Swift Package Manager
 .build/
