@@ -27,6 +27,8 @@ protocol LSPServiceProtocol: AnyObject {
     func hover(uri: String, language: String, position: LSPPosition) async -> HoverResult?
     func definition(uri: String, language: String, position: LSPPosition) async -> [LSPLocation]
     func references(uri: String, language: String, position: LSPPosition) async -> [LSPLocation]
+    func semanticTokens(uri: String, language: String) async -> SemanticTokens?
+    func semanticTokensLegend(for language: String) -> SemanticTokensLegend?
     func serverAvailable(for language: String) -> Bool
     func injectDiagnosticsForTesting(uri: String, diagnostics: [LSPDiagnostic])
     func setDiagnosticsChangeHandler(_ handler: (@MainActor () -> Void)?)
@@ -50,6 +52,7 @@ final class LSPService: ObservableObject, LSPServiceProtocol {
     private var serverStartTasks: [String: Task<Void, Never>] = [:]  // keyed by serverKey
     private var diagnosticsChangeHandler: (@MainActor () -> Void)?
     private var presentedServerIssueKeys: Set<String> = []
+    private var semanticTokensLegends: [String: SemanticTokensLegend] = [:]  // keyed by serverKey
 
     private init() {}
 
@@ -187,6 +190,16 @@ final class LSPService: ObservableObject, LSPServiceProtocol {
         return (try? await client.references(uri: uri, position: position, includeDeclaration: false)) ?? []
     }
 
+    func semanticTokens(uri: String, language: String) async -> SemanticTokens? {
+        guard let client = existingClient(for: language) else { return nil }
+        return try? await client.semanticTokens(uri: uri)
+    }
+
+    func semanticTokensLegend(for language: String) -> SemanticTokensLegend? {
+        guard let config = LSPServerRegistry.configFor(language: language) else { return nil }
+        return semanticTokensLegends[config.serverKey]
+    }
+
     // MARK: - Server Status
 
     func serverAvailable(for language: String) -> Bool {
@@ -287,6 +300,11 @@ final class LSPService: ObservableObject, LSPServiceProtocol {
 
             clients[serverKey] = client
             serverStatus[serverKey] = .ready
+
+            if let legend = await client.semanticTokensLegend {
+                semanticTokensLegends[serverKey] = legend
+            }
+
             return client
         } catch {
             serverStatus[serverKey] = .failed(error.localizedDescription)
@@ -394,6 +412,8 @@ final class MockLSPService: LSPServiceProtocol, ObservableObject {
         referencesCalls.append((uri, language, position))
         return referenceResultsByURI[uri] ?? []
     }
+    func semanticTokens(uri: String, language: String) async -> SemanticTokens? { nil }
+    func semanticTokensLegend(for language: String) -> SemanticTokensLegend? { nil }
 
     func serverAvailable(for language: String) -> Bool {
         if case .ready = serverStatus[language] { return true }

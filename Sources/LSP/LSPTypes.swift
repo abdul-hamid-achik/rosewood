@@ -221,19 +221,22 @@ struct ServerCapabilities: Codable, Sendable {
     let hoverProvider: AnyCodable?
     let definitionProvider: AnyCodable?
     let referencesProvider: AnyCodable?
+    let semanticTokensProvider: SemanticTokensOptions?
 
     init(
         textDocumentSync: AnyCodable? = nil,
         completionProvider: CompletionOptions? = nil,
         hoverProvider: AnyCodable? = nil,
         definitionProvider: AnyCodable? = nil,
-        referencesProvider: AnyCodable? = nil
+        referencesProvider: AnyCodable? = nil,
+        semanticTokensProvider: SemanticTokensOptions? = nil
     ) {
         self.textDocumentSync = textDocumentSync
         self.completionProvider = completionProvider
         self.hoverProvider = hoverProvider
         self.definitionProvider = definitionProvider
         self.referencesProvider = referencesProvider
+        self.semanticTokensProvider = semanticTokensProvider
     }
 
     var supportsCompletion: Bool {
@@ -257,6 +260,16 @@ struct ServerCapabilities: Codable, Sendable {
         if let boolVal = provider.boolValue { return boolVal }
         return provider.value != nil
     }
+
+    var supportsSemanticTokens: Bool {
+        semanticTokensProvider != nil
+    }
+}
+
+struct SemanticTokensOptions: Codable, Sendable {
+    let legend: SemanticTokensLegend
+    let range: AnyCodable?
+    let full: AnyCodable?
 }
 
 struct CompletionOptions: Codable, Sendable {
@@ -445,6 +458,14 @@ struct HoverResult: Codable, Sendable {
     let range: LSPRange?
 
     var contentsString: String {
+        rawString
+    }
+
+    var parsedContent: ParsedHoverContent? {
+        parseHoverContent()
+    }
+
+    private var rawString: String {
         if let str = contents.stringValue { return str }
         if let dict = contents.dictValue, let value = dict["value"] as? String {
             return value
@@ -460,6 +481,44 @@ struct HoverResult: Codable, Sendable {
         }
         return ""
     }
+
+    private func parseHoverContent() -> ParsedHoverContent? {
+        if let dict = contents.dictValue {
+            if let kind = dict["kind"] as? String, let value = dict["value"] as? String {
+                let documentation = dict["documentation"] as? String
+                return ParsedHoverContent(kind: kind, value: value, documentation: documentation)
+            }
+            if let value = dict["value"] as? String {
+                return ParsedHoverContent(kind: nil, value: value, documentation: nil)
+            }
+        }
+        if let str = contents.stringValue {
+            return ParsedHoverContent(kind: nil, value: str, documentation: nil)
+        }
+        if let array = contents.arrayValue {
+            let values = array.compactMap { item -> String? in
+                if let str = item as? String { return str }
+                if let dict = item as? [String: Any?], let value = dict["value"] as? String {
+                    return value
+                }
+                return nil
+            }
+            if let first = values.first {
+                return ParsedHoverContent(kind: nil, value: first, documentation: values.count > 1 ? values.dropFirst().joined(separator: "\n") : nil)
+            }
+        }
+        return nil
+    }
+}
+
+struct ParsedHoverContent {
+    let kind: String?
+    let value: String
+    let documentation: String?
+
+    var isMarkdown: Bool {
+        kind == "markdown"
+    }
 }
 
 // MARK: - Definition
@@ -467,6 +526,31 @@ struct HoverResult: Codable, Sendable {
 struct DefinitionParams: Codable, Sendable {
     let textDocument: TextDocumentIdentifier
     let position: LSPPosition
+}
+
+// MARK: - Semantic Tokens
+
+struct SemanticTokensLegend: Codable, Sendable {
+    let tokenTypes: [String]
+    let tokenModifiers: [String]
+}
+
+struct SemanticTokensParams: Codable, Sendable {
+    let textDocument: TextDocumentIdentifier
+    let workDoneToken: String?
+
+    init(textDocument: TextDocumentIdentifier, workDoneToken: String? = nil) {
+        self.textDocument = textDocument
+        self.workDoneToken = workDoneToken
+    }
+}
+
+struct SemanticTokens: Codable, Sendable {
+    let data: [Int]
+}
+
+struct SemanticTokensDelta: Codable, Sendable {
+    let data: [Int]
 }
 
 // MARK: - Document Sync Notifications

@@ -106,6 +106,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItem
             pendingInitialProjectViewModel = nil
         }
 
+        HighlightService.shared.prewarm()
+
         DispatchQueue.main.async { [weak self] in
             self?.setupMainMenu()
         }

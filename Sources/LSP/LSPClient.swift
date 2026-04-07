@@ -33,6 +33,10 @@ actor LSPClient {
     private(set) var state: State = .starting
     private(set) var serverCapabilities: ServerCapabilities?
 
+    var semanticTokensLegend: SemanticTokensLegend? {
+        serverCapabilities?.semanticTokensProvider?.legend
+    }
+
     private(set) var onDiagnostics: (@Sendable (String, [LSPDiagnostic]) -> Void)?
     private(set) var onStateChange: (@Sendable (State) -> Void)?
 
@@ -286,6 +290,22 @@ actor LSPClient {
             return []
         }
         return (try? LSPEncoder.decode([LSPLocation].self, from: responseData)) ?? []
+    }
+
+    func semanticTokens(uri: String, range: LSPRange? = nil) async throws -> SemanticTokens? {
+        guard case .ready = state else { throw LSPClientError.serverNotReady }
+        guard serverCapabilities?.supportsSemanticTokens == true else { return nil }
+
+        let params = SemanticTokensParams(
+            textDocument: TextDocumentIdentifier(uri: uri)
+        )
+
+        let responseData = try await sendRequest("textDocument/semanticTokens/full", params: params)
+
+        if let json = try? JSONSerialization.jsonObject(with: responseData), json is NSNull {
+            return nil
+        }
+        return try? LSPEncoder.decode(SemanticTokens.self, from: responseData)
     }
 
     // MARK: - Message Loop

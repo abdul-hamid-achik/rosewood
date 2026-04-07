@@ -240,6 +240,10 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
         private var mouseMonitor: Any?
         private var commandCancellables: Set<AnyCancellable> = []
         private var deferredHighlightTask: Task<Void, Never>?
+        private let dwellDelayNanoseconds: UInt64 = 250_000_000
+        private var dwellTimer: Task<Void, Never>?
+        private var lastHoverPoint: NSPoint?
+        private var isMouseOverText = false
 
         init(parent: CodeEditorRepresentable) {
             self.parent = parent
@@ -364,6 +368,8 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
             let updatedText = textView.string
             let selectedRange = textView.selectedRange()
             lineTableNeedsUpdate = true
+
+            containerView?.invalidateSemanticTokens(for: NSRange(location: 0, length: updatedText.count), text: updatedText)
 
             if parent.deferHighlightingDuringEditing {
                 containerView?.refreshAfterEditing(text: updatedText, themeColors: parent.themeColors)
@@ -805,30 +811,53 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
         private func handleMouseEvent(_ event: NSEvent) -> NSEvent? {
             guard let textView = containerView?.textView else { return event }
 
-            // Only handle events when Cmd is held
-            guard event.modifierFlags.contains(.command) else {
-                if hoverPopup.isVisible {
+            let windowPoint = event.locationInWindow
+            let textViewPoint = textView.convert(windowPoint, from: nil)
+            let isOverText = textView.bounds.contains(textViewPoint)
+
+            if isOverText != isMouseOverText {
+                isMouseOverText = isOverText
+                if !isOverText {
+                    dwellTimer?.cancel()
+                    dwellTimer = nil
                     hoverPopup.dismiss()
+                }
+            }
+
+            guard isOverText else { return event }
+
+            if event.modifierFlags.contains(.command) {
+                if event.type == .leftMouseDown {
+                    handleGoToDefinition(at: textViewPoint, in: textView)
+                    return nil
+                } else if event.type == .mouseMoved {
+                    handleHover(at: textViewPoint, in: textView)
                 }
                 return event
             }
 
-            let windowPoint = event.locationInWindow
-            let textViewPoint = textView.convert(windowPoint, from: nil)
-
-            // Ensure point is within the text view
-            guard textView.bounds.contains(textViewPoint) else { return event }
-
-            if event.type == .leftMouseDown {
-                // Cmd+Click = go-to-definition
-                handleGoToDefinition(at: textViewPoint, in: textView)
-                return nil // Consume the event
-            } else if event.type == .mouseMoved {
-                // Cmd+hover = show hover info
-                handleHover(at: textViewPoint, in: textView)
+            if event.type == .mouseMoved {
+                if textViewPoint != lastHoverPoint {
+                    lastHoverPoint = textViewPoint
+                    dwellTimer?.cancel()
+                    dwellTimer = Task { @MainActor [weak self] in
+                        guard let self else { return }
+                        try? await Task.sleep(nanoseconds: self.dwellDelayNanoseconds)
+                        guard !Task.isCancelled else { return }
+                        await MainActor.run {
+                            self.handleDwellHover(at: textViewPoint, in: textView)
+                        }
+                    }
+                }
             }
 
             return event
+        }
+
+        private func handleDwellHover(at point: NSPoint, in textView: NSTextView) {
+            guard !currentFoldSnapshot.hasActiveFolds else { return }
+            guard let position = LSPPositionConverter.lspPosition(from: point, in: textView) else { return }
+            performHover(at: position, in: textView)
         }
 
         private func handleGoToDefinitionFromCursor() {
@@ -894,9 +923,6 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
                 guard let result = await lspService.hover(uri: uri, language: language, position: position) else { return }
                 guard !Task.isCancelled else { return }
 
-                let content = result.contentsString
-                guard !content.isEmpty else { return }
-
                 if let offset = LSPPositionConverter.utf16Offset(for: position, in: textView.string),
                    let layoutManager = textView.layoutManager,
                    let textContainer = textView.textContainer {
@@ -908,7 +934,14 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
                     let origin = textView.textContainerOrigin
                     rect.origin.x += origin.x
                     rect.origin.y += origin.y
-                    hoverPopup.show(content: content, at: rect, in: textView)
+
+                    if let parsed = result.parsedContent {
+                        hoverPopup.showEnhancedContent(parsed, at: rect, in: textView)
+                    } else {
+                        let content = result.contentsString
+                        guard !content.isEmpty else { return }
+                        hoverPopup.show(content: content, at: rect, in: textView)
+                    }
                 }
             }
         }
@@ -1222,11 +1255,16 @@ final class EditorContainerView: NSView {
     private let minimapWidthConstraint: NSLayoutConstraint
     private var lastMinimapCacheKey: MinimapCacheKey?
     private var lastMinimapSnapshot: MinimapSnapshot = .empty
-    private let initialHighlightIdleDelayNanoseconds: UInt64 = 1_100_000_000
-    private let fullHighlightIdleDelayNanoseconds: UInt64 = 1_250_000_000
+    private let initialHighlightIdleDelayNanoseconds: UInt64 = 300_000_000
+    private let fullHighlightIdleDelayNanoseconds: UInt64 = 800_000_000
     private let previewHighlightCharacterLimit = 12_000
     private let previewHighlightContextCharacters = 4_000
+    private let highlightBufferCharacters = 2_000
     private var currentDocumentIdentity: String?
+    private var semanticTokenCache: SemanticTokenCache = SemanticTokenCache()
+    private var currentSemanticTokensVersion: Int = 0
+    private var semanticTokensRequestTask: Task<Void, Never>?
+    private let semanticTokensDebounceNanoseconds: UInt64 = 150_000_000
 
     init(themeColors: ThemeColors, font: NSFont, showMinimap: Bool, showLineNumbers: Bool, wordWrap: Bool, tabSize: Int = 4) {
         self.editorFont = font
@@ -1597,6 +1635,40 @@ final class EditorContainerView: NSView {
         hasCompletedInitialHighlight = true
         if isFullDocumentHighlight {
             hasCompletedFullDocumentHighlight = true
+        }
+    }
+
+    func applySemanticTokens(
+        _ tokens: SemanticTokens,
+        legend: SemanticTokensLegend,
+        themeColors: ThemeColors,
+        version: Int
+    ) {
+        guard version == currentSemanticTokensVersion else { return }
+        guard !Task.isCancelled else { return }
+
+        let decoder = SemanticTokenDecoder(legend: legend)
+        let decodedTokens = decoder.decode(tokens.data, text: currentDisplayText)
+
+        if let layoutManager = textView.layoutManager {
+            for token in decodedTokens {
+                let color = SemanticTokenDecoder.tokenTypeColor(token.tokenType, themeColors: themeColors)
+                guard token.range.location >= 0,
+                      NSMaxRange(token.range) <= (textView.string as NSString).length else { continue }
+                layoutManager.addTemporaryAttribute(.foregroundColor, value: color, forCharacterRange: token.range)
+            }
+        }
+
+        textView.needsDisplay = true
+    }
+
+    func invalidateSemanticTokens(for editRange: NSRange, text: String) {
+        let nsText = text as NSString
+        let editLineStart = nsText.lineRange(for: NSRange(location: editRange.location, length: 0)).location
+        let editLineEnd = nsText.lineRange(for: NSRange(location: NSMaxRange(editRange), length: 0)).location
+
+        Task {
+            await semanticTokenCache.invalidate(lineStart: editLineStart, lineEnd: editLineEnd)
         }
     }
 

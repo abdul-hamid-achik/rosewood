@@ -12,8 +12,15 @@ final class HighlightService {
     private let highlightingQueue = DispatchQueue(label: "rosewood.highlighting", qos: .userInitiated)
     private(set) var currentHighlightrThemeName: String = HighlightService.defaultHighlightrThemeName
 
+    private var highlightCache: [String: NSAttributedString] = [:]
+    private let cacheLimit = 10
+
     init(highlightrFactory: @escaping () -> Highlightr? = { Highlightr() }) {
         self.highlightrFactory = highlightrFactory
+    }
+
+    func prewarm() {
+        _ = resolveHighlightr()
     }
 
     func makeHighlightr() -> Highlightr? {
@@ -366,6 +373,25 @@ struct ThemeColors: Equatable {
     var nsWarning: NSColor { NSColor(hex: warningHex) }
     var nsDanger: NSColor { NSColor(hex: dangerHex) }
     var nsBorder: NSColor { NSColor(hex: borderHex) }
+
+    var nsSemanticType: NSColor { nsAccentStrong }
+    var nsSemanticClass: NSColor { nsAccentStrong }
+    var nsSemanticInterface: NSColor { nsAccentStrong }
+    var nsSemanticEnum: NSColor { nsAccentStrong }
+    var nsSemanticStruct: NSColor { nsAccentStrong }
+    var nsSemanticFunction: NSColor { nsAccent }
+    var nsSemanticMethod: NSColor { nsAccent }
+    var nsSemanticVariable: NSColor { nsForeground }
+    var nsSemanticProperty: NSColor { nsSubduedText }
+    var nsSemanticParameter: NSColor { nsForeground }
+    var nsSemanticConstant: NSColor { nsSuccess }
+    var nsSemanticKeyword: NSColor { nsWarning }
+    var nsSemanticOperator: NSColor { nsMutedText }
+    var nsSemanticNamespace: NSColor { nsSuccess }
+    var nsSemanticModule: NSColor { nsSuccess }
+    var nsSemanticString: NSColor { nsAccent }
+    var nsSemanticNumber: NSColor { nsAccent }
+    var nsSemanticComment: NSColor { nsMutedText }
 
     var isLightAppearance: Bool {
         guard let background = nsBackground.usingColorSpace(.sRGB) else { return false }
