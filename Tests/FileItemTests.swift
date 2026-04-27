@@ -103,7 +103,7 @@ struct FileItemTests {
     }
 
     @Test
-    func equalityIncludesChildren() {
+    func equalityIgnoresChildren() {
         let child = FileItem(
             name: "main.swift",
             path: URL(fileURLWithPath: "/tmp/Sources/main.swift"),
@@ -122,7 +122,7 @@ struct FileItemTests {
             children: []
         )
 
-        #expect(withChildren != withoutChildren)
+        #expect(withChildren == withoutChildren)
     }
 
     @Test

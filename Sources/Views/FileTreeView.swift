@@ -8,6 +8,7 @@ struct FileTreeView: View {
 
     @FocusState private var isExplorerFocused: Bool
     @State private var selectedPath: String?
+    @State private var visibleItems: [ExplorerVisibleItem] = []
 
     private var themeColors: ThemeColors {
         configService.currentThemeColors
@@ -15,14 +16,6 @@ struct FileTreeView: View {
 
     private var activeFilePath: String? {
         projectViewModel.selectedTab?.filePath?.standardizedFileURL.path
-    }
-
-    private var visibleItems: [ExplorerVisibleItem] {
-        flatten(items: items, depth: 0, parentPath: nil)
-    }
-
-    private var visibleItemIDs: [String] {
-        visibleItems.map(\.id)
     }
 
     var body: some View {
@@ -58,6 +51,11 @@ struct FileTreeView: View {
                     .padding(4)
             }
             .onAppear {
+                rebuildVisibleItems()
+                syncSelectionWithExplorerState()
+            }
+            .onChange(of: items) { _, _ in
+                rebuildVisibleItems()
                 syncSelectionWithExplorerState()
             }
             .onChange(of: activeFilePath) { _, newValue in
@@ -66,9 +64,6 @@ struct FileTreeView: View {
                 } else if visibleItems.isEmpty {
                     selectedPath = nil
                 }
-            }
-            .onChange(of: visibleItemIDs) { _, _ in
-                syncSelectionWithExplorerState()
             }
             .onChange(of: selectedPath) { _, newValue in
                 guard let newValue else { return }
@@ -193,12 +188,15 @@ struct FileTreeView: View {
         return visibleItems[selectedIndex]
     }
 
+    private func rebuildVisibleItems() {
+        visibleItems = flatten(items: items, depth: 0, parentPath: nil)
+    }
+
     private func flatten(items: [FileItem], depth: Int, parentPath: String?) -> [ExplorerVisibleItem] {
         var flattened: [ExplorerVisibleItem] = []
 
         for item in items {
-            let itemPath = item.path.standardizedFileURL.path
-            let firstChildPath = item.children.first?.path.standardizedFileURL.path
+            let firstChildPath = item.children.first?.id
             flattened.append(
                 ExplorerVisibleItem(
                     item: item,
@@ -209,7 +207,7 @@ struct FileTreeView: View {
             )
 
             if item.isDirectory, item.isExpanded {
-                flattened.append(contentsOf: flatten(items: item.children, depth: depth + 1, parentPath: itemPath))
+                flattened.append(contentsOf: flatten(items: item.children, depth: depth + 1, parentPath: item.id))
             }
         }
 
@@ -217,15 +215,13 @@ struct FileTreeView: View {
     }
 }
 
-private struct ExplorerVisibleItem: Identifiable {
+private struct ExplorerVisibleItem: Identifiable, Equatable {
     let item: FileItem
     let depth: Int
     let parentPath: String?
     let firstChildPath: String?
 
-    var id: String {
-        item.path.standardizedFileURL.path
-    }
+    var id: String { item.id }
 }
 
 private struct FileTreeRow: View {

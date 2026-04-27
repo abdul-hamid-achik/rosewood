@@ -17,14 +17,30 @@ struct SemanticTokenDecoder {
     let legend: SemanticTokensLegend
 
     func decode(_ data: [Int], text: String) -> [DecodedSemanticToken] {
+        decodeInternal(data, text: text, visibleRange: nil)
+    }
+
+    func decodeViewport(_ data: [Int], text: String, visibleRange: NSRange) -> [DecodedSemanticToken] {
+        guard visibleRange.location >= 0 else {
+            return decodeInternal(data, text: text, visibleRange: nil)
+        }
+        return decodeInternal(data, text: text, visibleRange: visibleRange)
+    }
+
+    private func decodeInternal(
+        _ data: [Int],
+        text: String,
+        visibleRange: NSRange?
+    ) -> [DecodedSemanticToken] {
         guard !data.isEmpty else { return [] }
+
+        let nsText = text as NSString
+        let textLength = nsText.length
+        let lineOffsets = Self.computeLineOffsets(nsText)
 
         var tokens: [DecodedSemanticToken] = []
         var currentLine = 0
         var currentCharacter = 0
-
-        let nsText = text as NSString
-        let textLength = nsText.length
 
         var index = 0
         while index + 4 < data.count {
@@ -43,30 +59,35 @@ struct SemanticTokenDecoder {
                 currentCharacter = deltaStart
             }
 
-            let tokenType = tokenTypeName(for: tokenTypeIndex)
-            let modifiers = tokenModifiers(for: tokenModifiersBitset)
+            // Deltas always advance forward; out-of-range lines are unrecoverable.
+            guard currentLine >= 0 else { break }
 
-            let startOffset = lineCharacterToOffset(line: currentLine, char: currentCharacter, text: nsText)
-            guard startOffset >= 0 && startOffset < textLength else { continue }
+            let lineStart: Int
+            if currentLine < lineOffsets.count {
+                lineStart = lineOffsets[currentLine]
+            } else {
+                lineStart = textLength
+            }
+
+            let startOffset = min(lineStart + currentCharacter, textLength)
+            guard startOffset >= 0, startOffset < textLength else { continue }
 
             let endOffset = min(startOffset + length, textLength)
+            guard endOffset > startOffset else { continue }
+
+            if let visibleRange,
+               startOffset >= NSMaxRange(visibleRange) || endOffset <= visibleRange.location {
+                // Skip emitting; deltas are already accumulated above.
+                continue
+            }
+
+            let tokenType = tokenTypeName(for: tokenTypeIndex)
+            let modifiers = tokenModifiers(for: tokenModifiersBitset)
             let range = NSRange(location: startOffset, length: endOffset - startOffset)
-
-            guard range.length > 0 else { continue }
-
             tokens.append(DecodedSemanticToken(range: range, tokenType: tokenType, modifiers: modifiers))
         }
 
         return tokens
-    }
-
-    func decodeViewport(_ data: [Int], text: String, visibleRange: NSRange) -> [DecodedSemanticToken] {
-        let allTokens = decode(data, text: text)
-        guard visibleRange.location >= 0 else { return allTokens }
-
-        return allTokens.filter { token in
-            NSIntersectionRange(token.range, visibleRange).length > 0
-        }
     }
 
     private func tokenTypeName(for index: Int) -> String {
@@ -88,20 +109,18 @@ struct SemanticTokenDecoder {
         return modifiers
     }
 
-    private func lineCharacterToOffset(line: Int, char: Int, text: NSString) -> Int {
-        guard line >= 0 && char >= 0 else { return 0 }
-
-        var currentLine = 0
-        var offset = 0
-
-        while currentLine < line && offset < text.length {
-            let lineEnd = text.lineRange(for: NSRange(location: offset, length: 0)).location + text.lineRange(for: NSRange(location: offset, length: 0)).length
-            offset = lineEnd
-            currentLine += 1
+    private static func computeLineOffsets(_ text: NSString) -> [Int] {
+        var offsets: [Int] = [0]
+        let length = text.length
+        var location = 0
+        while location < length {
+            let lineRange = text.lineRange(for: NSRange(location: location, length: 0))
+            let next = lineRange.location + lineRange.length
+            if next <= location { break }
+            location = next
+            offsets.append(location)
         }
-
-        offset += char
-        return min(offset, text.length)
+        return offsets
     }
 }
 

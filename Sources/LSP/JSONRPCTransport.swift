@@ -64,10 +64,16 @@ final class JSONRPCTransport: JSONRPCTransportProtocol, @unchecked Sendable {
             throw JSONRPCTransportError.encodingFailed
         }
 
-        writeQueue.sync {
+        writeQueue.async { [stdinPipe] in
             let handle = stdinPipe.fileHandleForWriting
-            handle.write(headerData)
-            handle.write(data)
+            // Use the throwing variant so a pipe closed by a dying LSP process
+            // surfaces as a Swift error instead of an unhandled NSException.
+            do {
+                try handle.write(contentsOf: headerData)
+                try handle.write(contentsOf: data)
+            } catch {
+                // Process likely terminated; readMessages will detect EOF and finish.
+            }
         }
     }
 
@@ -103,8 +109,11 @@ final class JSONRPCTransport: JSONRPCTransportProtocol, @unchecked Sendable {
             var bodyData = Data()
             while bodyData.count < contentLength {
                 let remaining = contentLength - bodyData.count
-                let chunk = handle.readData(ofLength: remaining)
-                if chunk.isEmpty { break }
+                // `read(upToCount:)` throws Swift errors on closed pipe;
+                // `readData(ofLength:)` raises an Obj-C exception that crashes the process.
+                guard let chunk = try? handle.read(upToCount: remaining), !chunk.isEmpty else {
+                    break
+                }
                 bodyData.append(chunk)
             }
 
@@ -120,8 +129,7 @@ final class JSONRPCTransport: JSONRPCTransportProtocol, @unchecked Sendable {
         let handle = stderrPipe.fileHandleForReading
 
         while !isClosed {
-            let data = handle.readData(ofLength: 4096)
-            if data.isEmpty {
+            guard let data = try? handle.read(upToCount: 4096), !data.isEmpty else {
                 break
             }
         }
@@ -132,8 +140,9 @@ final class JSONRPCTransport: JSONRPCTransportProtocol, @unchecked Sendable {
         var foundEnd = false
 
         while !foundEnd && !isClosed {
-            let byte = handle.readData(ofLength: 1)
-            guard !byte.isEmpty, let char = String(data: byte, encoding: .utf8) else {
+            guard let byte = try? handle.read(upToCount: 1),
+                  !byte.isEmpty,
+                  let char = String(data: byte, encoding: .utf8) else {
                 return nil
             }
             headerString.append(char)

@@ -42,7 +42,11 @@ struct EditorView: View {
 
     private var deferHighlightingDuringEditing: Bool {
         if case .text(let isLarge) = tab.contentType {
-            return isLarge
+            if isLarge { return true }
+            // Full-document re-highlight on every keystroke is the dominant
+            // typing-latency cost above ~2KB; smaller files re-highlight fast
+            // enough that instant re-color feels nicer than a 180ms gap.
+            return tab.content.utf8.count > 2048
         }
         return false
     }
@@ -368,8 +372,6 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
             let updatedText = textView.string
             let selectedRange = textView.selectedRange()
             lineTableNeedsUpdate = true
-
-            containerView?.invalidateSemanticTokens(for: NSRange(location: 0, length: updatedText.count), text: updatedText)
 
             if parent.deferHighlightingDuringEditing {
                 containerView?.refreshAfterEditing(text: updatedText, themeColors: parent.themeColors)
@@ -1040,6 +1042,12 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
 
             completionTask?.cancel()
             completionTask = Task { @MainActor in
+                do {
+                    try await Task.sleep(nanoseconds: 120_000_000)
+                } catch {
+                    return
+                }
+                guard !Task.isCancelled else { return }
                 let items = await lspService.completion(uri: uri, language: language, position: position)
                 guard !Task.isCancelled, !items.isEmpty else { return }
 
@@ -1261,7 +1269,6 @@ final class EditorContainerView: NSView {
     private let previewHighlightContextCharacters = 4_000
     private let highlightBufferCharacters = 2_000
     private var currentDocumentIdentity: String?
-    private var semanticTokenCache: SemanticTokenCache = SemanticTokenCache()
     private var currentSemanticTokensVersion: Int = 0
     private var semanticTokensRequestTask: Task<Void, Never>?
     private let semanticTokensDebounceNanoseconds: UInt64 = 150_000_000
@@ -1660,16 +1667,6 @@ final class EditorContainerView: NSView {
         }
 
         textView.needsDisplay = true
-    }
-
-    func invalidateSemanticTokens(for editRange: NSRange, text: String) {
-        let nsText = text as NSString
-        let editLineStart = nsText.lineRange(for: NSRange(location: editRange.location, length: 0)).location
-        let editLineEnd = nsText.lineRange(for: NSRange(location: NSMaxRange(editRange), length: 0)).location
-
-        Task {
-            await semanticTokenCache.invalidate(lineStart: editLineStart, lineEnd: editLineEnd)
-        }
     }
 
     private func highlightScope(for text: String) -> HighlightRequestScope {

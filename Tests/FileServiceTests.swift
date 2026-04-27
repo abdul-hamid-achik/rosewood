@@ -140,6 +140,28 @@ struct FileServiceTests {
     }
 
     @Test
+    func ripgrepAvailableUsesConfiguredSearchPathsWhenInheritedPathIsMinimal() throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let commandURL = rootURL.appendingPathComponent("fake-rg")
+
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        try """
+        #!/bin/sh
+        exit 0
+        """.write(to: commandURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: commandURL.path)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let fileService = FileService()
+        fileService.ripgrepBaseEnvironment = ["PATH": "/usr/bin:/bin"]
+        fileService.ripgrepAdditionalSearchPaths = [rootURL.path]
+        fileService.ripgrepCommandName = "fake-rg"
+
+        #expect(fileService.ripgrepAvailable())
+    }
+
+    @Test
     func searchProjectFindsMatchesAcrossNestedFiles() throws {
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

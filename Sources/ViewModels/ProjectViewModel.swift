@@ -175,6 +175,9 @@ final class ProjectViewModel: ObservableObject {
             editorNavigationChromeTask?.cancel()
             outlineSidebarDataTask?.cancel()
             statusBarDetailTask?.cancel()
+            cursorPositionDebounceTask?.cancel()
+            cursorPositionDebounceTask = nil
+            pendingCursorLineChange = false
             invalidateCurrentTabBreakpointCache()
             invalidateEditorNavigationCaches()
             refreshCurrentLineBlame()
@@ -621,6 +624,8 @@ final class ProjectViewModel: ObservableObject {
     private var editorNavigationChromeTask: Task<Void, Never>?
     private var outlineSidebarDataTask: Task<Void, Never>?
     private var statusBarDetailTask: Task<Void, Never>?
+    private var cursorPositionDebounceTask: Task<Void, Never>?
+    private var pendingCursorLineChange: Bool = false
     var projectSearchTask: Task<Void, Never>?
     var projectSearchDebounceTask: Task<Void, Never>?
     var replaceInProjectTask: Task<Void, Never>?
@@ -2971,7 +2976,24 @@ final class ProjectViewModel: ObservableObject {
         openTabs[selectedTabIndex].cursorPosition = CursorPosition(line: line, column: column)
         synchronizeActiveDiagnosticSelection()
         if previousLine != line {
-            refreshCurrentLineBlame()
+            pendingCursorLineChange = true
+        }
+
+        // `refreshCurrentLineBlame` spawns a `git blame` subprocess; debounce so that
+        // holding an arrow key or fast typing doesn't fork dozens of processes.
+        cursorPositionDebounceTask?.cancel()
+        cursorPositionDebounceTask = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(nanoseconds: 200_000_000)
+            } catch {
+                return
+            }
+            guard let self, !Task.isCancelled else { return }
+            self.cursorPositionDebounceTask = nil
+            if self.pendingCursorLineChange {
+                self.pendingCursorLineChange = false
+                self.refreshCurrentLineBlame()
+            }
         }
     }
 

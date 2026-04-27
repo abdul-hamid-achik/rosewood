@@ -180,6 +180,13 @@ final class FileService {
     var directoryLoadDelayPerItemNanoseconds: UInt64 = 0
     var projectSearchDelayPerFileNanoseconds: UInt64 = 0
     var preferRipgrepProjectSearch: Bool = true
+    var ripgrepBaseEnvironment: [String: String] = ProcessInfo.processInfo.environment
+    var ripgrepAdditionalSearchPaths: [String] = [
+        "/opt/homebrew/bin",
+        "/usr/local/bin",
+        "\(NSHomeDirectory())/.cargo/bin",
+        "\(NSHomeDirectory())/.local/bin"
+    ]
     var ripgrepLaunchPath: String = "/usr/bin/env"
     var ripgrepCommandName: String = "rg"
 
@@ -194,6 +201,7 @@ final class FileService {
         guard let result = try? ProcessRunner.run(
             executableURL: URL(fileURLWithPath: ripgrepLaunchPath),
             arguments: arguments,
+            environment: ripgrepEnvironment(),
             timeout: 2.0
         ) else {
             return false
@@ -206,6 +214,22 @@ final class FileService {
         await Task.detached(priority: .utility) { [self] in
             ripgrepAvailable()
         }.value
+    }
+
+    private func ripgrepEnvironment() -> [String: String]? {
+        guard ripgrepLaunchPath == "/usr/bin/env" else {
+            return nil
+        }
+
+        var environment = ripgrepBaseEnvironment
+        let existingPath = environment["PATH"] ?? "/usr/bin:/bin"
+        let pathEntries = (ripgrepAdditionalSearchPaths + existingPath.split(separator: ":").map(String.init))
+            .reduce(into: [String]()) { result, entry in
+                guard !entry.isEmpty, !result.contains(entry) else { return }
+                result.append(entry)
+            }
+        environment["PATH"] = pathEntries.joined(separator: ":")
+        return environment
     }
 
     static func naturalSortKey(for value: String) -> String {
@@ -732,6 +756,7 @@ final class FileService {
                 executableURL: URL(fileURLWithPath: ripgrepLaunchPath),
                 arguments: ripgrepArguments(for: query, options: options, includeHidden: includeHidden),
                 currentDirectoryURL: rootURL,
+                environment: ripgrepEnvironment(),
                 timeout: 30.0,
                 cancellationCheck: isCancelled
             )

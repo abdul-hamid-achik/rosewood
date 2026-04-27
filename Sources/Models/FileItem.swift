@@ -1,10 +1,7 @@
 import Foundation
 
 struct FileItem: Identifiable, Hashable {
-    var id: String {
-        path.standardizedFileURL.path
-    }
-
+    let id: String
     var name: String
     var path: URL
     var isDirectory: Bool
@@ -12,6 +9,7 @@ struct FileItem: Identifiable, Hashable {
     var isExpanded: Bool
 
     init(name: String, path: URL, isDirectory: Bool, children: [FileItem] = [], isExpanded: Bool = false) {
+        self.id = path.standardizedFileURL.path
         self.name = name
         self.path = path
         self.isDirectory = isDirectory
@@ -24,7 +22,7 @@ struct FileItem: Identifiable, Hashable {
     }
 
     static func == (lhs: FileItem, rhs: FileItem) -> Bool {
-        lhs.id == rhs.id && lhs.isExpanded == rhs.isExpanded && lhs.name == rhs.name && lhs.children == rhs.children
+        lhs.id == rhs.id && lhs.isExpanded == rhs.isExpanded && lhs.name == rhs.name
     }
 }
 
