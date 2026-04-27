@@ -153,31 +153,80 @@ private final class HoverContentViewController: NSViewController {
 
     func updateContent(_ content: String) {
         headerView.isHidden = true
-        textView.string = content
-
-        if let layoutManager = textView.layoutManager, let textContainer = textView.textContainer {
-            layoutManager.ensureLayout(for: textContainer)
-            let usedRect = layoutManager.usedRect(for: textContainer)
-            let contentWidth = min(max(usedRect.width + 24, 180), 480)
-            let contentHeight = min(usedRect.height + 24, 320)
-            preferredContentSize = NSSize(width: contentWidth, height: contentHeight)
-        }
+        applyRenderedMarkdown(content)
+        sizeContentToFit(headerVisible: false)
     }
 
     func updateWithStructuredContent(_ content: ParsedHoverContent) {
-        headerView.configure(with: content)
-        headerView.isHidden = false
+        let symbolKind = Self.symbolKind(for: content)
+        let displayContent = ParsedHoverContent(
+            kind: symbolKind,
+            value: content.value,
+            documentation: content.documentation
+        )
 
-        textView.string = content.value
-
-        if let layoutManager = textView.layoutManager, let textContainer = textView.textContainer {
-            layoutManager.ensureLayout(for: textContainer)
-            let usedRect = layoutManager.usedRect(for: textContainer)
-            let headerHeight = headerView.intrinsicContentSize.height
-            let contentWidth = min(max(max(usedRect.width + 24, headerView.intrinsicContentSize.width), 180), 480)
-            let contentHeight = min(headerHeight + usedRect.height + 32, 320)
-            preferredContentSize = NSSize(width: contentWidth, height: contentHeight)
+        if symbolKind != nil || (content.documentation?.isEmpty == false) {
+            headerView.configure(with: displayContent)
+            headerView.isHidden = false
+        } else {
+            headerView.isHidden = true
         }
+
+        applyRenderedMarkdown(content.value)
+        sizeContentToFit(headerVisible: !headerView.isHidden)
+    }
+
+    private func applyRenderedMarkdown(_ markdown: String) {
+        let attributed = HoverMarkdownRenderer.render(
+            markdown,
+            themeColors: themeColors,
+            proseFontSize: 12,
+            codeFontSize: 12
+        )
+
+        if attributed.length == 0 {
+            textView.textStorage?.setAttributedString(
+                NSAttributedString(
+                    string: markdown,
+                    attributes: [
+                        .font: font,
+                        .foregroundColor: themeColors.nsForeground
+                    ]
+                )
+            )
+        } else {
+            textView.textStorage?.setAttributedString(attributed)
+        }
+    }
+
+    private func sizeContentToFit(headerVisible: Bool) {
+        guard let layoutManager = textView.layoutManager,
+              let textContainer = textView.textContainer else {
+            return
+        }
+        layoutManager.ensureLayout(for: textContainer)
+        let usedRect = layoutManager.usedRect(for: textContainer)
+
+        let baseWidth = max(usedRect.width + 32, 220)
+        let headerWidth = headerVisible ? headerView.intrinsicContentSize.width : 0
+        let contentWidth = min(max(baseWidth, headerWidth), 520)
+
+        let headerHeight = headerVisible ? headerView.intrinsicContentSize.height + 12 : 0
+        let contentHeight = min(headerHeight + usedRect.height + 24, 360)
+
+        preferredContentSize = NSSize(width: contentWidth, height: contentHeight)
+    }
+}
+
+private extension HoverContentViewController {
+    static func symbolKind(for content: ParsedHoverContent) -> String? {
+        if let kind = content.kind {
+            let lowered = kind.lowercased()
+            if lowered != "markdown" && lowered != "plaintext" {
+                return kind
+            }
+        }
+        return HoverMarkdownRenderer.detectSymbolKind(in: content.value)
     }
 }
 

@@ -105,18 +105,18 @@ struct TerminalPanelView: View {
 
     private var terminalContent: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: RosewoodUI.spacing3) {
                 Text("Terminal emulation requires SwiftTerm library.")
-                    .font(.system(size: 12))
+                    .font(RosewoodType.subheadline)
                     .foregroundColor(themeColors.mutedText)
-                    .padding()
-                
+                    .padding(RosewoodUI.spacing5)
+
                 if let currentId = projectViewModel.currentTerminalSessionId,
                    let session = projectViewModel.terminalSessions.first(where: { $0.id == currentId }) {
                     sessionInfo(session)
                 }
             }
-            .padding(12)
+            .padding(RosewoodUI.spacing5)
         }
     }
 
@@ -140,9 +140,13 @@ struct TerminalPanelView: View {
                     .foregroundColor(themeColors.foreground)
             }
         }
-        .padding(8)
+        .padding(RosewoodUI.spacing5)
         .background(themeColors.elevatedBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .clipShape(RoundedRectangle(cornerRadius: RosewoodUI.radiusSmall))
+        .overlay(
+            RoundedRectangle(cornerRadius: RosewoodUI.radiusSmall)
+                .stroke(themeColors.border.opacity(RosewoodUI.borderOpacitySubtle), lineWidth: 1)
+        )
     }
 
     private var emptyStateView: some View {

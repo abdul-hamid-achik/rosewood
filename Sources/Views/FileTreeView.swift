@@ -47,8 +47,9 @@ struct FileTreeView: View {
             .focused($isExplorerFocused)
             .overlay {
                 RoundedRectangle(cornerRadius: RosewoodUI.radiusSmall)
-                    .stroke(isExplorerFocused ? themeColors.accent.opacity(0.45) : Color.clear, lineWidth: 1)
+                    .stroke(isExplorerFocused ? themeColors.accent.opacity(RosewoodUI.borderOpacityMid) : Color.clear, lineWidth: 1)
                     .padding(4)
+                    .animation(.rosewoodFast, value: isExplorerFocused)
             }
             .onAppear {
                 rebuildVisibleItems()
@@ -67,7 +68,7 @@ struct FileTreeView: View {
             }
             .onChange(of: selectedPath) { _, newValue in
                 guard let newValue else { return }
-                withAnimation(.easeInOut(duration: 0.16)) {
+                withAnimation(.rosewoodStandard) {
                     proxy.scrollTo(newValue, anchor: .center)
                 }
             }
@@ -257,68 +258,73 @@ private struct FileTreeRow: View {
     }
 
     var body: some View {
-        HStack(spacing: 6) {
-            if item.isDirectory {
-                Image(systemName: item.isExpanded ? "chevron.down" : "chevron.right")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundColor(themeColors.mutedText)
-                    .frame(width: 12, height: 12)
-            } else {
-                Color.clear
-                    .frame(width: 12, height: 12)
-            }
-
-            Image(systemName: item.iconName)
-                .font(.system(size: 13))
-                .foregroundColor(item.isDirectory ? themeColors.accent : themeColors.mutedText)
-                .frame(width: 14)
-
-            Text(item.name)
-                .font(.system(size: 13))
-                .foregroundColor(primaryTextColor)
-                .lineLimit(1)
-
-            Spacer(minLength: 0)
-
-            if let gitChange {
-                Text(gitChange.kind.explorerLabel)
-                    .font(.system(size: 10, weight: .bold, design: .monospaced))
-                    .foregroundColor(gitBadgeColor(for: gitChange.kind))
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(
-                        Capsule()
-                            .fill(gitBadgeColor(for: gitChange.kind).opacity(isSelected ? 0.28 : 0.16))
-                    )
-            } else if item.isDirectory && changedDescendantCount > 0 {
-                Text("\(changedDescendantCount)")
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                    .foregroundColor(themeColors.accent)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(
-                        Capsule()
-                            .fill(themeColors.accent.opacity(isSelected ? 0.24 : 0.14))
-                    )
-            }
-        }
-        .padding(.leading, CGFloat(entry.depth) * 14 + 10)
-        .padding(.trailing, 10)
-        .frame(height: 24)
-        .background(rowBackground)
-        .overlay(alignment: .leading) {
-            Rectangle()
-                .fill((isSelected || isActiveFile) ? themeColors.accent : Color.clear)
-                .frame(width: 3)
-        }
-        .opacity(isIgnored && !isSelected ? 0.58 : 1)
-        .contentShape(Rectangle())
-        .onTapGesture {
+        Button {
             onSelect()
             onActivate()
+        } label: {
+            HStack(spacing: RosewoodUI.spacing2) {
+                if item.isDirectory {
+                    Image(systemName: item.isExpanded ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundColor(themeColors.mutedText)
+                        .frame(width: 12, height: 12)
+                } else {
+                    Color.clear
+                        .frame(width: 12, height: 12)
+                }
+
+                Image(systemName: item.iconName)
+                    .font(.system(size: 13))
+                    .foregroundColor(item.isDirectory ? themeColors.accent : themeColors.mutedText)
+                    .frame(width: 14)
+
+                Text(item.name)
+                    .font(RosewoodType.body)
+                    .foregroundColor(primaryTextColor)
+                    .lineLimit(1)
+
+                Spacer(minLength: 0)
+
+                if let gitChange {
+                    Text(gitChange.kind.explorerLabel)
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .foregroundColor(gitBadgeColor(for: gitChange.kind))
+                        .padding(.horizontal, RosewoodUI.spacing2)
+                        .padding(.vertical, 2)
+                        .background(
+                            Capsule()
+                                .fill(gitBadgeColor(for: gitChange.kind).opacity(isSelected ? RosewoodUI.stateOpacitySelected : RosewoodUI.stateOpacityHover))
+                        )
+                } else if item.isDirectory && changedDescendantCount > 0 {
+                    Text("\(changedDescendantCount)")
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .foregroundColor(themeColors.accent)
+                        .padding(.horizontal, RosewoodUI.spacing2)
+                        .padding(.vertical, 2)
+                        .background(
+                            Capsule()
+                                .fill(themeColors.accent.opacity(isSelected ? RosewoodUI.stateOpacitySelected : RosewoodUI.stateOpacityHover))
+                        )
+                }
+            }
+            .padding(.leading, CGFloat(entry.depth) * RosewoodUI.treeIndentStep + RosewoodUI.spacing5)
+            .padding(.trailing, RosewoodUI.spacing5)
+            .frame(height: RosewoodUI.rowHeightCompact)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(rowBackground)
+            .overlay(alignment: .leading) {
+                Rectangle()
+                    .fill((isSelected || isActiveFile) ? themeColors.accent : Color.clear)
+                    .frame(width: 2)
+            }
+            .opacity(isIgnored && !isSelected ? 0.58 : 1)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
         .onHover { hovering in
-            isHovering = hovering
+            withAnimation(.rosewoodFast) {
+                isHovering = hovering
+            }
         }
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("file-tree-row-\(item.name)")
@@ -393,11 +399,11 @@ private struct FileTreeRow: View {
         }
 
         if isActiveFile {
-            return themeColors.selection.opacity(themeColors.isLightAppearance ? 0.35 : 0.22)
+            return themeColors.selection.opacity(RosewoodUI.stateOpacitySelected)
         }
 
         if isHovering {
-            return themeColors.hoverBackground.opacity(0.3)
+            return themeColors.hoverBackground.opacity(RosewoodUI.stateOpacityHover)
         }
 
         return .clear

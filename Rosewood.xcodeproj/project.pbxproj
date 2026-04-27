@@ -34,6 +34,7 @@
 		2C1CD9C052981FD0CA9DBDD6 /* LSPClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A2EA394D9F69A6C4020607E /* LSPClient.swift */; };
 		2DA5C571A3BB3470808F11C5 /* GitModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B48DDA833DEADA90B732B3EE /* GitModels.swift */; };
 		2E73A871CFB1DC00E6BBABD8 /* CompletionPopupTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68A5335869847ADA25622DA9 /* CompletionPopupTests.swift */; };
+		33DB9B6A4A48225AB6264322 /* HoverMarkdownRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 059BCE5B43EE99FBF46397A7 /* HoverMarkdownRenderer.swift */; };
 		347606E262B9C29D6F3B5E60 /* ConfigurationServiceProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4C112CDC18B48A4A6CB5104 /* ConfigurationServiceProtocol.swift */; };
 		398396F46497BCE2ECA34452 /* DebugConfigurationServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83CA571E1FE285D163FE12F8 /* DebugConfigurationServiceTests.swift */; };
 		39C47DA5161EEE62000A75EA /* LSPTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64C610EC296FC028C3645A41 /* LSPTypes.swift */; };
@@ -150,6 +151,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		059BCE5B43EE99FBF46397A7 /* HoverMarkdownRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HoverMarkdownRenderer.swift; sourceTree = "<group>"; };
 		06AB4CD4F3393CF04D83F18D /* FileTreeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileTreeView.swift; sourceTree = "<group>"; };
 		0D208E8EA661925BAEC0BF80 /* Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Extensions.swift; sourceTree = "<group>"; };
 		0D4CED4111F985472CD0BD14 /* SemanticTokenDecoderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SemanticTokenDecoderTests.swift; sourceTree = "<group>"; };
@@ -365,6 +367,7 @@
 			isa = PBXGroup;
 			children = (
 				BEF7C942E735DEBCD2A5BFD7 /* CompletionPopupController.swift */,
+				059BCE5B43EE99FBF46397A7 /* HoverMarkdownRenderer.swift */,
 				D3E1EF1E30E9F8E096AF6A23 /* HoverPopupController.swift */,
 				7DB9D55197C7DE1B9B57F7EA /* JSONRPCTransport.swift */,
 				8A2EA394D9F69A6C4020607E /* LSPClient.swift */,
@@ -685,6 +688,7 @@
 				8B12ACDCE024BD3F9CC15042 /* GitService.swift in Sources */,
 				6BB456B0C04D8DE06DF90C69 /* HexViewerView.swift in Sources */,
 				4D8971723FBCEFECF0CCBDF0 /* HighlightService.swift in Sources */,
+				33DB9B6A4A48225AB6264322 /* HoverMarkdownRenderer.swift in Sources */,
 				980205B90CD3FD88943FD364 /* HoverPopupController.swift in Sources */,
 				D98348D63AC1E5F2FA5DFF3B /* ImageViewerView.swift in Sources */,
 				55048687A0790B89F7E04EFC /* JSONRPCTransport.swift in Sources */,

@@ -110,6 +110,9 @@ struct WorkspaceDiagnosticItem: Identifiable, Hashable {
 
     static func == (lhs: WorkspaceDiagnosticItem, rhs: WorkspaceDiagnosticItem) -> Bool {
         lhs.id == rhs.id
+            && lhs.diagnostic == rhs.diagnostic
+            && lhs.lineText == rhs.lineText
+            && lhs.displayPath == rhs.displayPath
     }
 
     func hash(into hasher: inout Hasher) {
@@ -617,6 +620,7 @@ final class ProjectViewModel: ObservableObject {
     let debugSelectedConfigurationsKey: String
     let debugPanelVisibilityKey: String
     var expandedDirectoryPaths: Set<String> = []
+    private var childrenLoadTokens: [String: UUID] = [:]
     private var autoSaveTask: Task<Void, Never>?
     private var reloadFileTreeTask: Task<Void, Never>?
     private var reloadWorkspaceFilesTask: Task<Void, Never>?
@@ -3405,8 +3409,51 @@ final class ProjectViewModel: ObservableObject {
         }
 
         persistSession()
-        if rootDirectory != nil {
-            reloadFileTree()
+
+        guard shouldBeExpanded, item.isDirectory, rootDirectory != nil else { return }
+        loadChildrenAsync(for: item.path, targetPath: targetPath)
+    }
+
+    private func loadChildrenAsync(for url: URL, targetPath: String) {
+        let expandedPaths = expandedDirectoryPaths
+        let includeHidden = showHiddenFiles
+        let token = UUID()
+        childrenLoadTokens[targetPath] = token
+
+        Task { [weak self, fileService] in
+            guard let self else { return }
+            do {
+                let children = try await fileService.loadDirectoryAsync(
+                    at: url,
+                    expandedPaths: expandedPaths,
+                    includeHidden: includeHidden
+                )
+                guard !Task.isCancelled else { return }
+                guard self.childrenLoadTokens[targetPath] == token else { return }
+                guard self.expandedDirectoryPaths.contains(targetPath) else { return }
+                self.fileTree = self.replaceChildren(in: self.fileTree, targetPath: targetPath, with: children)
+                self.childrenLoadTokens.removeValue(forKey: targetPath)
+            } catch {
+                // The folder may have been deleted or become unreadable; leave the
+                // existing in-memory children in place rather than blowing them away.
+            }
+        }
+    }
+
+    private func replaceChildren(in items: [FileItem], targetPath: String, with newChildren: [FileItem]) -> [FileItem] {
+        items.map { item in
+            let itemPath = normalizedPath(for: item.path)
+            if itemPath == targetPath {
+                var updated = item
+                updated.children = newChildren
+                updated.isExpanded = true
+                return updated
+            } else if !item.children.isEmpty {
+                var updated = item
+                updated.children = replaceChildren(in: item.children, targetPath: targetPath, with: newChildren)
+                return updated
+            }
+            return item
         }
     }
 

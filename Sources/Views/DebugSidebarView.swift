@@ -10,12 +10,12 @@ struct DebugSidebarView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: RosewoodUI.spacing6) {
                 sessionSection
                 configurationSection
                 breakpointSection
             }
-            .padding(12)
+            .padding(RosewoodUI.spacing3)
         }
         .background(themeColors.panelBackground)
     }

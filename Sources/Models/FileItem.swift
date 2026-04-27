@@ -22,7 +22,10 @@ struct FileItem: Identifiable, Hashable {
     }
 
     static func == (lhs: FileItem, rhs: FileItem) -> Bool {
-        lhs.id == rhs.id && lhs.isExpanded == rhs.isExpanded && lhs.name == rhs.name
+        lhs.id == rhs.id
+            && lhs.isExpanded == rhs.isExpanded
+            && lhs.name == rhs.name
+            && lhs.children == rhs.children
     }
 }
 

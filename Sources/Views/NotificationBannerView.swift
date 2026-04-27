@@ -3,16 +3,16 @@ import Combine
 
 struct NotificationBannerView: View {
     @StateObject private var notificationManager = NotificationManager.shared
-    
+
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: RosewoodUI.spacing3) {
             ForEach(notificationManager.notifications) { notification in
                 NotificationBanner(item: notification)
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 8)
+        .padding(.horizontal, RosewoodUI.spacing6)
+        .padding(.top, RosewoodUI.spacing3)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .allowsHitTesting(true)
     }
@@ -27,25 +27,25 @@ struct NotificationBanner: View {
     }
     
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: RosewoodUI.spacing5) {
             Image(systemName: item.type.icon)
                 .foregroundColor(item.type.color)
-                .font(.system(size: 20, weight: .medium))
-            
-            VStack(alignment: .leading, spacing: 4) {
+                .font(.system(size: 18, weight: .medium))
+
+            VStack(alignment: .leading, spacing: 2) {
                 Text(item.title)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(RosewoodType.bodyStrong)
                     .foregroundColor(themeColors.foreground)
-                
+
                 Text(item.message)
-                    .font(.system(size: 12))
+                    .font(RosewoodType.subheadline)
                     .foregroundColor(themeColors.subduedText)
                     .lineLimit(2)
             }
-            
+
             Spacer()
-            
-            HStack(spacing: 8) {
+
+            HStack(spacing: RosewoodUI.spacing3) {
                 ForEach(item.actions.indices, id: \.self) { index in
                     let action = item.actions[index]
                     Button(action.title) {
@@ -54,43 +54,48 @@ struct NotificationBanner: View {
                     }
                     .buttonStyle(NotificationButtonStyle(color: themeColors.accent))
                 }
-                
+
                 Button {
                     NotificationManager.shared.dismiss(item.id)
                 } label: {
                     Image(systemName: "xmark")
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.system(size: 11, weight: .semibold))
                         .foregroundColor(themeColors.mutedText)
+                        .frame(width: 22, height: 22)
+                        .background(
+                            Circle()
+                                .fill(themeColors.hoverBackground.opacity(RosewoodUI.stateOpacityHover))
+                        )
                 }
                 .buttonStyle(.plain)
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.horizontal, RosewoodUI.spacing6)
+        .padding(.vertical, RosewoodUI.spacing5)
         .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(themeColors.panelBackground.opacity(0.95))
-                .shadow(color: .black.opacity(0.2), radius: 4, x: 0, y: 2)
+            RoundedRectangle(cornerRadius: RosewoodUI.radiusMedium)
+                .fill(themeColors.panelBackground.opacity(0.96))
+                .shadow(color: themeColors.shadowColor, radius: 12, x: 0, y: 4)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(item.type.color.opacity(0.3), lineWidth: 1)
+            RoundedRectangle(cornerRadius: RosewoodUI.radiusMedium)
+                .stroke(item.type.color.opacity(RosewoodUI.borderOpacitySubtle), lineWidth: 1)
         )
     }
 }
 
 struct NotificationButtonStyle: ButtonStyle {
     let color: Color
-    
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 12, weight: .medium))
+            .font(RosewoodType.subheadlineStrong)
             .foregroundColor(color)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
+            .padding(.horizontal, RosewoodUI.spacing5)
+            .padding(.vertical, RosewoodUI.spacing2)
             .background(
-                RoundedRectangle(cornerRadius: 4)
-                    .fill(color.opacity(configuration.isPressed ? 0.2 : 0.1))
+                RoundedRectangle(cornerRadius: RosewoodUI.radiusXSmall)
+                    .fill(color.opacity(configuration.isPressed ? 0.22 : 0.12))
             )
     }
 }

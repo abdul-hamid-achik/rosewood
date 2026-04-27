@@ -317,6 +317,7 @@ struct LSPDiagnostic: Codable, Equatable, Sendable, Identifiable {
             && lhs.severity == rhs.severity
             && lhs.message == rhs.message
             && lhs.source == rhs.source
+            && lhs.relatedInformation == rhs.relatedInformation
     }
 }
 

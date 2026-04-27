@@ -467,18 +467,42 @@ struct ActivitySidebarView: View {
         label: String,
         badge: String? = nil
     ) -> some View {
-        let isActive = projectViewModel.sidebarMode == mode
+        ActivityRailButton(
+            isActive: projectViewModel.sidebarMode == mode,
+            systemImage: systemImage,
+            label: label,
+            badge: badge,
+            themeColors: themeColors,
+            action: {
+                withAnimation(.rosewoodFast) {
+                    projectViewModel.sidebarMode = mode
+                }
+            }
+        )
+    }
+}
 
-        return Button {
-            projectViewModel.sidebarMode = mode
-        } label: {
+private struct ActivityRailButton: View {
+    let isActive: Bool
+    let systemImage: String
+    let label: String
+    let badge: String?
+    let themeColors: ThemeColors
+    let action: () -> Void
+
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: action) {
             ZStack(alignment: .topTrailing) {
                 Image(systemName: systemImage)
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundColor(isActive ? themeColors.accent : themeColors.mutedText)
-                    .frame(width: 34, height: 34)
-                    .background(isActive ? themeColors.selection : Color.clear)
-                    .clipShape(RoundedRectangle(cornerRadius: RosewoodUI.radiusSmall))
+                    .frame(width: 32, height: 32)
+                    .background(
+                        Circle()
+                            .fill(backgroundFill)
+                    )
 
                 if let badge {
                     Text(badge)
@@ -488,14 +512,29 @@ struct ActivitySidebarView: View {
                         .padding(.vertical, 2)
                         .background(themeColors.accentStrong)
                         .clipShape(Capsule())
-                        .offset(x: 8, y: -6)
+                        .offset(x: 6, y: -4)
                 }
             }
             .frame(maxWidth: .infinity)
         }
         .buttonStyle(.plain)
+        .onHover { hovering in
+            withAnimation(.rosewoodFast) {
+                isHovering = hovering
+            }
+        }
         .help(label)
         .accessibilityIdentifier("activity-sidebar-\(label.lowercased().replacingOccurrences(of: " ", with: "-"))")
+    }
+
+    private var backgroundFill: Color {
+        if isActive {
+            return themeColors.selection.opacity(RosewoodUI.stateOpacitySelected)
+        }
+        if isHovering {
+            return themeColors.hoverBackground.opacity(RosewoodUI.stateOpacityHover)
+        }
+        return .clear
     }
 }
 
@@ -575,10 +614,7 @@ struct SearchSidebarView: View {
                             projectViewModel.projectSearchUseRegex.toggle()
                         }
                     }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 8)
-                    .background(themeColors.background)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .rosewoodInputSurface(themeColors)
                 }
 
                 DisclosureGroup(isExpanded: $showsFilterControls) {
@@ -592,10 +628,7 @@ struct SearchSidebarView: View {
                                 .font(.system(size: 12))
                                 .accessibilityIdentifier("project-search-include-glob")
                         }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 8)
-                        .background(themeColors.background)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .rosewoodInputSurface(themeColors)
 
                         HStack(spacing: 6) {
                             Image(systemName: "line.3.horizontal.decrease.circle.fill")
@@ -606,10 +639,7 @@ struct SearchSidebarView: View {
                                 .font(.system(size: 12))
                                 .accessibilityIdentifier("project-search-exclude-glob")
                         }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 8)
-                        .background(themeColors.background)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .rosewoodInputSurface(themeColors)
                     }
                     HStack(spacing: 8) {
                         Button {
@@ -655,10 +685,7 @@ struct SearchSidebarView: View {
                                     .textFieldStyle(.plain)
                                     .font(.system(size: 13))
                             }
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 8)
-                            .background(themeColors.background)
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                            .rosewoodInputSurface(themeColors)
 
                             Button(projectViewModel.replaceAllProjectResultsTitle) {
                                 projectViewModel.replaceAllProjectResults()
@@ -752,9 +779,13 @@ struct SearchSidebarView: View {
                                     .accessibilityIdentifier("project-replace-apply")
                                 }
                             }
-                            .padding(10)
+                            .padding(RosewoodUI.spacing5)
                             .background(themeColors.background)
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                            .clipShape(RoundedRectangle(cornerRadius: RosewoodUI.radiusSmall))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: RosewoodUI.radiusSmall)
+                                    .stroke(themeColors.border.opacity(RosewoodUI.borderOpacitySubtle), lineWidth: 1)
+                            )
                             .accessibilityIdentifier("project-replace-preview")
                         }
                     }
@@ -798,7 +829,7 @@ struct SearchSidebarView: View {
                     }
                 }
             }
-            .padding(12)
+            .padding(RosewoodUI.spacing3)
 
             Divider()
                 .overlay(themeColors.border)
@@ -886,7 +917,7 @@ struct SearchSidebarView: View {
                         .rosewoodCard(themeColors, radius: RosewoodUI.radiusSmall)
                     }
                 }
-                .padding(12)
+                .padding(RosewoodUI.spacing3)
             }
             .background(themeColors.panelBackground)
             .onAppear {
@@ -948,8 +979,8 @@ struct SearchSidebarView: View {
                 }
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
+        .padding(.horizontal, RosewoodUI.spacing4)
+        .padding(.vertical, RosewoodUI.spacing3)
     }
 
     private func searchResultRow(_ result: ProjectSearchResult, sectionIndex: Int, resultIndex: Int) -> some View {
@@ -973,7 +1004,7 @@ struct SearchSidebarView: View {
                     HStack(alignment: .firstTextBaseline) {
                         RosewoodHeaderChip(
                             text: "Ln \(result.lineNumber):\(result.columnNumber)",
-                            tint: isActiveResult ? themeColors.accent : themeColors.mutedText
+                            tint: themeColors.mutedText
                         )
                         if isActiveResult {
                             Image(systemName: "arrowtriangle.right.fill")

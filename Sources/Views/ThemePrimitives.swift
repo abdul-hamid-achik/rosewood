@@ -8,16 +8,34 @@ enum RosewoodUI {
     static let spacing6: CGFloat = 16
     static let spacing8: CGFloat = 24
 
+    static let radiusXSmall: CGFloat = 6
     static let radiusSmall: CGFloat = 8
     static let radiusMedium: CGFloat = 10
     static let radiusLarge: CGFloat = 12
 
-    static let rowHeightCompact: CGFloat = 22
+    static let rowHeightCompact: CGFloat = 26
     static let rowHeightRegular: CGFloat = 36
     static let toolbarHeight: CGFloat = 44
     static let statusBarHeight: CGFloat = 24
     static let sidebarRailWidth: CGFloat = 48
     static let defaultBottomPanelHeight: CGFloat = 220
+
+    static let iconButtonSize: CGFloat = 24
+    static let treeIndentStep: CGFloat = 16
+
+    static let borderOpacitySubtle: CGFloat = 0.35
+    static let borderOpacityMid: CGFloat = 0.55
+
+    static let stateOpacityHover: CGFloat = 0.18
+    static let stateOpacitySelected: CGFloat = 0.32
+
+    static let motionFast: Double = 0.12
+    static let motionStandard: Double = 0.16
+}
+
+extension Animation {
+    static var rosewoodFast: Animation { .easeOut(duration: RosewoodUI.motionFast) }
+    static var rosewoodStandard: Animation { .easeInOut(duration: RosewoodUI.motionStandard) }
 }
 
 enum RosewoodType {
@@ -82,8 +100,8 @@ struct RosewoodHeaderChip: View {
         Text(text)
             .font(RosewoodType.monoMicro)
             .foregroundColor(tint)
-            .padding(.horizontal, 7)
-            .padding(.vertical, 4)
+            .padding(.horizontal, RosewoodUI.spacing3)
+            .padding(.vertical, 3)
             .background(
                 Capsule()
                     .fill(tint.opacity(0.12))
@@ -97,19 +115,26 @@ struct RosewoodPanelIconButton: View {
     let isEnabled: Bool
     let action: () -> Void
 
+    @State private var isHovering = false
+
     var body: some View {
         Button(action: action) {
             Image(systemName: systemImage)
-                .font(.system(size: 10, weight: .semibold))
+                .font(.system(size: 11, weight: .semibold))
                 .foregroundColor(isEnabled ? tint : tint.opacity(0.45))
-                .frame(width: 22, height: 22)
+                .frame(width: RosewoodUI.iconButtonSize, height: RosewoodUI.iconButtonSize)
                 .background(
-                    RoundedRectangle(cornerRadius: 7)
-                        .fill(tint.opacity(0.12))
+                    RoundedRectangle(cornerRadius: RosewoodUI.radiusXSmall)
+                        .fill(tint.opacity(isHovering && isEnabled ? 0.2 : 0.12))
                 )
         }
         .buttonStyle(.plain)
         .disabled(!isEnabled)
+        .onHover { hovering in
+            withAnimation(.rosewoodFast) {
+                isHovering = hovering
+            }
+        }
     }
 }
 
@@ -119,7 +144,18 @@ extension View {
             .clipShape(RoundedRectangle(cornerRadius: radius))
             .overlay(
                 RoundedRectangle(cornerRadius: radius)
-                    .stroke(themeColors.border.opacity(0.55), lineWidth: 1)
+                    .stroke(themeColors.border.opacity(RosewoodUI.borderOpacityMid), lineWidth: 1)
+            )
+    }
+
+    func rosewoodInputSurface(_ themeColors: ThemeColors) -> some View {
+        padding(.horizontal, RosewoodUI.spacing4)
+            .padding(.vertical, RosewoodUI.spacing3)
+            .background(themeColors.background)
+            .clipShape(RoundedRectangle(cornerRadius: RosewoodUI.radiusSmall))
+            .overlay(
+                RoundedRectangle(cornerRadius: RosewoodUI.radiusSmall)
+                    .stroke(themeColors.border.opacity(RosewoodUI.borderOpacitySubtle), lineWidth: 1)
             )
     }
 }

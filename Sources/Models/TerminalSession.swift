@@ -58,5 +58,9 @@ struct TerminalSession: Identifiable, Equatable {
 
     static func == (lhs: TerminalSession, rhs: TerminalSession) -> Bool {
         lhs.id == rhs.id
+            && lhs.title == rhs.title
+            && lhs.isActive == rhs.isActive
+            && lhs.processId == rhs.processId
+            && lhs.type == rhs.type
     }
 }

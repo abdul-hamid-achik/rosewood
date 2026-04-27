@@ -65,12 +65,12 @@ struct OutlineSidebarView: View {
 
             Spacer()
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.horizontal, RosewoodUI.spacing5)
+        .padding(.vertical, RosewoodUI.spacing3)
     }
 
     private func emptyStateView(message: String) -> some View {
-        VStack(spacing: 8) {
+        VStack(spacing: RosewoodUI.spacing3) {
             Spacer()
             Image(systemName: "list.bullet.rectangle")
                 .font(.system(size: 18))
@@ -99,7 +99,7 @@ private struct OutlineSymbolRow: View {
         Button {
             action()
         } label: {
-            HStack(spacing: 8) {
+            HStack(spacing: RosewoodUI.spacing3) {
                 Image(systemName: symbol.iconName)
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundColor(isActive ? themeColors.accent : themeColors.mutedText)
@@ -111,7 +111,7 @@ private struct OutlineSymbolRow: View {
                         .foregroundColor(themeColors.foreground)
                         .lineLimit(1)
 
-                    HStack(spacing: 6) {
+                    HStack(spacing: RosewoodUI.spacing2) {
                         Text(symbol.kindDisplayName)
                             .font(RosewoodType.caption)
                             .foregroundColor(themeColors.mutedText)
@@ -124,8 +124,8 @@ private struct OutlineSymbolRow: View {
 
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 6)
+            .padding(.horizontal, RosewoodUI.spacing3)
+            .padding(.vertical, RosewoodUI.spacing2)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(isActive ? themeColors.rowSelection : Color.clear)
             .clipShape(RoundedRectangle(cornerRadius: RosewoodUI.radiusSmall))

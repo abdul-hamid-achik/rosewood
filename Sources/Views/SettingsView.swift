@@ -45,14 +45,14 @@ struct SettingsView: View {
             ThemedDivider()
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
+                VStack(alignment: .leading, spacing: RosewoodUI.spacing8) {
                     editorSection
                     autoSaveSection
                     fileHandlingSection
                     dockerSection
                     themeSection
                 }
-                .padding(24)
+                .padding(RosewoodUI.spacing8)
             }
 
             ThemedDivider()
@@ -71,8 +71,8 @@ struct SettingsView: View {
                 .foregroundColor(themeColors.foreground)
             Spacer()
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 14)
+        .padding(.horizontal, RosewoodUI.spacing6)
+        .padding(.vertical, RosewoodUI.spacing5)
         .background(themeColors.panelBackground)
     }
 
@@ -141,7 +141,7 @@ struct SettingsView: View {
                     .toggleStyle(.switch)
                     .tint(themeColors.accent)
             }
-            .padding(16)
+            .padding(RosewoodUI.spacing6)
             .rosewoodCard(themeColors, radius: RosewoodUI.radiusSmall)
         }
     }
@@ -175,7 +175,7 @@ struct SettingsView: View {
                         .frame(width: 40)
                 }
             }
-            .padding(16)
+            .padding(RosewoodUI.spacing6)
             .rosewoodCard(themeColors, radius: RosewoodUI.radiusSmall)
         }
     }
@@ -201,7 +201,7 @@ struct SettingsView: View {
                     .frame(width: 160)
                 }
             }
-            .padding(16)
+            .padding(RosewoodUI.spacing6)
             .rosewoodCard(themeColors, radius: RosewoodUI.radiusSmall)
         }
     }
@@ -266,7 +266,7 @@ struct SettingsView: View {
                     .font(RosewoodType.caption)
                     .foregroundColor(themeColors.mutedText)
             }
-            .padding(16)
+            .padding(RosewoodUI.spacing6)
             .rosewoodCard(themeColors, radius: RosewoodUI.radiusSmall)
         }
     }
@@ -288,7 +288,7 @@ struct SettingsView: View {
                     .font(RosewoodType.caption)
                     .foregroundColor(themeColors.mutedText)
             }
-            .padding(16)
+            .padding(RosewoodUI.spacing6)
             .rosewoodCard(themeColors, radius: RosewoodUI.radiusSmall)
         }
     }
@@ -314,8 +314,8 @@ struct SettingsView: View {
             .buttonStyle(.borderedProminent)
             .tint(themeColors.accent)
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 14)
+        .padding(.horizontal, RosewoodUI.spacing6)
+        .padding(.vertical, RosewoodUI.spacing5)
         .background(themeColors.panelBackground)
     }
 

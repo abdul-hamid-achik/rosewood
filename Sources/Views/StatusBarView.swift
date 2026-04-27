@@ -341,13 +341,12 @@ struct StatusBarView: View {
                 }
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 4)
+        .padding(.horizontal, RosewoodUI.spacing5)
         .frame(height: RosewoodUI.statusBarHeight)
         .background(themeColors.gutterBackground)
         .overlay(alignment: .top) {
             Rectangle()
-                .fill(themeColors.border)
+                .fill(themeColors.border.opacity(RosewoodUI.borderOpacityMid))
                 .frame(height: 1)
         }
     }

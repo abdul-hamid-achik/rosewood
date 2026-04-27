@@ -228,13 +228,13 @@ struct ProblemsPanelView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(10)
-            .background(isActive ? themeColors.hoverBackground : themeColors.elevatedBackground)
+            .padding(RosewoodUI.spacing5)
+            .background(isActive ? themeColors.hoverBackground.opacity(RosewoodUI.stateOpacitySelected) : themeColors.elevatedBackground)
             .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(isActive ? themeColors.accent : Color.clear, lineWidth: 1)
+                RoundedRectangle(cornerRadius: RosewoodUI.radiusSmall)
+                    .stroke(isActive ? themeColors.accent : themeColors.border.opacity(RosewoodUI.borderOpacitySubtle), lineWidth: 1)
             )
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .clipShape(RoundedRectangle(cornerRadius: RosewoodUI.radiusSmall))
         }
         .contentShape(Rectangle())
         .buttonStyle(.plain)
@@ -288,13 +288,13 @@ struct ProblemsPanelView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(10)
-            .background(isActive ? themeColors.hoverBackground : themeColors.elevatedBackground)
+            .padding(RosewoodUI.spacing5)
+            .background(isActive ? themeColors.hoverBackground.opacity(RosewoodUI.stateOpacitySelected) : themeColors.elevatedBackground)
             .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(isActive ? themeColors.accent : Color.clear, lineWidth: 1)
+                RoundedRectangle(cornerRadius: RosewoodUI.radiusSmall)
+                    .stroke(isActive ? themeColors.accent : themeColors.border.opacity(RosewoodUI.borderOpacitySubtle), lineWidth: 1)
             )
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .clipShape(RoundedRectangle(cornerRadius: RosewoodUI.radiusSmall))
         }
         .contentShape(Rectangle())
         .buttonStyle(.plain)
@@ -327,7 +327,7 @@ struct ProblemsPanelView: View {
 
     private func scrollToActiveDiagnostic(using proxy: ScrollViewProxy) {
         guard let activeProblemScrollID = projectViewModel.activeProblemScrollID else { return }
-        withAnimation(.easeInOut(duration: 0.15)) {
+        withAnimation(.rosewoodStandard) {
             proxy.scrollTo(activeProblemScrollID, anchor: .center)
         }
     }

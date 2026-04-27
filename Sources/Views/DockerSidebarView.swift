@@ -10,12 +10,12 @@ struct DockerSidebarView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: RosewoodUI.spacing6) {
                 connectionSection
                 tabBar
                 tabContent
             }
-            .padding(12)
+            .padding(RosewoodUI.spacing3)
         }
         .background(themeColors.panelBackground)
     }
@@ -67,19 +67,21 @@ struct DockerSidebarView: View {
         HStack(spacing: 0) {
             ForEach(DockerTab.allCases) { tab in
                 Button {
-                    projectViewModel.selectedDockerTab = tab
+                    withAnimation(.rosewoodFast) {
+                        projectViewModel.selectedDockerTab = tab
+                    }
                 } label: {
                     VStack(spacing: 4) {
                         Image(systemName: tab.icon)
                             .font(.system(size: 14))
                         Text(tab.title)
-                            .font(.system(size: 10, weight: .medium))
+                            .font(RosewoodType.micro)
                     }
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
+                    .padding(.vertical, RosewoodUI.spacing3)
                     .background(
                         projectViewModel.selectedDockerTab == tab
-                            ? themeColors.accent.opacity(0.12)
+                            ? themeColors.accent.opacity(RosewoodUI.stateOpacityHover)
                             : Color.clear
                     )
                     .foregroundColor(
@@ -93,6 +95,10 @@ struct DockerSidebarView: View {
         }
         .background(themeColors.elevatedBackground)
         .clipShape(RoundedRectangle(cornerRadius: RosewoodUI.radiusSmall))
+        .overlay(
+            RoundedRectangle(cornerRadius: RosewoodUI.radiusSmall)
+                .stroke(themeColors.border.opacity(RosewoodUI.borderOpacitySubtle), lineWidth: 1)
+        )
     }
 
     @ViewBuilder

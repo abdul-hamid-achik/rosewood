@@ -114,7 +114,7 @@ struct CommandPaletteView: View {
             .clipShape(RoundedRectangle(cornerRadius: RosewoodUI.radiusLarge))
             .overlay(
                 RoundedRectangle(cornerRadius: RosewoodUI.radiusLarge)
-                    .stroke(themeColors.border.opacity(0.8), lineWidth: 1)
+                    .stroke(themeColors.border.opacity(RosewoodUI.borderOpacityMid), lineWidth: 1)
             )
             .shadow(color: themeColors.shadowColor, radius: 28, x: 0, y: 16)
             .frame(width: 600)
@@ -494,7 +494,7 @@ struct CommandPaletteScopeChipView: View {
         )
         .overlay(
             Capsule()
-                .stroke(isActive ? themeColors.accent.opacity(0.55) : themeColors.border.opacity(0.55), lineWidth: 1)
+                .stroke(isActive ? themeColors.accent.opacity(RosewoodUI.borderOpacityMid) : themeColors.border.opacity(RosewoodUI.borderOpacityMid), lineWidth: 1)
         )
     }
 }
@@ -525,7 +525,7 @@ struct QuickOpenProblemFilterChipView: View {
         )
         .overlay(
             Capsule()
-                .stroke(hint.isActive ? themeColors.accent.opacity(0.55) : themeColors.border.opacity(0.55), lineWidth: 1)
+                .stroke(hint.isActive ? themeColors.accent.opacity(RosewoodUI.borderOpacityMid) : themeColors.border.opacity(RosewoodUI.borderOpacityMid), lineWidth: 1)
         )
     }
 }

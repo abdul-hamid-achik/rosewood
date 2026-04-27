@@ -18,17 +18,28 @@ struct TabBarView: View {
                         tab: tab,
                         isSelected: index == projectViewModel.selectedTabIndex,
                         onSelect: {
-                            projectViewModel.selectTab(at: index)
+                            withAnimation(.rosewoodFast) {
+                                projectViewModel.selectTab(at: index)
+                            }
                         },
                         onClose: {
                             projectViewModel.closeTab(at: index)
                         }
                     )
+
+                    Rectangle()
+                        .fill(themeColors.border.opacity(RosewoodUI.borderOpacitySubtle))
+                        .frame(width: 1, height: 18)
                 }
             }
         }
         .frame(height: RosewoodUI.rowHeightRegular)
         .background(themeColors.panelBackground)
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(themeColors.border.opacity(RosewoodUI.borderOpacitySubtle))
+                .frame(height: 1)
+        }
     }
 }
 
@@ -47,53 +58,58 @@ struct TabItemView: View {
     }
 
     var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: tabIconName)
-                .font(.system(size: 12))
-                .foregroundColor(isSelected ? themeColors.accent : themeColors.mutedText)
-
-            Text(tab.fileName)
-                .font(.system(size: 12))
-                .foregroundColor(isSelected ? themeColors.foreground : themeColors.subduedText)
-
-            if tab.isDirty {
-                Image(systemName: "circle.fill")
-                    .font(.system(size: 10))
-                    .foregroundColor(themeColors.warning)
-            }
-
-            if isHovering || isSelected {
-                Button {
-                    onClose()
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(themeColors.mutedText)
-                }
-                .buttonStyle(.plain)
-                .padding(2)
-            } else {
-                Spacer()
-                    .frame(width: 18)
-            }
-        }
-        .padding(.leading, 8)
-        .padding(.trailing, 4)
-        .frame(height: RosewoodUI.rowHeightRegular)
-        .background(
-            isSelected ? themeColors.background : (isHovering ? themeColors.hoverBackground.opacity(0.28) : themeColors.panelBackground)
-        )
-        .overlay(alignment: .top) {
-            Rectangle()
-                .fill(isSelected ? themeColors.accent : themeColors.border.opacity(0.35))
-                .frame(height: isSelected ? 2 : 1)
-        }
-        .contentShape(Rectangle())
-        .onTapGesture {
+        Button {
             onSelect()
+        } label: {
+            HStack(spacing: RosewoodUI.spacing3) {
+                Image(systemName: tabIconName)
+                    .font(.system(size: 12))
+                    .foregroundColor(isSelected ? themeColors.accent : themeColors.mutedText)
+
+                Text(tab.fileName)
+                    .font(isSelected ? RosewoodType.bodyStrong : RosewoodType.body)
+                    .foregroundColor(isSelected ? themeColors.foreground : themeColors.subduedText)
+
+                if tab.isDirty {
+                    Image(systemName: "circle.fill")
+                        .font(.system(size: 8))
+                        .foregroundColor(themeColors.warning)
+                }
+
+                ZStack {
+                    if isHovering || isSelected {
+                        Button {
+                            onClose()
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 9, weight: .semibold))
+                                .foregroundColor(themeColors.mutedText)
+                                .frame(width: 16, height: 16)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 4)
+                                        .fill(themeColors.hoverBackground.opacity(isHovering ? 0.4 : 0))
+                                )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .frame(width: 18, height: 18)
+            }
+            .padding(.horizontal, RosewoodUI.spacing5)
+            .frame(height: RosewoodUI.rowHeightRegular)
+            .background(tabBackground)
+            .overlay(alignment: .bottom) {
+                Rectangle()
+                    .fill(isSelected ? themeColors.accent : Color.clear)
+                    .frame(height: 2)
+            }
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
         .onHover { hovering in
-            isHovering = hovering
+            withAnimation(.rosewoodFast) {
+                isHovering = hovering
+            }
         }
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("tab-item-\(index)")
@@ -137,6 +153,16 @@ struct TabItemView: View {
             }
         }
         .help(tab.fileName)
+    }
+
+    private var tabBackground: Color {
+        if isSelected {
+            return themeColors.background
+        }
+        if isHovering {
+            return themeColors.hoverBackground.opacity(RosewoodUI.stateOpacityHover)
+        }
+        return themeColors.panelBackground
     }
 
     private var tabIconName: String {

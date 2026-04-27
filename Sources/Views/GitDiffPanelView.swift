@@ -117,8 +117,8 @@ struct GitDiffPanelView: View {
                 }
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, layoutStyle == .workspace ? 6 : 8)
+        .padding(.horizontal, RosewoodUI.spacing5)
+        .padding(.vertical, layoutStyle == .workspace ? RosewoodUI.spacing2 : RosewoodUI.spacing3)
         .background(layoutStyle == .workspace ? themeColors.gutterBackground : themeColors.panelBackground)
     }
 
@@ -207,10 +207,10 @@ struct GitDiffPanelView: View {
             }
         }
         .accessibilityIdentifier("git-diff-hunk-label")
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
+        .padding(.horizontal, RosewoodUI.spacing2)
+        .padding(.vertical, 3)
         .background(
-            RoundedRectangle(cornerRadius: 9)
+            RoundedRectangle(cornerRadius: RosewoodUI.radiusSmall)
                 .fill(themeColors.elevatedBackground)
         )
     }
@@ -226,8 +226,9 @@ struct GitDiffPanelView: View {
                         .frame(width: columnWidth)
                         .accessibilityIdentifier("git-diff-column-before")
 
-                    Divider()
-                        .overlay(themeColors.border)
+                    Rectangle()
+                        .fill(themeColors.border.opacity(RosewoodUI.borderOpacitySubtle))
+                        .frame(width: 1)
 
                     columnHeader(title: "After", subtitle: "Working Tree")
                         .frame(width: columnWidth)
@@ -236,8 +237,9 @@ struct GitDiffPanelView: View {
                 .frame(height: columnHeaderHeight)
                 .background(layoutStyle == .workspace ? themeColors.panelBackground : themeColors.gutterBackground)
 
-                Divider()
-                    .overlay(themeColors.border)
+                Rectangle()
+                    .fill(themeColors.border.opacity(RosewoodUI.borderOpacitySubtle))
+                    .frame(height: 1)
 
                 ScrollViewReader { proxy in
                     ScrollView([.horizontal, .vertical]) {
@@ -258,8 +260,9 @@ struct GitDiffPanelView: View {
                                                     width: columnWidth
                                                 )
 
-                                                Divider()
-                                                    .overlay(themeColors.border)
+                                                Rectangle()
+                                                    .fill(themeColors.border.opacity(RosewoodUI.borderOpacitySubtle))
+                                                    .frame(width: 1)
 
                                                 diffCell(
                                                     lineNumber: row.rightLineNumber,
@@ -271,10 +274,10 @@ struct GitDiffPanelView: View {
                                             }
                                         }
                                     }
-                                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                                    .clipShape(RoundedRectangle(cornerRadius: RosewoodUI.radiusSmall))
                                     .overlay(
-                                        RoundedRectangle(cornerRadius: 10)
-                                            .stroke(themeColors.border, lineWidth: 1)
+                                        RoundedRectangle(cornerRadius: RosewoodUI.radiusSmall)
+                                            .stroke(themeColors.border.opacity(RosewoodUI.borderOpacitySubtle), lineWidth: 1)
                                     )
                                 }
                                 .id(hunk.id)
@@ -351,16 +354,16 @@ struct GitDiffPanelView: View {
             }
             .accessibilityIdentifier("git-diff-next-file")
         }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 4)
+        .padding(.horizontal, RosewoodUI.spacing2)
+        .padding(.vertical, 3)
         .background(
-            RoundedRectangle(cornerRadius: 9)
+            RoundedRectangle(cornerRadius: RosewoodUI.radiusSmall)
                 .fill(themeColors.elevatedBackground)
         )
     }
 
     private var workspaceGitActions: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 4) {
             if let changedFile = projectViewModel.selectedGitChangedFile, changedFile.canStage {
                 compactIconActionButton(
                     title: "Stage",
@@ -394,10 +397,16 @@ struct GitDiffPanelView: View {
                 }
             }
         }
+        .padding(.horizontal, RosewoodUI.spacing2)
+        .padding(.vertical, 3)
+        .background(
+            RoundedRectangle(cornerRadius: RosewoodUI.radiusSmall)
+                .fill(themeColors.elevatedBackground)
+        )
     }
 
     private var workspaceViewActions: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 4) {
             compactIconActionButton(
                 title: "Open In Editor",
                 systemImage: "doc.text",
@@ -416,57 +425,73 @@ struct GitDiffPanelView: View {
                 projectViewModel.revealSelectedGitChangeInExplorer()
             }
         }
+        .padding(.horizontal, RosewoodUI.spacing2)
+        .padding(.vertical, 3)
+        .background(
+            RoundedRectangle(cornerRadius: RosewoodUI.radiusSmall)
+                .fill(themeColors.elevatedBackground)
+        )
     }
 
     private func columnHeader(title: String, subtitle: String) -> some View {
-        HStack(spacing: 8) {
-            RoundedRectangle(cornerRadius: 999)
+        HStack(spacing: RosewoodUI.spacing3) {
+            Capsule()
                 .fill(title == "Before" ? themeColors.danger.opacity(0.85) : themeColors.success.opacity(0.85))
-                .frame(width: 2, height: 10)
+                .frame(width: 3, height: 12)
 
             Text(subtitle)
-                .font(.system(size: 9, weight: .semibold))
-                .foregroundColor(themeColors.mutedText)
+                .font(RosewoodType.captionStrong)
+                .foregroundColor(themeColors.subduedText)
 
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 2)
+        .padding(.horizontal, RosewoodUI.spacing4)
+        .padding(.vertical, 3)
     }
 
     private func hunkHeader(index: Int, totalHunks: Int, hunk: GitDiffHunk) -> some View {
-        HStack(spacing: 8) {
+        HStack(spacing: RosewoodUI.spacing3) {
             if totalHunks > 1 {
-                RosewoodHeaderChip(text: "Hunk \(index + 1)", tint: themeColors.accent)
+                Text("Hunk \(index + 1)")
+                    .font(RosewoodType.monoMicro)
+                    .foregroundColor(themeColors.accent)
+                    .padding(.horizontal, RosewoodUI.spacing2)
+                    .padding(.vertical, 2)
+                    .background(
+                        Capsule()
+                            .fill(themeColors.accent.opacity(0.14))
+                    )
             }
 
             Text(hunk.headerText)
-                .font(.system(size: 11, design: .monospaced))
-                .foregroundColor(themeColors.subduedText)
+                .font(RosewoodType.monoCaption)
+                .foregroundColor(themeColors.mutedText)
                 .lineLimit(1)
+                .truncationMode(.middle)
 
             Spacer(minLength: 0)
         }
+        .padding(.horizontal, RosewoodUI.spacing2)
     }
 
     private func diffCell(lineNumber: Int?, text: String?, counterpart: String?, kind: GitDiffLineKind, width: CGFloat) -> some View {
         HStack(spacing: 0) {
             Text(lineNumber.map(String.init) ?? "")
-                .font(.system(size: 10, design: .monospaced))
+                .font(RosewoodType.monoMicro)
                 .foregroundColor(lineNumberColor(for: kind))
                 .frame(width: 42, alignment: .trailing)
-                .padding(.trailing, 8)
-                .padding(.vertical, 4)
+                .padding(.trailing, RosewoodUI.spacing3)
+                .padding(.vertical, 3)
                 .background(gutterBackground(for: kind))
 
             Divider()
-                .overlay(themeColors.border.opacity(0.75))
+                .overlay(themeColors.border.opacity(RosewoodUI.borderOpacitySubtle))
 
             diffLineText(text: text, counterpart: counterpart, kind: kind)
                 .frame(maxWidth: .infinity, minHeight: 22, alignment: .leading)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 4)
+                .padding(.horizontal, RosewoodUI.spacing4)
+                .padding(.vertical, 3)
                 .background(cellBackground(for: kind))
         }
         .frame(width: width, alignment: .leading)
@@ -605,9 +630,9 @@ struct GitDiffPanelView: View {
     private func inlineHighlightBackground(for kind: GitDiffLineKind) -> Color {
         switch kind {
         case .added:
-            return themeColors.success.opacity(0.26)
+            return themeColors.success.opacity(0.38)
         case .deleted:
-            return themeColors.danger.opacity(0.26)
+            return themeColors.danger.opacity(0.38)
         case .context, .empty:
             return .clear
         }
@@ -616,26 +641,26 @@ struct GitDiffPanelView: View {
     private func gutterBackground(for kind: GitDiffLineKind) -> Color {
         switch kind {
         case .added:
-            return themeColors.success.opacity(0.14)
+            return themeColors.success.opacity(0.32)
         case .deleted:
-            return themeColors.danger.opacity(0.14)
+            return themeColors.danger.opacity(0.32)
         case .context:
             return themeColors.gutterBackground
         case .empty:
-            return themeColors.gutterBackground.opacity(0.55)
+            return themeColors.gutterBackground.opacity(0.4)
         }
     }
 
     private func cellBackground(for kind: GitDiffLineKind) -> Color {
         switch kind {
         case .added:
-            return themeColors.success.opacity(0.12)
+            return themeColors.success.opacity(0.22)
         case .deleted:
-            return themeColors.danger.opacity(0.12)
+            return themeColors.danger.opacity(0.22)
         case .context:
-            return themeColors.elevatedBackground.opacity(0.45)
+            return themeColors.elevatedBackground.opacity(0.35)
         case .empty:
-            return themeColors.panelBackground.opacity(0.45)
+            return Color.clear
         }
     }
 }

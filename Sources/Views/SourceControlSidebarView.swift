@@ -22,10 +22,10 @@ struct SourceControlSidebarView: View {
     }
 
     private var headerView: some View {
-        RosewoodSidebarCard(spacing: 8) {
-            HStack(spacing: 8) {
+        RosewoodSidebarCard(spacing: RosewoodUI.spacing3) {
+            HStack(spacing: RosewoodUI.spacing3) {
                 Label(projectViewModel.gitRepositoryStatus.branchName ?? "No Repository", systemImage: "arrow.triangle.branch")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(RosewoodType.subheadlineStrong)
                     .foregroundColor(themeColors.foreground)
                     .labelStyle(.titleAndIcon)
                     .accessibilityLabel(projectViewModel.gitRepositoryStatus.branchName ?? "No Repository")
@@ -47,18 +47,16 @@ struct SourceControlSidebarView: View {
 
             if projectViewModel.gitRepositoryStatus.isRepository {
                 Text(changeSummaryText)
-                    .font(.system(size: 11))
+                    .font(RosewoodType.caption)
                     .foregroundColor(themeColors.mutedText)
                     .accessibilityIdentifier("git-change-summary")
             } else if projectViewModel.rootDirectory != nil {
                 Text("Git is available when the open folder is a repository.")
-                    .font(.system(size: 11))
+                    .font(RosewoodType.caption)
                     .foregroundColor(themeColors.mutedText)
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.top, 12)
-        .padding(.bottom, 8)
+        .padding(RosewoodUI.spacing3)
     }
 
     private var changeSummaryText: String {
@@ -104,12 +102,12 @@ struct SourceControlSidebarView: View {
             )
         } else {
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 14) {
+                LazyVStack(alignment: .leading, spacing: RosewoodUI.spacing6) {
                     ForEach(projectViewModel.gitChangeSections) { section in
                         SourceControlSectionView(section: section)
                     }
                 }
-                .padding(12)
+                .padding(RosewoodUI.spacing3)
             }
         }
     }
@@ -126,19 +124,22 @@ private struct SourceControlSectionView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: RosewoodUI.spacing3) {
+            HStack(spacing: RosewoodUI.spacing2) {
                 Text(section.section.title.uppercased())
-                    .font(.system(size: 10, weight: .semibold))
-                    .kerning(0.5)
+                    .font(RosewoodType.micro)
+                    .kerning(0.6)
                     .foregroundColor(themeColors.mutedText)
 
-                RosewoodHeaderChip(text: "\(section.files.count)", tint: themeColors.mutedText)
+                Text("\(section.files.count)")
+                    .font(RosewoodType.monoMicro)
+                    .foregroundColor(themeColors.mutedText)
 
                 Spacer()
             }
+            .padding(.horizontal, RosewoodUI.spacing2)
 
-            VStack(spacing: 6) {
+            VStack(spacing: 1) {
                 ForEach(section.files) { changedFile in
                     SourceControlChangeRowView(
                         changedFile: changedFile,
@@ -182,88 +183,56 @@ private struct SourceControlChangeRowView: View {
         Button {
             projectViewModel.openGitChangedFile(changedFile)
         } label: {
-            HStack(alignment: .top, spacing: 10) {
+            HStack(spacing: RosewoodUI.spacing3) {
                 kindBadge
 
-                VStack(alignment: .leading, spacing: 5) {
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Text(fileName)
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundColor(themeColors.foreground)
-                            .lineLimit(1)
+                Text(fileName)
+                    .font(RosewoodType.subheadline)
+                    .foregroundColor(themeColors.foreground)
+                    .lineLimit(1)
+                    .layoutPriority(1)
 
-                        if !showInlineActions {
-                            stateBadge
-                        }
-                    }
-
-                    if let parentPath, !parentPath.isEmpty {
-                        Text(parentPath)
-                            .font(.system(size: 11))
-                            .foregroundColor(themeColors.mutedText)
-                            .lineLimit(1)
-                    }
-
-                    if let previousPath = changedFile.previousPath {
-                        Label("from \(previousPath)", systemImage: "arrow.turn.down.right")
-                            .font(.system(size: 11))
-                            .foregroundColor(themeColors.mutedText)
-                            .lineLimit(1)
-                    }
+                if let parentPath, !parentPath.isEmpty {
+                    Text(parentPath)
+                        .font(RosewoodType.caption)
+                        .foregroundColor(themeColors.mutedText)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
                 }
 
-                Spacer(minLength: 0)
+                Spacer(minLength: RosewoodUI.spacing3)
 
                 if showInlineActions {
                     inlineActions
-                } else {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundColor(themeColors.mutedText.opacity(isSelected || isHovering ? 0.9 : 0.45))
-                        .padding(.top, 2)
                 }
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
+            .padding(.horizontal, RosewoodUI.spacing3)
+            .frame(height: RosewoodUI.rowHeightCompact)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(rowBackground)
             .overlay(rowBorder)
         }
         .buttonStyle(.plain)
+        .help(parentPath.map { "\($0)/\(fileName)" } ?? fileName)
         .accessibilityLabel(fileName)
         .accessibilityValue(changedFile.stateSummary)
         .accessibilityIdentifier("git-change-row-\(rowIndex)")
         .onHover { hovering in
-            isHovering = hovering
+            withAnimation(.rosewoodFast) {
+                isHovering = hovering
+            }
         }
     }
 
     private var kindBadge: some View {
         Text(changedFile.kind.shortLabel)
-            .font(.system(size: 10, weight: .bold, design: .monospaced))
+            .font(.system(size: 9, weight: .bold, design: .monospaced))
             .foregroundColor(color(for: changedFile.kind))
-            .frame(width: 22, height: 22)
+            .frame(width: 16, height: 16)
             .background(
-                RoundedRectangle(cornerRadius: 7)
-                    .fill(color(for: changedFile.kind).opacity(0.14))
+                RoundedRectangle(cornerRadius: RosewoodUI.radiusXSmall)
+                    .fill(color(for: changedFile.kind).opacity(0.18))
             )
-    }
-
-    private var stateBadge: some View {
-        RosewoodHeaderChip(text: changedFile.stateSummary, tint: stateTint)
-    }
-
-    private var stateTint: Color {
-        switch changedFile.section {
-        case .conflicted:
-            return themeColors.danger
-        case .staged:
-            return themeColors.success
-        case .changes:
-            return themeColors.warning
-        case .untracked:
-            return themeColors.accent
-        }
     }
 
     private var showInlineActions: Bool {
@@ -324,16 +293,19 @@ private struct SourceControlChangeRowView: View {
     }
 
     private var rowBackground: some View {
-        RoundedRectangle(cornerRadius: 10)
+        RoundedRectangle(cornerRadius: RosewoodUI.radiusSmall)
             .fill(
-                isSelected ? themeColors.accentStrong.opacity(0.72) :
-                    (isHovering ? themeColors.hoverBackground.opacity(0.28) : themeColors.elevatedBackground.opacity(0.78))
+                isSelected ? themeColors.accentStrong.opacity(RosewoodUI.stateOpacitySelected) :
+                    (isHovering ? themeColors.hoverBackground.opacity(RosewoodUI.stateOpacityHover) : Color.clear)
             )
     }
 
     private var rowBorder: some View {
-        RoundedRectangle(cornerRadius: 10)
-            .stroke(isSelected ? themeColors.accent.opacity(0.8) : themeColors.border.opacity(0.4), lineWidth: 1)
+        RoundedRectangle(cornerRadius: RosewoodUI.radiusSmall)
+            .stroke(
+                isSelected ? themeColors.accent.opacity(RosewoodUI.borderOpacityMid) : Color.clear,
+                lineWidth: 1
+            )
     }
 
     private func color(for kind: GitChangeKind) -> Color {

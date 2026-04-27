@@ -2,12 +2,6 @@ import Foundation
 
 extension ProjectViewModel {
     func openGitChangedFile(_ changedFile: GitChangedFile) {
-        if let repositoryRoot = gitRepositoryStatus.repositoryRoot {
-            let fileURL = repositoryRoot.appendingPathComponent(changedFile.path)
-            if FileManager.default.fileExists(atPath: fileURL.path) {
-                openFile(at: fileURL, preservingGitDiffWorkspace: true)
-            }
-        }
         sidebarMode = .sourceControl
         isGitDiffWorkspaceVisible = true
         bottomPanel = nil
@@ -25,13 +19,21 @@ extension ProjectViewModel {
     }
 
     func openSelectedGitChangeInEditor() {
-        guard let selectedTabIndex else { return }
-        selectTab(at: selectedTabIndex)
+        guard let changedFile = selectedGitChangedFile else { return }
+        openGitChangedFileInEditor(changedFile)
     }
 
     func openGitChangedFileInEditor(_ changedFile: GitChangedFile) {
-        openGitChangedFile(changedFile)
-        openSelectedGitChangeInEditor()
+        if let repositoryRoot = gitRepositoryStatus.repositoryRoot {
+            let fileURL = repositoryRoot.appendingPathComponent(changedFile.path)
+            if FileManager.default.fileExists(atPath: fileURL.path) {
+                openFile(at: fileURL, preservingGitDiffWorkspace: true)
+            }
+        }
+        sidebarMode = .sourceControl
+        isGitDiffWorkspaceVisible = true
+        bottomPanel = nil
+        loadGitDiff(for: changedFile)
     }
 
     func revealSelectedGitChangeInExplorer() {
