@@ -92,6 +92,52 @@ enum LineEditing {
         )
     }
 
+    /// Indent every non-empty line spanned by `selection` by one `unit` (e.g. a tab), keeping the
+    /// affected lines selected.
+    static func indentLines(in text: NSString, selection: NSRange, unit: String) -> Edit {
+        let blockRange = text.lineRange(for: selection)
+        let lines = text.substring(with: blockRange).components(separatedBy: "\n")
+        let indented = lines.map { $0.isEmpty ? $0 : unit + $0 }.joined(separator: "\n")
+        return Edit(
+            range: blockRange,
+            replacement: indented,
+            selection: NSRange(location: blockRange.location, length: (indented as NSString).length)
+        )
+    }
+
+    /// Outdent every line spanned by `selection` by one level (a leading tab, or up to `tabSize`
+    /// leading spaces). Returns nil if nothing was indented.
+    static func outdentLines(in text: NSString, selection: NSRange, tabSize: Int) -> Edit? {
+        let blockRange = text.lineRange(for: selection)
+        let lines = text.substring(with: blockRange).components(separatedBy: "\n")
+        var changed = false
+        let outdented = lines.map { line -> String in
+            let (result, didChange) = removingOneIndent(line, tabSize: tabSize)
+            changed = changed || didChange
+            return result
+        }.joined(separator: "\n")
+        guard changed else { return nil }
+        return Edit(
+            range: blockRange,
+            replacement: outdented,
+            selection: NSRange(location: blockRange.location, length: (outdented as NSString).length)
+        )
+    }
+
+    private static func removingOneIndent(_ line: String, tabSize: Int) -> (String, Bool) {
+        if line.hasPrefix("\t") {
+            return (String(line.dropFirst()), true)
+        }
+        var removed = 0
+        var index = line.startIndex
+        while removed < max(tabSize, 1), index < line.endIndex, line[index] == " " {
+            index = line.index(after: index)
+            removed += 1
+        }
+        guard removed > 0 else { return (line, false) }
+        return (String(line[index...]), true)
+    }
+
     private static func dropTrailingNewline(_ text: String) -> String {
         text.hasSuffix("\n") ? String(text.dropLast()) : text
     }

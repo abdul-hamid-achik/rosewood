@@ -75,4 +75,37 @@ struct LineEditingTests {
         #expect(apply(unwrapped, to: "a\nb") == "b\na")
         #expect(unwrapped.selection == NSRange(location: 2, length: 1))
     }
+
+    // MARK: - Indent / outdent
+
+    @Test
+    func indentsSelectedLinesWithTab() {
+        let edit = LineEditing.indentLines(in: "a\nb\nc\n", selection: NSRange(location: 0, length: 4), unit: "\t")
+        #expect(apply(edit, to: "a\nb\nc\n") == "\ta\n\tb\nc\n")
+    }
+
+    @Test
+    func indentSkipsEmptyLines() {
+        let edit = LineEditing.indentLines(in: "a\n\nb", selection: NSRange(location: 0, length: 4), unit: "\t")
+        #expect(apply(edit, to: "a\n\nb") == "\ta\n\n\tb")
+    }
+
+    @Test
+    func outdentsLeadingTab() {
+        let edit = LineEditing.outdentLines(in: "\ta\n\tb\nc\n", selection: NSRange(location: 0, length: 6), tabSize: 4)
+        let unwrapped = try! #require(edit)
+        #expect(apply(unwrapped, to: "\ta\n\tb\nc\n") == "a\nb\nc\n")
+    }
+
+    @Test
+    func outdentsUpToTabSizeSpaces() {
+        let edit = LineEditing.outdentLines(in: "    a\n  b\n", selection: NSRange(location: 0, length: 8), tabSize: 4)
+        let unwrapped = try! #require(edit)
+        #expect(apply(unwrapped, to: "    a\n  b\n") == "a\nb\n")
+    }
+
+    @Test
+    func outdentWithNothingToRemoveIsNil() {
+        #expect(LineEditing.outdentLines(in: "a\nb\n", selection: NSRange(location: 0, length: 4), tabSize: 4) == nil)
+    }
 }

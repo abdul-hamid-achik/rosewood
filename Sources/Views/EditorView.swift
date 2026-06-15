@@ -1208,7 +1208,24 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
                 requestCompletion(in: textView)
                 return true
             }
-            return false
+            // Tab on a multi-line selection indents the block; Shift+Tab always outdents. A single
+            // caret falls through to the default tab insertion.
+            switch commandSelector {
+            case #selector(NSResponder.insertTab(_:)) where hasMultilineSelection(in: textView):
+                applyLineEdit { LineEditing.indentLines(in: $0, selection: $1, unit: "\t") }
+                return true
+            case #selector(NSResponder.insertBacktab(_:)):
+                applyLineEdit { LineEditing.outdentLines(in: $0, selection: $1, tabSize: parent.tabSize) }
+                return true
+            default:
+                return false
+            }
+        }
+
+        private func hasMultilineSelection(in textView: NSTextView) -> Bool {
+            let selection = textView.selectedRange()
+            guard selection.length > 0 else { return false }
+            return (textView.string as NSString).substring(with: selection).contains("\n")
         }
 
         // MARK: - Diagnostics
