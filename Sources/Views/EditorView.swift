@@ -836,6 +836,8 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
                         moveSelectedLines(up: false)
                     case .duplicateLine:
                         applyLineEdit { LineEditing.duplicateLines(in: $0, selection: $1) }
+                    case .deleteLine:
+                        applyLineEdit { LineEditing.deleteLines(in: $0, selection: $1) }
                     default:
                         break
                     }

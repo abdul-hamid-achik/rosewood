@@ -108,4 +108,31 @@ struct LineEditingTests {
     func outdentWithNothingToRemoveIsNil() {
         #expect(LineEditing.outdentLines(in: "a\nb\n", selection: NSRange(location: 0, length: 4), tabSize: 4) == nil)
     }
+
+    // MARK: - Delete line
+
+    @Test
+    func deletesCurrentLine() {
+        let edit = LineEditing.deleteLines(in: "a\nb\nc\n", selection: NSRange(location: 2, length: 0))
+        #expect(apply(edit, to: "a\nb\nc\n") == "a\nc\n")
+        #expect(edit.selection == NSRange(location: 2, length: 0))
+    }
+
+    @Test
+    func deletesLastLineWithoutTrailingNewlineRemovingDanglingLine() {
+        let edit = LineEditing.deleteLines(in: "a\nb", selection: NSRange(location: 2, length: 0))
+        #expect(apply(edit, to: "a\nb") == "a")
+    }
+
+    @Test
+    func deletesMultiLineSelection() {
+        let edit = LineEditing.deleteLines(in: "a\nb\nc\n", selection: NSRange(location: 0, length: 4))
+        #expect(apply(edit, to: "a\nb\nc\n") == "c\n")
+    }
+
+    @Test
+    func deletesOnlyLine() {
+        let edit = LineEditing.deleteLines(in: "a", selection: NSRange(location: 0, length: 0))
+        #expect(apply(edit, to: "a") == "")
+    }
 }

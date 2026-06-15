@@ -124,6 +124,23 @@ enum LineEditing {
         )
     }
 
+    /// Delete the full lines spanned by `selection`, leaving the caret at the start of what follows.
+    static func deleteLines(in text: NSString, selection: NSRange) -> Edit {
+        var blockRange = text.lineRange(for: selection)
+        let blockEnd = blockRange.location + blockRange.length
+        // Deleting the last line(s) without a trailing newline: also remove the preceding newline so
+        // we don't leave a dangling empty line.
+        if blockEnd == text.length, blockRange.location > 0,
+           !text.substring(with: blockRange).hasSuffix("\n") {
+            blockRange = NSRange(location: blockRange.location - 1, length: blockRange.length + 1)
+        }
+        return Edit(
+            range: blockRange,
+            replacement: "",
+            selection: NSRange(location: blockRange.location, length: 0)
+        )
+    }
+
     private static func removingOneIndent(_ line: String, tabSize: Int) -> (String, Bool) {
         if line.hasPrefix("\t") {
             return (String(line.dropFirst()), true)

@@ -104,7 +104,7 @@ struct ContentView: View {
         case .settings:
             projectViewModel.showSettings = true
         case .findInFile, .useSelectionForFind, .showReplace, .goToDefinition, .findReferences,
-             .toggleLineComment, .moveLineUp, .moveLineDown, .duplicateLine:
+             .toggleLineComment, .moveLineUp, .moveLineDown, .duplicateLine, .deleteLine:
             break
         }
     }
