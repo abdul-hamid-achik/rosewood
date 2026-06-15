@@ -1960,30 +1960,32 @@ final class EditorContainerView: NSView {
         minimapUpdateTask?.cancel()
         minimapUpdateTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 100_000_000)  // 100ms debounce
-            guard let self = self, !Task.isCancelled else { return }
-            await MainActor.run {
-                self.calculateAndApplyMinimap()
-            }
+            guard let self, !Task.isCancelled else { return }
+            await self.calculateAndApplyMinimap()
         }
     }
 
-    private func calculateAndApplyMinimap() {
+    @MainActor
+    private func calculateAndApplyMinimap() async {
         let visibleRect = scrollView.contentView.bounds
+        let documentHeight = textView.bounds.height
         let cacheKey = MinimapCacheKey(
             displayVersion: currentDisplayVersion,
             visibleOriginY: visibleRect.minY.rounded(.towardZero),
             visibleHeight: visibleRect.height.rounded(.towardZero),
-            documentHeight: textView.bounds.height.rounded(.towardZero)
+            documentHeight: documentHeight.rounded(.towardZero)
         )
         let snapshot: MinimapSnapshot
         if lastMinimapCacheKey == cacheKey {
             snapshot = lastMinimapSnapshot
         } else {
-            snapshot = MinimapSnapshot.make(
-                text: currentDisplayText,
-                visibleRect: visibleRect,
-                documentHeight: textView.bounds.height
-            )
+            // The whole-document line split + per-line measure is O(document); run it off the main
+            // thread so a file with tens of thousands of lines doesn't hang the UI on rebuild.
+            let text = currentDisplayText
+            snapshot = await Task.detached(priority: .userInitiated) {
+                MinimapSnapshot.make(text: text, visibleRect: visibleRect, documentHeight: documentHeight)
+            }.value
+            guard !Task.isCancelled else { return }
             lastMinimapCacheKey = cacheKey
             lastMinimapSnapshot = snapshot
         }
