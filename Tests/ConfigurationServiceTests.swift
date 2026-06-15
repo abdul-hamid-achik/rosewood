@@ -192,6 +192,34 @@ struct ConfigurationServiceTests {
     }
 
     @Test
+    func previewSettingsAppliesInMemoryWithoutWritingDisk() {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let userConfigURL = rootURL.appendingPathComponent("user.toml")
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let service = ConfigurationService(userConfigURL: userConfigURL)
+        service.load()
+        #expect(FileManager.default.fileExists(atPath: userConfigURL.path) == false)
+
+        var preview = service.settings
+        preview.theme.name = "dracula"
+        preview.editor.fontSize = 19
+        service.previewSettings(preview)
+
+        // Live in-memory state reflects the change...
+        #expect(service.settings.editor.fontSize == 19)
+        #expect(service.currentThemeDefinition.id == "dracula")
+        #expect(service.font.pointSize == 19)
+        // ...but nothing is persisted yet (so Cancel can roll it back).
+        #expect(FileManager.default.fileExists(atPath: userConfigURL.path) == false)
+
+        // updateSettings persists to disk.
+        service.updateSettings(preview)
+        #expect(FileManager.default.fileExists(atPath: userConfigURL.path) == true)
+    }
+
+    @Test
     func configuredFontUsesRequestedFamilyWhenAvailable() {
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

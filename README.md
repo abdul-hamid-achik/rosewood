@@ -117,10 +117,15 @@ export PATH="$HOME/.local/bin:$PATH"
 | Cmd+Shift+N | New Window |
 | Cmd+S | Save |
 | Cmd+Shift+S | Save As |
+| Cmd+Opt+S | Save All |
 | Cmd+Shift+T | Reopen Last Closed Tab |
 | Cmd+W | Close Tab |
+| Cmd+Shift+] | Show Next Tab |
+| Cmd+Shift+[ | Show Previous Tab |
+| Cmd+1…9 | Go to Tab 1–9 |
 | Cmd+P | Quick Open |
 | Cmd+Shift+P | Command Palette |
+| Ctrl+` | Toggle Terminal |
 | Cmd+F | Find in File |
 | Cmd+Opt+F | Replace in File |
 | Cmd+G | Find Next |

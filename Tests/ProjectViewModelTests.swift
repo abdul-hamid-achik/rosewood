@@ -2149,7 +2149,7 @@ struct ProjectViewModelTests {
     }
 
     @Test
-    func currentFileSymbolsRefreshAfterEditingOpenTabContent() throws {
+    func currentFileSymbolsRefreshAfterEditingOpenTabContent() async throws {
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let sourcesURL = rootURL.appendingPathComponent("Sources", isDirectory: true)
@@ -2185,6 +2185,10 @@ struct ProjectViewModelTests {
 
         viewModel.updateTabContent("func secondThing() {}\n")
 
+        // Symbol extraction is now debounced off-main, so the outline refreshes shortly after.
+        try await waitUntil {
+            viewModel.currentFileSymbols.map(\.name) == ["secondThing"]
+        }
         #expect(viewModel.currentFileSymbols.map(\.name) == ["secondThing"])
     }
 
@@ -2660,7 +2664,9 @@ struct ProjectViewModelTests {
                 viewModel.isGitDiffWorkspaceVisible
         }
 
-        #expect(viewModel.selectedTab?.filePath?.standardizedFileURL.path == fileURL.standardizedFileURL.path)
+        // Browsing a change shows the diff workspace without opening/highlighting the file
+        // (the explicit "Open in Editor" path promotes it to a real tab).
+        #expect(viewModel.selectedTab == nil)
         #expect(viewModel.selectedGitDiff?.text.contains("+let tracked = 1") == true)
         #expect(viewModel.selectedGitDiff?.hasStructuredChanges == true)
         #expect(viewModel.selectedGitDiff?.hunks.first?.rows.first?.rightText == "let tracked = 1")
@@ -3543,6 +3549,7 @@ struct ProjectViewModelTests {
         )
 
         viewModel.rootDirectory = rootURL
+        viewModel.sidebarMode = .search
         viewModel.projectSearchQuery = "rosewood"
         viewModel.performProjectSearch()
 
@@ -3554,7 +3561,9 @@ struct ProjectViewModelTests {
 
         viewModel.projectSearchQuery = "cedar"
 
-        #expect(viewModel.projectSearchResults.isEmpty)
+        // Prior results stay on screen (no per-keystroke flicker), but replace is blocked
+        // until the new query is actually searched — the results' query no longer matches.
+        #expect(viewModel.projectSearchResults.count == 1)
         #expect(viewModel.canReplaceProjectSearchResults == false)
 
         viewModel.projectReplaceQuery = "pine"
@@ -3993,12 +4002,13 @@ struct ProjectViewModelTests {
         defer { try? FileManager.default.removeItem(at: configURL) }
 
         let fileWatcher = FileWatcherService()
+        // Deleting now requires an explicit confirmation; approve it ("Move to Trash").
         let viewModel = makeViewModel(
             sessionStore: makeDefaults(),
             sessionKey: "delete-item-test",
             configService: ConfigurationService(userConfigURL: configURL),
             fileWatcher: fileWatcher,
-            ui: TestProjectUI()
+            ui: TestProjectUI(confirmResponses: [.alertFirstButtonReturn])
         )
 
         viewModel.rootDirectory = rootURL
@@ -4021,6 +4031,209 @@ struct ProjectViewModelTests {
         }
 
         #expect(FileManager.default.fileExists(atPath: groupURL.path) == false)
+    }
+
+    @Test
+    func deleteItemCancelledKeepsFileAndTabs() async throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let fileURL = rootURL.appendingPathComponent("Keep.swift")
+
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        try "print(\"keep\")".write(to: fileURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let configURL = tempConfigURL()
+        defer { try? FileManager.default.removeItem(at: configURL) }
+
+        // Decline the delete confirmation ("Cancel" maps to the second button).
+        let viewModel = makeViewModel(
+            sessionStore: makeDefaults(),
+            sessionKey: "delete-cancel-test",
+            configService: ConfigurationService(userConfigURL: configURL),
+            fileWatcher: FileWatcherService(),
+            ui: TestProjectUI(confirmResponses: [.alertSecondButtonReturn])
+        )
+
+        viewModel.rootDirectory = rootURL
+        viewModel.reloadFileTree()
+        try await waitUntil {
+            viewModel.fileTree.count == 1 && !viewModel.isLoadingFileTree
+        }
+
+        let fileItem = try #require(viewModel.fileTree.first)
+        viewModel.deleteItem(fileItem)
+
+        // Give the (no-op) delete a moment, then assert nothing was destroyed.
+        try await Task.sleep(nanoseconds: 200_000_000)
+        #expect(FileManager.default.fileExists(atPath: fileURL.path) == true)
+        #expect(viewModel.fileTree.count == 1)
+    }
+
+    @Test
+    func commandPaletteExposesTerminalToggle() {
+        let configURL = tempConfigURL()
+        defer { try? FileManager.default.removeItem(at: configURL) }
+
+        let viewModel = makeViewModel(
+            sessionStore: makeDefaults(),
+            sessionKey: "terminal-palette-test",
+            configService: ConfigurationService(userConfigURL: configURL),
+            fileWatcher: FileWatcherService(),
+            ui: TestProjectUI()
+        )
+
+        // The terminal panel must be reachable from the command palette (it previously had
+        // no menu/shortcut/palette entry and was effectively orphaned).
+        viewModel.commandPaletteQuery = "terminal"
+        #expect(viewModel.commandPaletteActions.contains { $0.id == "toggleTerminal" })
+    }
+
+    @Test
+    func restartLanguageServersReopensOpenDocuments() async throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let fileURL = rootURL.appendingPathComponent("Main.swift")
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        try "let value = 1\n".write(to: fileURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let configURL = tempConfigURL()
+        defer { try? FileManager.default.removeItem(at: configURL) }
+
+        let lspService = MockLSPService()
+        let viewModel = makeViewModel(
+            sessionStore: makeDefaults(),
+            sessionKey: "lsp-restart-test",
+            configService: ConfigurationService(userConfigURL: configURL),
+            fileWatcher: FileWatcherService(),
+            ui: TestProjectUI(),
+            lspService: lspService
+        )
+        viewModel.rootDirectory = rootURL
+        viewModel.openFile(at: fileURL)
+
+        // A crashed/wedged server needs a recovery path; it must be reachable from the palette.
+        viewModel.commandPaletteQuery = "restart language server"
+        #expect(viewModel.commandPaletteActions.contains { $0.id == "restartLanguageServers" })
+
+        let openedBefore = lspService.documentOpenedCalls.count
+        viewModel.restartLanguageServers()
+
+        // Restart shuts servers down then re-opens the current documents so they respawn.
+        try await waitUntil {
+            lspService.documentOpenedCalls.count > openedBefore &&
+                lspService.documentOpenedCalls.last?.language == "swift"
+        }
+        #expect(lspService.documentOpenedCalls.last?.uri == fileURL.absoluteString)
+    }
+
+    @Test
+    func projectSearchValidatesRegexPattern() {
+        let configURL = tempConfigURL()
+        defer { try? FileManager.default.removeItem(at: configURL) }
+
+        let viewModel = makeViewModel(
+            sessionStore: makeDefaults(),
+            sessionKey: "regex-validation-test",
+            configService: ConfigurationService(userConfigURL: configURL),
+            fileWatcher: FileWatcherService(),
+            ui: TestProjectUI()
+        )
+
+        let regexOn = ProjectSearchOptions(isRegularExpression: true)
+        // An unbalanced group is invalid and must produce a user-facing error.
+        #expect(viewModel.projectSearchRegexValidationError(for: "foo(", options: regexOn) != nil)
+        // A valid pattern produces no error.
+        #expect(viewModel.projectSearchRegexValidationError(for: "foo.*bar", options: regexOn) == nil)
+        // With the regex toggle off, an otherwise-invalid pattern is treated as literal text.
+        let regexOff = ProjectSearchOptions(isRegularExpression: false)
+        #expect(viewModel.projectSearchRegexValidationError(for: "foo(", options: regexOff) == nil)
+    }
+
+    @Test
+    func selectTabRestoresSavedCursorLine() async throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let fileA = rootURL.appendingPathComponent("A.swift")
+        let fileB = rootURL.appendingPathComponent("B.swift")
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        try "line1\nline2\nline3\nline4\nline5\n".write(to: fileA, atomically: true, encoding: .utf8)
+        try "other\n".write(to: fileB, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let configURL = tempConfigURL()
+        defer { try? FileManager.default.removeItem(at: configURL) }
+
+        let viewModel = makeViewModel(
+            sessionStore: makeDefaults(),
+            sessionKey: "select-tab-cursor-test",
+            configService: ConfigurationService(userConfigURL: configURL),
+            fileWatcher: FileWatcherService(),
+            ui: TestProjectUI()
+        )
+        viewModel.rootDirectory = rootURL
+
+        viewModel.openFile(at: fileA)
+        viewModel.openFile(at: fileB)
+
+        let aIndex = try #require(viewModel.openTabs.firstIndex { $0.filePath?.lastPathComponent == "A.swift" })
+        viewModel.openTabs[aIndex].cursorPosition = CursorPosition(line: 4, column: 2)
+        viewModel.openTabs[aIndex].pendingLineJump = nil
+
+        // Switching back to a tab should queue a jump that restores its saved caret line.
+        viewModel.selectTab(at: aIndex)
+        #expect(viewModel.openTabs[aIndex].pendingLineJump == 4)
+    }
+
+    @Test
+    func selectNextAndPreviousTabWrapAround() async throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        let urls = ["A.swift", "B.swift", "C.swift"].map { rootURL.appendingPathComponent($0) }
+        for url in urls { try "let x = 0\n".write(to: url, atomically: true, encoding: .utf8) }
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let configURL = tempConfigURL()
+        defer { try? FileManager.default.removeItem(at: configURL) }
+
+        let viewModel = makeViewModel(
+            sessionStore: makeDefaults(),
+            sessionKey: "tab-nav-test",
+            configService: ConfigurationService(userConfigURL: configURL),
+            fileWatcher: FileWatcherService(),
+            ui: TestProjectUI()
+        )
+        viewModel.rootDirectory = rootURL
+        for url in urls { viewModel.openFile(at: url) }
+
+        #expect(viewModel.selectedTab?.fileName == "C.swift")  // last opened
+        viewModel.selectNextTab()
+        #expect(viewModel.selectedTab?.fileName == "A.swift")  // wraps forward
+        viewModel.selectPreviousTab()
+        #expect(viewModel.selectedTab?.fileName == "C.swift")  // wraps backward
+        viewModel.selectPreviousTab()
+        #expect(viewModel.selectedTab?.fileName == "B.swift")
+    }
+
+    @Test
+    func relativeFilePathForURLStripsRoot() throws {
+        let configURL = tempConfigURL()
+        defer { try? FileManager.default.removeItem(at: configURL) }
+
+        let viewModel = makeViewModel(
+            sessionStore: makeDefaults(),
+            sessionKey: "rel-path-test",
+            configService: ConfigurationService(userConfigURL: configURL),
+            fileWatcher: FileWatcherService(),
+            ui: TestProjectUI()
+        )
+        let rootURL = URL(fileURLWithPath: "/tmp/project")
+        viewModel.rootDirectory = rootURL
+
+        #expect(viewModel.relativeFilePath(for: rootURL.appendingPathComponent("Sources/App.swift")) == "Sources/App.swift")
+        #expect(viewModel.absoluteFilePath(for: rootURL.appendingPathComponent("a.txt")) == "/tmp/project/a.txt")
     }
 
     @Test

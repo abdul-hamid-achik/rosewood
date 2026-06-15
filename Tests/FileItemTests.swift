@@ -103,7 +103,9 @@ struct FileItemTests {
     }
 
     @Test
-    func equalityIgnoresChildren() {
+    func equalityConsidersChildren() {
+        // Equality compares children so deep folder mutations (expand/collapse, added or
+        // removed entries) propagate through SwiftUI .onChange / Equatable diffing.
         let child = FileItem(
             name: "main.swift",
             path: URL(fileURLWithPath: "/tmp/Sources/main.swift"),
@@ -122,7 +124,7 @@ struct FileItemTests {
             children: []
         )
 
-        #expect(withChildren == withoutChildren)
+        #expect(withChildren != withoutChildren)
     }
 
     @Test

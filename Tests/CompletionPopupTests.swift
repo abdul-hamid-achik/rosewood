@@ -177,6 +177,41 @@ struct CompletionPopupTests {
         #expect(popup.filteredItems.count == 3)
     }
 
+    @Test
+    func filterUsesFilterTextWhenPresent() {
+        let popup = CompletionPopupController()
+        let window = NSWindow()
+        // The LSP filterText, not the display label, drives matching.
+        let item = CompletionItem(
+            label: "displayLabel",
+            kind: .property,
+            detail: nil,
+            documentation: nil,
+            insertText: nil,
+            textEdit: nil,
+            filterText: "searchKey",
+            sortText: nil
+        )
+        popup.show(items: [item], at: NSRect(x: 100, y: 100, width: 10, height: 14), in: window)
+        popup.updateFilter("searchKey")
+        #expect(popup.filteredItems.count == 1)
+
+        popup.show(items: [item], at: NSRect(x: 100, y: 100, width: 10, height: 14), in: window)
+        popup.updateFilter("displayLabel")
+        #expect(popup.filteredItems.isEmpty)
+    }
+
+    // MARK: - Insertion Text
+
+    @Test
+    func insertionTextFallsBackFromInsertTextToLabel() {
+        let withInsert = makeItem(label: "label", insertText: "label()")
+        #expect(withInsert.insertionText == "label()")
+
+        let labelOnly = makeItem(label: "label", insertText: nil)
+        #expect(labelOnly.insertionText == "label")
+    }
+
     // MARK: - Confirm Selection
 
     @Test
