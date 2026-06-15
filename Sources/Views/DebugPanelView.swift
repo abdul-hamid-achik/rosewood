@@ -3,6 +3,7 @@ import SwiftUI
 struct DebugPanelView: View {
     @EnvironmentObject var projectViewModel: ProjectViewModel
     @EnvironmentObject private var configService: ConfigurationService
+    @EnvironmentObject private var debugModel: DebugModel
 
     private var themeColors: ThemeColors {
         configService.currentThemeColors
@@ -14,12 +15,12 @@ struct DebugPanelView: View {
 
             ThemedDivider()
 
-            if projectViewModel.debugConsoleEntries.isEmpty {
+            if debugModel.debugConsoleEntries.isEmpty {
                 emptyStateView
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 8) {
-                        ForEach(projectViewModel.debugConsoleEntries) { entry in
+                        ForEach(debugModel.debugConsoleEntries) { entry in
                             VStack(alignment: .leading, spacing: 4) {
                                 HStack(spacing: 8) {
                                     Text(entry.timestamp.formatted(date: .omitted, time: .standard))

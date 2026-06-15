@@ -345,6 +345,41 @@ struct ProjectViewModelTests {
     }
 
     @Test
+    func debugStateChangeDoesNotFireViewModelObjectWillChange() async throws {
+        let configURL = tempConfigURL()
+        defer { try? FileManager.default.removeItem(at: configURL) }
+
+        let viewModel = makeViewModel(
+            sessionStore: makeDefaults(),
+            sessionKey: "debug-norerender-test",
+            configService: ConfigurationService(userConfigURL: configURL),
+            fileWatcher: FileWatcherService(),
+            ui: TestProjectUI()
+        )
+
+        var vmPublishCount = 0
+        let vmCancellable = viewModel.objectWillChange.sink { _ in vmPublishCount += 1 }
+        var debugPublishCount = 0
+        let debugCancellable = viewModel.debugModel.objectWillChange.sink { _ in debugPublishCount += 1 }
+        defer { vmCancellable.cancel(); debugCancellable.cancel() }
+
+        // Mirror what handleDebugSessionEvent writes while a session runs: a state transition
+        // plus streaming console output. Console output in particular fires every program line.
+        viewModel.debugSessionState = .running
+        viewModel.debugConsoleEntries.append(DebugConsoleEntry(kind: .info, message: "hello from the program"))
+
+        // The whole point: debug session/console updates re-render only the debug consumers
+        // (DebugModel), not every view observing the app-wide view model.
+        #expect(vmPublishCount == 0)
+        #expect(debugPublishCount > 0)
+        // Forwarders still resolve through DebugModel.
+        #expect(viewModel.debugSessionState == .running)
+        #expect(viewModel.debugModel.debugSessionState == .running)
+        #expect(viewModel.debugConsoleEntries.count == 1)
+        #expect(viewModel.debugConsoleEntries.first?.message == "hello from the program")
+    }
+
+    @Test
     func sessionPersistenceDoesNotSerializeEditorBuffers() async throws {
         let fileURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)

@@ -9,6 +9,7 @@ struct ContentView: View {
     @EnvironmentObject private var commandPaletteViewModel: CommandPaletteViewModel
     @EnvironmentObject private var configService: ConfigurationService
     @EnvironmentObject private var commandDispatcher: AppCommandDispatcher
+    @EnvironmentObject private var debugModel: DebugModel
 
     @State private var bottomPanelHeight: CGFloat = RosewoodUI.defaultBottomPanelHeight
     @State private var bottomPanelResizeBaseline: CGFloat?
@@ -257,10 +258,10 @@ struct ContentView: View {
         case .sourceControl:
             return projectViewModel.gitRepositoryStatus.isRepository ? "Review local changes" : "Review changes and commits"
         case .debug:
-            if projectViewModel.debugSessionState != .idle {
-                return projectViewModel.debugSessionState.statusText
+            if debugModel.debugSessionState != .idle {
+                return debugModel.debugSessionState.statusText
             }
-            if let selectedDebugConfigurationName = projectViewModel.selectedDebugConfigurationName {
+            if let selectedDebugConfigurationName = debugModel.selectedDebugConfigurationName {
                 return "Ready: \(selectedDebugConfigurationName)"
             }
             return "Set up launch configs and breakpoints"

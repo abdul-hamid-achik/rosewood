@@ -296,9 +296,6 @@ final class ProjectViewModel: ObservableObject {
     @Published private(set) var isEditorNavigationChromeReady: Bool = false
     @Published private(set) var isOutlineSidebarDataReady: Bool = false
     @Published private(set) var isStatusBarDetailsReady: Bool = false
-    @Published var debugConfigurations: [DebugConfiguration] = []
-    @Published var selectedDebugConfigurationName: String?
-    @Published var debugConfigurationError: String?
     @Published var bottomPanel: BottomPanelKind?
     @Published private(set) var isLoadingFileTree: Bool = false
     @Published var isLoadingFile: Bool = false
@@ -310,10 +307,34 @@ final class ProjectViewModel: ObservableObject {
             invalidateCurrentTabBreakpointCache()
         }
     }
-    @Published var debugSessionState: DebugSessionState = .idle
-    @Published var debugConsoleEntries: [DebugConsoleEntry] = []
     @Published var debugStoppedFilePath: String?
     @Published var debugStoppedLine: Int?
+
+    // Debug CONFIG + session-DISPLAY state lives on `debugModel` (a child ObservableObject) so
+    // streaming program output / session-state transitions re-render only the debug sidebar,
+    // panel, and status bar — not every view observing this model. These forwarders keep the
+    // +Debug drivers and tests unchanged; the debug views observe `debugModel` directly.
+    // breakpoints + the stopped-location stay here (editor render-path / store-coupled).
+    var debugConfigurations: [DebugConfiguration] {
+        get { debugModel.debugConfigurations }
+        set { debugModel.debugConfigurations = newValue }
+    }
+    var selectedDebugConfigurationName: String? {
+        get { debugModel.selectedDebugConfigurationName }
+        set { debugModel.selectedDebugConfigurationName = newValue }
+    }
+    var debugConfigurationError: String? {
+        get { debugModel.debugConfigurationError }
+        set { debugModel.debugConfigurationError = newValue }
+    }
+    var debugSessionState: DebugSessionState {
+        get { debugModel.debugSessionState }
+        set { debugModel.debugSessionState = newValue }
+    }
+    var debugConsoleEntries: [DebugConsoleEntry] {
+        get { debugModel.debugConsoleEntries }
+        set { debugModel.debugConsoleEntries = newValue }
+    }
     // referencesModel.referenceResults moved to `referencesModel` (a child ObservableObject) so the references
     // panel observes only that; the building/navigation logic below still writes into it.
     @Published var isGitDiffWorkspaceVisible: Bool = false
@@ -657,6 +678,7 @@ final class ProjectViewModel: ObservableObject {
     let gitModel: GitModel
     let cursorDisplayModel: CursorDisplayModel
     let outlineModel: OutlineModel
+    let debugModel: DebugModel
     // `lazy` so its dependency closures can capture self (built on first access, post-init).
     lazy var diagnosticsModel: DiagnosticsModel = DiagnosticsModel(
         lspService: lspService,
@@ -772,6 +794,7 @@ final class ProjectViewModel: ObservableObject {
         self.gitModel = GitModel()
         self.cursorDisplayModel = CursorDisplayModel()
         self.outlineModel = OutlineModel()
+        self.debugModel = DebugModel()
         self.gitRepositoryStatus = .empty
         self.debugSessionService.setEventHandler { [weak self] event in
             Task { @MainActor [weak self] in

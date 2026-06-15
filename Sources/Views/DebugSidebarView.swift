@@ -3,6 +3,7 @@ import SwiftUI
 struct DebugSidebarView: View {
     @EnvironmentObject var projectViewModel: ProjectViewModel
     @EnvironmentObject private var configService: ConfigurationService
+    @EnvironmentObject private var debugModel: DebugModel
 
     private var themeColors: ThemeColors {
         configService.currentThemeColors
@@ -93,7 +94,7 @@ struct DebugSidebarView: View {
                 }
             }
 
-            if let latestConsoleEntry = projectViewModel.debugConsoleEntries.last {
+            if let latestConsoleEntry = debugModel.debugConsoleEntries.last {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 8) {
                         headerChip(latestConsoleEntry.kind.rawValue.uppercased(), tint: color(for: latestConsoleEntry.kind))
@@ -138,11 +139,11 @@ struct DebugSidebarView: View {
                 Text("Open a folder to configure debugging.")
                     .font(.system(size: 12))
                     .foregroundColor(themeColors.subduedText)
-            } else if let error = projectViewModel.debugConfigurationError {
+            } else if let error = debugModel.debugConfigurationError {
                 Text(error)
                     .font(.system(size: 12))
                     .foregroundColor(themeColors.danger)
-            } else if projectViewModel.debugConfigurations.isEmpty {
+            } else if debugModel.debugConfigurations.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(projectViewModel.hasProjectConfigFile ? "Add a launch configuration to `.rosewood.toml`." : "Create `.rosewood.toml` to define launch configurations.")
                         .font(.system(size: 12))
@@ -152,11 +153,11 @@ struct DebugSidebarView: View {
                 Picker(
                     "Configuration",
                     selection: Binding(
-                        get: { projectViewModel.selectedDebugConfigurationName ?? "" },
+                        get: { debugModel.selectedDebugConfigurationName ?? "" },
                         set: { projectViewModel.selectDebugConfiguration(named: $0) }
                     )
                 ) {
-                    ForEach(projectViewModel.debugConfigurations) { configuration in
+                    ForEach(debugModel.debugConfigurations) { configuration in
                         Text(configuration.name).tag(configuration.name)
                     }
                 }
@@ -265,9 +266,9 @@ struct DebugSidebarView: View {
     }
 
     private var debugSessionSummary: String {
-        switch projectViewModel.debugSessionState {
+        switch debugModel.debugSessionState {
         case .idle:
-            return projectViewModel.selectedDebugConfigurationName == nil ? "Ready to Configure" : "Ready to Run"
+            return debugModel.selectedDebugConfigurationName == nil ? "Ready to Configure" : "Ready to Run"
         case .starting:
             return "Starting Session"
         case .running:
@@ -282,11 +283,11 @@ struct DebugSidebarView: View {
     }
 
     private var sessionSecondaryText: String? {
-        switch projectViewModel.debugSessionState {
+        switch debugModel.debugSessionState {
         case .idle, .failed:
-            return projectViewModel.selectedDebugConfigurationName
+            return debugModel.selectedDebugConfigurationName
         case .starting, .running, .paused, .stopping:
-            return projectViewModel.selectedDebugConfigurationName
+            return debugModel.selectedDebugConfigurationName
         }
     }
 
@@ -295,19 +296,19 @@ struct DebugSidebarView: View {
             return "No Workspace"
         }
 
-        if projectViewModel.debugConfigurationError != nil {
+        if debugModel.debugConfigurationError != nil {
             return "Config Error"
         }
 
-        if projectViewModel.debugConfigurations.isEmpty {
+        if debugModel.debugConfigurations.isEmpty {
             return projectViewModel.hasProjectConfigFile ? "No Launch Configurations" : "No Project Config"
         }
 
-        return projectViewModel.selectedDebugConfigurationName ?? "Configuration"
+        return debugModel.selectedDebugConfigurationName ?? "Configuration"
     }
 
     private var sessionAccentColor: Color {
-        switch projectViewModel.debugSessionState {
+        switch debugModel.debugSessionState {
         case .idle:
             return themeColors.mutedText
         case .starting:
@@ -324,7 +325,7 @@ struct DebugSidebarView: View {
     }
 
     private var sessionStatusIcon: String {
-        switch projectViewModel.debugSessionState {
+        switch debugModel.debugSessionState {
         case .idle:
             return "circle.dashed"
         case .starting:
@@ -341,7 +342,7 @@ struct DebugSidebarView: View {
     }
 
     private var sessionStateChipText: String? {
-        switch projectViewModel.debugSessionState {
+        switch debugModel.debugSessionState {
         case .running:
             return "Running"
         case .paused:
@@ -354,7 +355,7 @@ struct DebugSidebarView: View {
     }
 
     private var primaryDebugActionTitle: String {
-        switch projectViewModel.debugSessionState {
+        switch debugModel.debugSessionState {
         case .idle, .failed:
             return "Start"
         case .starting:
@@ -367,7 +368,7 @@ struct DebugSidebarView: View {
     }
 
     private var primaryDebugActionIcon: String {
-        switch projectViewModel.debugSessionState {
+        switch debugModel.debugSessionState {
         case .idle, .failed:
             return "play.fill"
         case .starting:
@@ -378,7 +379,7 @@ struct DebugSidebarView: View {
     }
 
     private var primaryDebugActionTint: Color {
-        switch projectViewModel.debugSessionState {
+        switch debugModel.debugSessionState {
         case .idle, .failed:
             return themeColors.accentStrong
         case .starting:
@@ -389,7 +390,7 @@ struct DebugSidebarView: View {
     }
 
     private var canPerformPrimaryDebugAction: Bool {
-        switch projectViewModel.debugSessionState {
+        switch debugModel.debugSessionState {
         case .idle, .failed:
             return projectViewModel.canStartDebugging
         case .starting, .stopping:
@@ -400,7 +401,7 @@ struct DebugSidebarView: View {
     }
 
     private func performPrimaryDebugAction() {
-        switch projectViewModel.debugSessionState {
+        switch debugModel.debugSessionState {
         case .idle, .failed:
             projectViewModel.startDebugging()
         case .running, .paused:

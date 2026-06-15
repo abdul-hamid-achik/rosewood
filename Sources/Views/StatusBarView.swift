@@ -7,6 +7,7 @@ struct StatusBarView: View {
     @EnvironmentObject private var diagnosticsModel: DiagnosticsModel
     @EnvironmentObject private var gitModel: GitModel
     @EnvironmentObject private var cursorDisplayModel: CursorDisplayModel
+    @EnvironmentObject private var debugModel: DebugModel
 
     private var themeColors: ThemeColors {
         configService.currentThemeColors
@@ -279,10 +280,10 @@ struct StatusBarView: View {
                 }
 
                 if projectViewModel.isStatusBarDetailsReady,
-                   projectViewModel.debugSessionState != .idle {
+                   debugModel.debugSessionState != .idle {
                     statusDivider
 
-                    statusText(projectViewModel.debugSessionState.statusText, color: themeColors.accent)
+                    statusText(debugModel.debugSessionState.statusText, color: themeColors.accent)
                 }
 
                 if projectViewModel.isStatusBarDetailsReady,
@@ -299,8 +300,8 @@ struct StatusBarView: View {
             } else {
                 Spacer()
 
-                if projectViewModel.debugSessionState != .idle {
-                    statusText(projectViewModel.debugSessionState.statusText, color: themeColors.accent)
+                if debugModel.debugSessionState != .idle {
+                    statusText(debugModel.debugSessionState.statusText, color: themeColors.accent)
 
                     if diagnosticsModel.workspaceDiagnosticCount.errors > 0
                         || diagnosticsModel.workspaceDiagnosticCount.warnings > 0
