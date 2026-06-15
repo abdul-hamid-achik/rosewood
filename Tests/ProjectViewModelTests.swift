@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import Foundation
 import Testing
 @testable import Rosewood
@@ -47,6 +48,121 @@ struct ProjectViewModelTests {
 
         #expect(try String(contentsOf: fileURL, encoding: .utf8) == "let value = 2\n")
         #expect(viewModel.openTabs.first?.isDirty == false)
+    }
+
+    // MARK: - Active edit buffer (per-keystroke re-render decoupling)
+
+    @Test
+    func typingDoesNotStormObjectWillChangeOrTouchStruct() async throws {
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("swift")
+        try "let value = 1\n".write(to: fileURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+
+        let configURL = tempConfigURL()
+        defer { try? FileManager.default.removeItem(at: configURL) }
+
+        let viewModel = makeViewModel(
+            sessionStore: makeDefaults(),
+            sessionKey: "typing-storm-test",
+            configService: ConfigurationService(userConfigURL: configURL),
+            fileWatcher: FileWatcherService(),
+            ui: TestProjectUI()
+        )
+        viewModel.openFile(at: fileURL)
+        #expect(viewModel.openTabs.first?.isDirty == false)
+
+        var publishCount = 0
+        let cancellable = viewModel.objectWillChange.sink { _ in publishCount += 1 }
+        defer { cancellable.cancel() }
+
+        // Ten synchronous keystrokes, all differing from the on-disk original (so all "dirty").
+        for index in 1...10 {
+            viewModel.updateTabContent("let value = 1\n// edit \(index)")
+        }
+
+        // Only the first keystroke flips clean->dirty (one publish); the rest are absorbed by the
+        // non-@Published buffer. Before the fix this was 10+ app-wide re-renders (one per keystroke).
+        #expect(publishCount == 1)
+        // The edits live in the buffer — the @Published struct is untouched until a flush boundary.
+        #expect(viewModel.openTabs.first?.content == "let value = 1\n")
+        // …but the live accessor (what the editor binding reads) always reflects the latest text.
+        #expect(viewModel.liveSelectedTabContent() == "let value = 1\n// edit 10")
+        #expect(viewModel.openTabs.first?.isDirty == true)
+    }
+
+    @Test
+    func saveWritesLatestBufferedText() async throws {
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("swift")
+        try "original\n".write(to: fileURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+
+        let configURL = tempConfigURL()
+        defer { try? FileManager.default.removeItem(at: configURL) }
+
+        let viewModel = makeViewModel(
+            sessionStore: makeDefaults(),
+            sessionKey: "save-latest-test",
+            configService: ConfigurationService(userConfigURL: configURL),
+            fileWatcher: FileWatcherService(),
+            ui: TestProjectUI()
+        )
+        viewModel.openFile(at: fileURL)
+        viewModel.updateTabContent("FINAL TEXT\n")
+
+        // Buffer-only so far: the struct still has the on-disk text.
+        #expect(viewModel.openTabs.first?.content == "original\n")
+
+        // Save must flush the buffer first (data-loss guard) and persist the latest typed text.
+        viewModel.saveCurrentFile()
+
+        #expect(try String(contentsOf: fileURL, encoding: .utf8) == "FINAL TEXT\n")
+        #expect(viewModel.openTabs.first?.content == "FINAL TEXT\n")
+        #expect(viewModel.openTabs.first?.originalContent == "FINAL TEXT\n")
+        #expect(viewModel.openTabs.first?.isDirty == false)
+    }
+
+    @Test
+    func tabSwitchFlushesActiveEditBuffer() async throws {
+        let fileA = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("swift")
+        let fileB = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("swift")
+        try "alpha\n".write(to: fileA, atomically: true, encoding: .utf8)
+        try "beta\n".write(to: fileB, atomically: true, encoding: .utf8)
+        defer {
+            try? FileManager.default.removeItem(at: fileA)
+            try? FileManager.default.removeItem(at: fileB)
+        }
+
+        let configURL = tempConfigURL()
+        defer { try? FileManager.default.removeItem(at: configURL) }
+
+        let viewModel = makeViewModel(
+            sessionStore: makeDefaults(),
+            sessionKey: "tab-switch-flush-test",
+            configService: ConfigurationService(userConfigURL: configURL),
+            fileWatcher: FileWatcherService(),
+            ui: TestProjectUI()
+        )
+        viewModel.openFile(at: fileA)
+        viewModel.updateTabContent("EDIT A\n")
+
+        // Switching tabs must flush A's buffered edits into A's struct (the willSet chokepoint).
+        viewModel.openFile(at: fileB)
+        let aAfterSwitch = viewModel.openTabs.first { $0.filePath?.standardizedFileURL == fileA.standardizedFileURL }
+        #expect(aAfterSwitch?.content == "EDIT A\n")
+        #expect(aAfterSwitch?.isDirty == true)
+
+        // Editing B must not bleed into A.
+        viewModel.updateTabContent("EDIT B\n")
+        let aWhileEditingB = viewModel.openTabs.first { $0.filePath?.standardizedFileURL == fileA.standardizedFileURL }
+        #expect(aWhileEditingB?.content == "EDIT A\n")
     }
 
     @Test

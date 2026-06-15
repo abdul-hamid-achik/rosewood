@@ -3047,22 +3047,39 @@ final class ProjectViewModel: ObservableObject {
 
     func updateTabContent(_ content: String) {
         guard let selectedTabIndex, openTabs.indices.contains(selectedTabIndex) else { return }
-        guard openTabs[selectedTabIndex].contentType.isText else { return }
-        openTabs[selectedTabIndex].content = content
-        openTabs[selectedTabIndex].isDirty = content != openTabs[selectedTabIndex].originalContent
+        let tab = openTabs[selectedTabIndex]
+        guard tab.contentType.isText else { return }
+
+        // Absorb the keystroke into the NON-@Published buffer instead of mutating the @Published
+        // `openTabs` array. This is the whole point of the decoupling: typing no longer fires
+        // objectWillChange on the view model, so the ~16 views observing it don't re-render per
+        // keystroke. The buffer is flushed into the struct at content boundaries (save/switch/…).
+        if activeEditBuffer?.tabID == tab.id {
+            activeEditBuffer?.text = content
+            activeEditBuffer?.documentVersion += 1
+        } else {
+            activeEditBuffer = ActiveEditBuffer(tabID: tab.id, text: content, documentVersion: tab.documentVersion + 1)
+        }
+
+        // The ONLY thing allowed to publish per keystroke — and only on a real clean<->dirty flip,
+        // so the tab dirty-dot stays live without re-rendering on every character.
+        let nowDirty = content != tab.originalContent
+        if tab.isDirty != nowDirty {
+            openTabs[selectedTabIndex].isDirty = nowDirty
+        }
+
         invalidateWorkspaceDiagnosticsCache()
-        if let fileURL = openTabs[selectedTabIndex].filePath {
+        if let fileURL = tab.filePath {
             invalidateCachedFileContent(for: fileURL)
             // Debounced + off-main so whole-document symbol extraction doesn't run on every keystroke.
             scheduleWorkspaceSymbolCacheUpdate(for: fileURL, contents: content)
         }
         invalidateEditorNavigationCaches()
 
-        openTabs[selectedTabIndex].documentVersion += 1
-        if let uri = openTabs[selectedTabIndex].documentURI {
+        if let uri = tab.documentURI {
             lspService.documentChanged(
                 uri: uri,
-                language: openTabs[selectedTabIndex].language,
+                language: tab.language,
                 text: content
             )
         }
