@@ -187,7 +187,7 @@ extension ProjectViewModel {
         }
     }
 
-    func refreshCurrentLineBlame() {
+    func refreshCurrentLineBlame(forLine line: Int? = nil) {
         gitBlameTask?.cancel()
         gitBlameToken = UUID()
         let token = gitBlameToken
@@ -198,8 +198,11 @@ extension ProjectViewModel {
         }
 
         currentLineBlame = nil
+        let tabID = selectedTab.id
         let selectedPath = normalizedPath(for: fileURL)
-        let selectedLine = selectedTab.cursorPosition.line
+        // Use the LIVE caret (caret moves now live in a buffer, not the struct). `forLine` is passed
+        // by the caret-move debounce so a burst of moves blames only the final line.
+        let selectedLine = line ?? liveCursorPosition(forTabID: tabID).line
         let normalizedRootPath = rootDirectory.map(normalizedPath(for:))
 
         gitBlameTask = Task { [weak self] in
@@ -212,7 +215,7 @@ extension ProjectViewModel {
             guard !Task.isCancelled,
                   self.gitBlameToken == token,
                   self.selectedTab?.filePath.map(self.normalizedPath(for:)) == selectedPath,
-                  self.selectedTab?.cursorPosition.line == selectedLine,
+                  self.liveCursorPosition(forTabID: tabID).line == selectedLine,
                   self.rootDirectory.map(self.normalizedPath(for:)) == normalizedRootPath else {
                 return
             }

@@ -13,7 +13,7 @@ extension ProjectViewModel {
     }
 
     var activeCurrentFileSymbolID: String? {
-        guard let cursorLine = selectedTab?.cursorPosition.line else { return nil }
+        guard let cursorLine = liveSelectedTabCursorPosition()?.line else { return nil }
         return currentFileSymbols.last(where: { $0.line <= cursorLine })?.id
     }
 

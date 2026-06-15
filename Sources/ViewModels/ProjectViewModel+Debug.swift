@@ -168,7 +168,7 @@ extension ProjectViewModel {
         }
 
         let currentKey = selectedTab?.filePath.map(normalizedPath(for:)) ?? ""
-        let currentLine = selectedTab?.cursorPosition.line ?? 1
+        let currentLine = liveSelectedTabCursorPosition()?.line ?? 1
         let currentIndex = sortedBreakpoints.firstIndex { breakpoint in
             breakpoint.filePath == currentKey && breakpoint.line == currentLine
         }

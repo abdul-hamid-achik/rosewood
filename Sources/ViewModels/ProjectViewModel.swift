@@ -219,6 +219,10 @@ final class ProjectViewModel: ObservableObject {
             pendingCursorLineChange = false
             invalidateCurrentTabBreakpointCache()
             invalidateEditorNavigationCaches()
+            // Reflect the newly-selected tab's committed caret in the status bar immediately (the
+            // willSet already flushed+cleared the outgoing tab's caret buffer), so it doesn't briefly
+            // show the previous tab's position until the editor reports the restored caret.
+            cursorDisplayModel.position = liveSelectedTabCursorPosition() ?? CursorPosition()
             refreshCurrentLineBlame()
             pushDiagnosticsContext()
 
@@ -832,7 +836,7 @@ final class ProjectViewModel: ObservableObject {
     var editorStickyScopes: [EditorStickyScopeItem] {
         guard isEditorNavigationModelReady else { return [] }
         guard let selectedTab, let selectedFilePath = selectedTab.filePath else { return [] }
-        let focusLine = editorVisibleLineRange?.lowerBound ?? selectedTab.cursorPosition.line
+        let focusLine = editorVisibleLineRange?.lowerBound ?? liveCursorPosition(forTabID: selectedTab.id).line
         let cacheKey = EditorStickyScopeCacheKey(
             filePath: normalizedPath(for: selectedFilePath),
             documentVersion: liveDocumentVersion(forTabID: selectedTab.id) ?? selectedTab.documentVersion,
@@ -862,7 +866,7 @@ final class ProjectViewModel: ObservableObject {
             documentVersion: liveDocumentVersion(forTabID: selectedTab.id) ?? selectedTab.documentVersion,
             language: selectedTab.language,
             visibleTopLine: editorVisibleLineRange?.lowerBound ?? 1,
-            cursorLine: selectedTab.cursorPosition.line
+            cursorLine: liveCursorPosition(forTabID: selectedTab.id).line
         )
         if breadcrumbCacheKey == cacheKey {
             return breadcrumbCache
@@ -3163,9 +3167,16 @@ final class ProjectViewModel: ObservableObject {
 
     func updateCursorPosition(line: Int, column: Int) {
         guard let selectedTabIndex, openTabs.indices.contains(selectedTabIndex) else { return }
-        let previousLine = openTabs[selectedTabIndex].cursorPosition.line
-        openTabs[selectedTabIndex].cursorPosition = CursorPosition(line: line, column: column)
-        pushDiagnosticsContext()
+        let tabID = openTabs[selectedTabIndex].id
+        let previousLine = liveCursorPosition(at: selectedTabIndex).line
+        let newPosition = CursorPosition(line: line, column: column)
+        // Absorb the caret move into the NON-@Published buffer (no objectWillChange on the view
+        // model) and update the child model the status bar observes (re-renders only the status bar).
+        // The committed struct caret is written later, at a flush boundary (see commitActiveCursorBuffer).
+        activeCursorBuffer = ActiveCursorBuffer(tabID: tabID, position: newPosition)
+        cursorDisplayModel.position = newPosition
+        // Feed diagnostics the live caret directly so it doesn't re-read the now-unwritten struct.
+        pushDiagnosticsContext(cursorLine: line, cursorColumn: column)
         if previousLine != line {
             pendingCursorLineChange = true
         }
@@ -3183,7 +3194,9 @@ final class ProjectViewModel: ObservableObject {
             self.cursorPositionDebounceTask = nil
             if self.pendingCursorLineChange {
                 self.pendingCursorLineChange = false
-                self.refreshCurrentLineBlame()
+                // Blame the line that was pending when the debounce was scheduled (not whatever the
+                // caret is now), so a burst of moves coalesces to a single blame for the final line.
+                self.refreshCurrentLineBlame(forLine: line)
             }
         }
     }
@@ -3220,7 +3233,7 @@ final class ProjectViewModel: ObservableObject {
     func beginGoToLine() {
         guard hasOpenFile else { return }
         quickOpenActive = true
-        let currentLine = max(selectedTab?.cursorPosition.line ?? 1, 1)
+        let currentLine = max(liveSelectedTabCursorPosition()?.line ?? 1, 1)
         quickOpenQuery = ":\(currentLine)"
         commandPaletteViewModel.showQuickOpen()
     }
@@ -3321,12 +3334,15 @@ final class ProjectViewModel: ObservableObject {
     /// Pushes the active tab/cursor context into `diagnosticsModel` so it can derive the active
     /// diagnostic without a back-reference to this view model. Called on tab switch and caret moves;
     /// the model absorbs no-op cursor moves, so this stays cheap on the hot caret path.
-    func pushDiagnosticsContext() {
+    func pushDiagnosticsContext(cursorLine: Int? = nil, cursorColumn: Int? = nil) {
+        // Read the LIVE caret (buffer if present, else struct) so diagnostics never sees a stale
+        // position; callers on the hot path pass the new line/column directly.
+        let position = liveSelectedTabCursorPosition() ?? CursorPosition()
         diagnosticsModel.updateContext(
             documentURI: selectedTab?.documentURI,
             normalizedFilePath: selectedTab?.filePath.map(normalizedPath(for:)),
-            cursorLine: selectedTab?.cursorPosition.line ?? 1,
-            cursorColumn: selectedTab?.cursorPosition.column ?? 1
+            cursorLine: cursorLine ?? position.line,
+            cursorColumn: cursorColumn ?? position.column
         )
     }
 
@@ -3335,7 +3351,7 @@ final class ProjectViewModel: ObservableObject {
         guard !sortedBreakpoints.isEmpty else { return nil }
 
         let currentFilePath = selectedTab?.filePath.map(normalizedPath(for:))
-        let currentLine = max(selectedTab?.cursorPosition.line ?? 1, 1)
+        let currentLine = max(liveSelectedTabCursorPosition()?.line ?? 1, 1)
 
         if step >= 0 {
             return sortedBreakpoints.first(where: { breakpoint in
@@ -4645,11 +4661,12 @@ final class ProjectViewModel: ObservableObject {
             expandedDirectoryPaths: Array(expandedDirectoryPaths).sorted(),
             openTabs: openTabs.compactMap { tab in
                 guard let filePath = tab.filePath else { return nil }
+                let cursor = liveCursorPosition(forTabID: tab.id)
                 return ProjectSessionTabState(
                     filePath: normalizedPath(for: filePath),
                     fileName: tab.fileName,
-                    cursorLine: tab.cursorPosition.line,
-                    cursorColumn: tab.cursorPosition.column,
+                    cursorLine: cursor.line,
+                    cursorColumn: cursor.column,
                     encodingRawValue: tab.documentMetadata.encodingRawValue,
                     encodingLabel: tab.documentMetadata.encodingLabel,
                     lineEndingRawValue: tab.documentMetadata.lineEnding.rawValue,

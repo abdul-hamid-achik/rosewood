@@ -194,6 +194,112 @@ struct ProjectViewModelTests {
         #expect(snapshots.first?.originalContent == "one\n")
     }
 
+    // MARK: - Active cursor buffer (caret-move re-render decoupling)
+
+    @Test
+    func caretMovesDoNotStormObjectWillChange() async throws {
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("swift")
+        try "let value = 1\n".write(to: fileURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+        let configURL = tempConfigURL()
+        defer { try? FileManager.default.removeItem(at: configURL) }
+
+        let viewModel = makeViewModel(
+            sessionStore: makeDefaults(),
+            sessionKey: "caret-storm-test",
+            configService: ConfigurationService(userConfigURL: configURL),
+            fileWatcher: FileWatcherService(),
+            ui: TestProjectUI()
+        )
+        viewModel.openFile(at: fileURL)
+
+        var publishCount = 0
+        let cancellable = viewModel.objectWillChange.sink { _ in publishCount += 1 }
+        defer { cancellable.cancel() }
+
+        for index in 1...10 {
+            viewModel.updateCursorPosition(line: index + 1, column: index)
+        }
+
+        // Caret moves fire ZERO view-model publishes (stronger than the content test's 1 — the caret
+        // has no dirty-flag side effect); the @Published tab struct is untouched until a flush.
+        #expect(publishCount == 0)
+        #expect(viewModel.openTabs.first?.cursorPosition == CursorPosition())
+        // The live accessor + the status-bar display model both reflect the latest caret.
+        #expect(viewModel.liveSelectedTabCursorPosition() == CursorPosition(line: 11, column: 10))
+        #expect(viewModel.displayedCursorPosition == CursorPosition(line: 11, column: 10))
+    }
+
+    @Test
+    func tabSwitchPreservesAndRestoresPerTabCaret() async throws {
+        let fileA = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString).appendingPathExtension("swift")
+        let fileB = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString).appendingPathExtension("swift")
+        try "alpha\n".write(to: fileA, atomically: true, encoding: .utf8)
+        try "beta\n".write(to: fileB, atomically: true, encoding: .utf8)
+        defer {
+            try? FileManager.default.removeItem(at: fileA)
+            try? FileManager.default.removeItem(at: fileB)
+        }
+        let configURL = tempConfigURL()
+        defer { try? FileManager.default.removeItem(at: configURL) }
+
+        let viewModel = makeViewModel(
+            sessionStore: makeDefaults(),
+            sessionKey: "caret-tabswitch-test",
+            configService: ConfigurationService(userConfigURL: configURL),
+            fileWatcher: FileWatcherService(),
+            ui: TestProjectUI()
+        )
+        func tab(_ url: URL) -> EditorTab? {
+            viewModel.openTabs.first { $0.filePath?.standardizedFileURL == url.standardizedFileURL }
+        }
+
+        viewModel.openFile(at: fileA)
+        viewModel.updateCursorPosition(line: 40, column: 2)   // buffer for A
+        // Switching tabs flushes A's caret buffer into A's struct (willSet chokepoint).
+        viewModel.openFile(at: fileB)
+        #expect(tab(fileA)?.cursorPosition == CursorPosition(line: 40, column: 2))
+
+        viewModel.updateCursorPosition(line: 5, column: 1)    // buffer for B
+        let aIndex = try #require(viewModel.openTabs.firstIndex { $0.filePath?.standardizedFileURL == fileA.standardizedFileURL })
+        viewModel.selectTab(at: aIndex)                       // flushes B's caret into B's struct
+        #expect(tab(fileB)?.cursorPosition == CursorPosition(line: 5, column: 1))
+        #expect(tab(fileA)?.cursorPosition == CursorPosition(line: 40, column: 2))
+    }
+
+    @Test
+    func sessionPersistSavesLatestCaret() async throws {
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString).appendingPathExtension("swift")
+        try "let value = 1\n".write(to: fileURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+        let configURL = tempConfigURL()
+        defer { try? FileManager.default.removeItem(at: configURL) }
+        let defaults = makeDefaults()
+
+        let viewModel = makeViewModel(
+            sessionStore: defaults,
+            sessionKey: "persist-caret-test",
+            configService: ConfigurationService(userConfigURL: configURL),
+            fileWatcher: FileWatcherService(),
+            ui: TestProjectUI()
+        )
+        viewModel.openFile(at: fileURL)
+        viewModel.updateCursorPosition(line: 123, column: 4)  // buffer-only; struct still default
+        #expect(viewModel.openTabs.first?.cursorPosition == CursorPosition())
+
+        viewModel.persistSession()
+
+        // persistSession reads the LIVE caret, so the saved session has the latest position.
+        let session = try sessionState(from: defaults, key: "persist-caret-test")
+        #expect(session.openTabs.first?.cursorLine == 123)
+        #expect(session.openTabs.first?.cursorColumn == 4)
+    }
+
     @Test
     func sessionPersistenceDoesNotSerializeEditorBuffers() async throws {
         let fileURL = FileManager.default.temporaryDirectory
@@ -3996,8 +4102,9 @@ struct ProjectViewModelTests {
         viewModel.openSearchResult(result)
 
         #expect(viewModel.selectedTab?.filePath?.standardizedFileURL.path == fileURL.standardizedFileURL.path)
-        #expect(viewModel.selectedTab?.cursorPosition.line == 2)
-        #expect(viewModel.selectedTab?.cursorPosition.column == 10)
+        // The caret lives in the active-cursor buffer until a flush boundary; assert the live caret.
+        #expect(viewModel.liveSelectedTabCursorPosition()?.line == 2)
+        #expect(viewModel.liveSelectedTabCursorPosition()?.column == 10)
         #expect(viewModel.selectedTab?.pendingLineJump == 2)
 
         viewModel.clearPendingLineJump()

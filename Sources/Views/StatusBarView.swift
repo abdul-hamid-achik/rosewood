@@ -6,6 +6,7 @@ struct StatusBarView: View {
     @EnvironmentObject private var lspService: LSPService
     @EnvironmentObject private var diagnosticsModel: DiagnosticsModel
     @EnvironmentObject private var gitModel: GitModel
+    @EnvironmentObject private var cursorDisplayModel: CursorDisplayModel
 
     private var themeColors: ThemeColors {
         configService.currentThemeColors
@@ -159,9 +160,9 @@ struct StatusBarView: View {
         HStack {
             if let tab = projectViewModel.selectedTab {
                 if tab.contentType.isText {
-                    statusMonospaceText(tab.cursorPosition.description)
-                        .accessibilityLabel(tab.cursorPosition.description)
-                        .accessibilityValue(tab.cursorPosition.description)
+                    statusMonospaceText(cursorDisplayModel.position.description)
+                        .accessibilityLabel(cursorDisplayModel.position.description)
+                        .accessibilityValue(cursorDisplayModel.position.description)
                         .accessibilityIdentifier("statusbar-cursor-position")
 
                     Spacer()
