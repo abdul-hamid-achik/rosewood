@@ -4276,6 +4276,9 @@ final class ProjectViewModel: ObservableObject {
     }
 
     func prepareForSessionTransition(title: String, message: String) -> Bool {
+        // We're about to resolve unsaved changes explicitly via the dialog, so suspend any pending
+        // debounced autosave (it would otherwise fire mid-dialog).
+        autoSaveTask?.cancel()
         // Flush the live buffer so the dirty scan sees in-flight edits (else a quit/close could
         // skip a tab whose unsaved edits are still only in the buffer).
         commitActiveEditBuffer()
@@ -4300,6 +4303,11 @@ final class ProjectViewModel: ObservableObject {
     }
 
     func resolveUnsavedChanges(for indices: [Int], title: String, message: String) -> Bool {
+        // Flush live edits so the dirty filter is correct even if a future caller passes the
+        // active tab (its unsaved text may live only in the buffer). isDirty itself is already
+        // published on every transition, but this keeps the content/flag decision symmetric with
+        // prepareForSessionTransition and robust to refactors.
+        commitActiveEditBuffer()
         let dirtyIndices = indices.filter { openTabs.indices.contains($0) && openTabs[$0].isDirty }
         guard !dirtyIndices.isEmpty else { return true }
 
