@@ -124,6 +124,7 @@
 		E0EFD4D09E8A9E284883EC2A /* HoverPopupTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37D7CE593BD507240717F39A /* HoverPopupTests.swift */; };
 		E198C6BD20BFC78656D9BE96 /* GitServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10474C5481B79B17E6BFAF3E /* GitServiceTests.swift */; };
 		E34A5B996D3AE6D57D691BEC /* ProjectSessionState.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE8A28D0587BC5DB412791B6 /* ProjectSessionState.swift */; };
+		E42E0A18E733DB0FDFF74F71 /* GitModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8775E3B84E7DD09B4E76FBE3 /* GitModel.swift */; };
 		E48768CE55CA20050D30DB84 /* JSONRPCTransportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F3BF018CB408D39FC453E9F /* JSONRPCTransportTests.swift */; };
 		E49B4715E0DDE263904EFE9F /* TOMLKit in Frameworks */ = {isa = PBXBuildFile; productRef = E3FD244975375396A6E134B9 /* TOMLKit */; };
 		E520CCC874571BBD1A4F30EA /* CommandPaletteTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74E5007CF44114B9AF082A27 /* CommandPaletteTypes.swift */; };
@@ -222,6 +223,7 @@
 		8400FDA8A7E11C0A42969CC2 /* ConfigurationServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigurationServiceTests.swift; sourceTree = "<group>"; };
 		8474C926A543B4B2C342521D /* RosewoodApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RosewoodApp.swift; sourceTree = "<group>"; };
 		85158BA51218738B8F1E6C27 /* GitService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitService.swift; sourceTree = "<group>"; };
+		8775E3B84E7DD09B4E76FBE3 /* GitModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitModel.swift; sourceTree = "<group>"; };
 		8917C267743C3F77CDF2AE18 /* DockerCLI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DockerCLI.swift; sourceTree = "<group>"; };
 		8A2EA394D9F69A6C4020607E /* LSPClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LSPClient.swift; sourceTree = "<group>"; };
 		8E293AF727E245607B4B1D38 /* ProcessRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessRunner.swift; sourceTree = "<group>"; };
@@ -524,6 +526,7 @@
 				632152F0199014518B4D4FFD /* CommandPaletteViewModel.swift */,
 				365D56DD96B77B74CF3F630E /* DiagnosticsModel.swift */,
 				C8E471EAAF9B4CE8DE65339A /* DockerModel.swift */,
+				8775E3B84E7DD09B4E76FBE3 /* GitModel.swift */,
 				C13B8E092507E3C5394A265A /* ProjectViewModel.swift */,
 				D048A486426520ECB87A4D3C /* ProjectViewModel+Debug.swift */,
 				B310B9BCDA5F4AC15F1E00F4 /* ProjectViewModel+Diagnostics.swift */,
@@ -701,6 +704,7 @@
 				C637F591DA37B9F4755D7DF8 /* FileWatcherService.swift in Sources */,
 				0EF385CC70E6AC7021A75C77 /* FileWatcherServiceProtocol.swift in Sources */,
 				549002ED55F63B77509C8AAE /* GitDiffPanelView.swift in Sources */,
+				E42E0A18E733DB0FDFF74F71 /* GitModel.swift in Sources */,
 				2DA5C571A3BB3470808F11C5 /* GitModels.swift in Sources */,
 				8B12ACDCE024BD3F9CC15042 /* GitService.swift in Sources */,
 				6BB456B0C04D8DE06DF90C69 /* HexViewerView.swift in Sources */,

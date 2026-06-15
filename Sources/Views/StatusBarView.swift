@@ -5,6 +5,7 @@ struct StatusBarView: View {
     @EnvironmentObject private var configService: ConfigurationService
     @EnvironmentObject private var lspService: LSPService
     @EnvironmentObject private var diagnosticsModel: DiagnosticsModel
+    @EnvironmentObject private var gitModel: GitModel
 
     private var themeColors: ThemeColors {
         configService.currentThemeColors
@@ -69,7 +70,7 @@ struct StatusBarView: View {
     }
 
     private var gitBlameText: String? {
-        guard let blame = projectViewModel.currentLineBlame else { return nil }
+        guard let blame = gitModel.currentLineBlame else { return nil }
         return "\(blame.shortCommitHash) \(blame.author): \(blame.summary)"
     }
 

@@ -309,7 +309,12 @@ final class ProjectViewModel: ObservableObject {
     @Published var selectedGitDiff: GitDiffResult?
     @Published var selectedGitDiffPath: String?
     @Published var isGitDiffWorkspaceVisible: Bool = false
-    @Published var currentLineBlame: GitBlameInfo?
+    // currentLineBlame lives on `gitModel` (a child ObservableObject) so the per-line-change blame
+    // refresh re-renders only the status bar, not every view observing this model.
+    var currentLineBlame: GitBlameInfo? {
+        get { gitModel.currentLineBlame }
+        set { gitModel.currentLineBlame = newValue }
+    }
     @Published var isRefreshingGitStatus: Bool = false
     @Published var isLoadingGitDiff: Bool = false
     @Published var isGitToolAvailable: Bool = true
@@ -623,6 +628,7 @@ final class ProjectViewModel: ObservableObject {
     let dockerModel: DockerModel
     let terminalModel: TerminalModel
     let referencesModel: ReferencesModel
+    let gitModel: GitModel
     // `lazy` so its dependency closures can capture self (built on first access, post-init).
     lazy var diagnosticsModel: DiagnosticsModel = DiagnosticsModel(
         lspService: lspService,
@@ -739,6 +745,7 @@ final class ProjectViewModel: ObservableObject {
         self.dockerModel = DockerModel()
         self.terminalModel = TerminalModel(configService: configService)
         self.referencesModel = ReferencesModel()
+        self.gitModel = GitModel()
         self.gitRepositoryStatus = .empty
         self.debugSessionService.setEventHandler { [weak self] event in
             Task { @MainActor [weak self] in

@@ -271,6 +271,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItem
             .environmentObject(projectViewModel.terminalModel)
             .environmentObject(projectViewModel.referencesModel)
             .environmentObject(projectViewModel.diagnosticsModel)
+            .environmentObject(projectViewModel.gitModel)
             .environmentObject(configService)
             .environmentObject(dispatcher)
         let contentView: AnyView
