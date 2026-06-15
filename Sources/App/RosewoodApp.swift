@@ -192,6 +192,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItem
              #selector(handleMoveLineDown),
              #selector(handleDuplicateLine),
              #selector(handleDeleteLine),
+             #selector(handleJoinLines),
              #selector(handleGoToLine):
             return projectViewModel?.hasOpenFile ?? false
         case #selector(handleSave),
@@ -434,6 +435,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItem
         let deleteLineItem = NSMenuItem(title: "Delete Line", action: #selector(handleDeleteLine), keyEquivalent: "k")
         deleteLineItem.keyEquivalentModifierMask = [.command, .shift]
         editMenu.addItem(deleteLineItem)
+
+        let joinLinesItem = NSMenuItem(title: "Join Lines", action: #selector(handleJoinLines), keyEquivalent: "j")
+        joinLinesItem.keyEquivalentModifierMask = [.control, .shift]
+        editMenu.addItem(joinLinesItem)
         editMenu.addItem(NSMenuItem.separator())
 
         let findMenuItem = NSMenuItem(title: "Find", action: nil, keyEquivalent: "")
@@ -659,6 +664,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItem
         dispatch(.deleteLine, legacyNotification: .handleDeleteLine)
     }
 
+    @objc func handleJoinLines() {
+        dispatch(.joinLines, legacyNotification: .handleJoinLines)
+    }
+
     @objc func handleFindNext() {
         dispatch(.findNext, legacyNotification: .handleFindNext)
     }
@@ -849,6 +858,7 @@ extension Notification.Name {
     static let handleMoveLineDown = Notification.Name("handleMoveLineDown")
     static let handleDuplicateLine = Notification.Name("handleDuplicateLine")
     static let handleDeleteLine = Notification.Name("handleDeleteLine")
+    static let handleJoinLines = Notification.Name("handleJoinLines")
     static let handleFindNext = Notification.Name("handleFindNext")
     static let handleFindPrevious = Notification.Name("handleFindPrevious")
     static let handleNextProblem = Notification.Name("handleNextProblem")

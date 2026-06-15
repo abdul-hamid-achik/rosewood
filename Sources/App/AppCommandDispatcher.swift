@@ -34,6 +34,7 @@ enum AppCommand: Equatable {
     case moveLineDown
     case duplicateLine
     case deleteLine
+    case joinLines
 }
 
 final class AppCommandDispatcher: ObservableObject {

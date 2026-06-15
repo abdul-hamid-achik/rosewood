@@ -838,6 +838,8 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
                         applyLineEdit { LineEditing.duplicateLines(in: $0, selection: $1) }
                     case .deleteLine:
                         applyLineEdit { LineEditing.deleteLines(in: $0, selection: $1) }
+                    case .joinLines:
+                        applyLineEdit { LineEditing.joinLines(in: $0, selection: $1) }
                     default:
                         break
                     }

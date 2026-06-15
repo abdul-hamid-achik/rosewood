@@ -124,6 +124,47 @@ enum LineEditing {
         )
     }
 
+    /// Join the lines spanned by `selection` into one (single space between, subsequent lines'
+    /// leading whitespace trimmed). With a single-line/caret selection, joins the current line with
+    /// the line below. Returns nil if there is nothing to join (e.g. the last line).
+    static func joinLines(in text: NSString, selection: NSRange) -> Edit? {
+        var blockRange = text.lineRange(for: selection)
+        let initialText = text.substring(with: blockRange)
+        let initialBody = initialText.hasSuffix("\n") ? String(initialText.dropLast()) : initialText
+        if !initialBody.contains("\n") {
+            // Only one line selected — extend to include the next line.
+            let end = blockRange.location + blockRange.length
+            guard end < text.length else { return nil }
+            let nextRange = text.lineRange(for: NSRange(location: end, length: 0))
+            blockRange = NSRange(location: blockRange.location, length: blockRange.length + nextRange.length)
+        }
+
+        let blockText = text.substring(with: blockRange)
+        let endsWithNewline = blockText.hasSuffix("\n")
+        var lines = blockText.components(separatedBy: "\n")
+        if endsWithNewline { lines.removeLast() }
+        guard lines.count >= 2 else { return nil }
+
+        var joined = trimmingTrailingWhitespace(lines[0])
+        for line in lines.dropFirst() {
+            let trimmed = line.drop { $0 == " " || $0 == "\t" }
+            guard !trimmed.isEmpty else { continue }
+            joined += joined.isEmpty ? String(trimmed) : " " + String(trimmed)
+        }
+        let replacement = endsWithNewline ? joined + "\n" : joined
+        return Edit(
+            range: blockRange,
+            replacement: replacement,
+            selection: NSRange(location: blockRange.location + (joined as NSString).length, length: 0)
+        )
+    }
+
+    private static func trimmingTrailingWhitespace(_ line: String) -> String {
+        var result = line
+        while let last = result.last, last == " " || last == "\t" { result.removeLast() }
+        return result
+    }
+
     /// Delete the full lines spanned by `selection`, leaving the caret at the start of what follows.
     static func deleteLines(in text: NSString, selection: NSRange) -> Edit {
         var blockRange = text.lineRange(for: selection)

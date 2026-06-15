@@ -135,4 +135,32 @@ struct LineEditingTests {
         let edit = LineEditing.deleteLines(in: "a", selection: NSRange(location: 0, length: 0))
         #expect(apply(edit, to: "a") == "")
     }
+
+    // MARK: - Join lines
+
+    @Test
+    func joinsCurrentLineWithNext() {
+        let edit = LineEditing.joinLines(in: "a\nb\nc\n", selection: NSRange(location: 0, length: 0))
+        let unwrapped = try! #require(edit)
+        #expect(apply(unwrapped, to: "a\nb\nc\n") == "a b\nc\n")
+    }
+
+    @Test
+    func joinsMultiLineSelectionTrimmingLeadingWhitespace() {
+        let edit = LineEditing.joinLines(in: "a\n    b\n  c\n", selection: NSRange(location: 0, length: 9))
+        let unwrapped = try! #require(edit)
+        #expect(apply(unwrapped, to: "a\n    b\n  c\n") == "a b c\n")
+    }
+
+    @Test
+    func joinOnLastLineIsNil() {
+        #expect(LineEditing.joinLines(in: "a\nb", selection: NSRange(location: 2, length: 0)) == nil)
+    }
+
+    @Test
+    func joinsLastTwoLinesWithoutTrailingNewline() {
+        let edit = LineEditing.joinLines(in: "a\nb", selection: NSRange(location: 0, length: 0))
+        let unwrapped = try! #require(edit)
+        #expect(apply(unwrapped, to: "a\nb") == "a b")
+    }
 }
