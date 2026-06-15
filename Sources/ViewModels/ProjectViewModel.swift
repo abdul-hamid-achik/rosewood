@@ -186,7 +186,7 @@ final class ProjectViewModel: ObservableObject {
             invalidateCurrentTabBreakpointCache()
             invalidateEditorNavigationCaches()
             refreshCurrentLineBlame()
-            synchronizeActiveDiagnosticSelection()
+            pushDiagnosticsContext()
 
             if selectedTabIndex != nil {
                 scheduleStatusBarDetailActivation()
@@ -291,10 +291,8 @@ final class ProjectViewModel: ObservableObject {
     @Published var isLoadingGitDiff: Bool = false
     @Published var isGitToolAvailable: Bool = true
     @Published var isRipgrepToolAvailable: Bool = true
-    @Published var activeCurrentDiagnosticID: String?
-    @Published var activeWorkspaceDiagnosticID: String?
-    @Published var diagnosticsPanelScope: DiagnosticsPanelScope = .currentFile
-    
+    // Diagnostics selection/scope state lives on `diagnosticsModel` (see the forwarders below).
+
     // MARK: - Docker State
     // Docker state lives on `dockerModel` (a child ObservableObject injected separately) so
     // Docker refreshes only re-render the Docker views, not every view observing this model.
@@ -303,137 +301,60 @@ final class ProjectViewModel: ObservableObject {
     // Terminal session state lives on `terminalModel` (a child ObservableObject injected
     // separately) so terminal changes only re-render the terminal panel.
 
-    var currentTabDiagnostics: [LSPDiagnostic] {
-        guard let uri = selectedTab?.documentURI else { return [] }
-        return lspService.diagnostics(for: uri)
+    // MARK: - Diagnostics (forwarders)
+    // Diagnostics selection/scope state and the derived diagnostic views live on `diagnosticsModel`
+    // (a child ObservableObject injected separately) so an LSP diagnostics push re-renders only the
+    // diagnostics consumers. These forwarders keep existing call sites/tests unchanged; perf-critical
+    // views observe `diagnosticsModel` directly.
+
+    var activeCurrentDiagnosticID: String? {
+        get { diagnosticsModel.activeCurrentDiagnosticID }
+        set { diagnosticsModel.activeCurrentDiagnosticID = newValue }
     }
 
-    var currentTabDiagnosticCount: (errors: Int, warnings: Int) {
-        guard let uri = selectedTab?.documentURI else { return (0, 0) }
-        return lspService.diagnosticCount(for: uri)
+    var activeWorkspaceDiagnosticID: String? {
+        get { diagnosticsModel.activeWorkspaceDiagnosticID }
+        set { diagnosticsModel.activeWorkspaceDiagnosticID = newValue }
     }
 
-    var orderedCurrentTabDiagnostics: [LSPDiagnostic] {
-        sortedCurrentDiagnostics()
+    var diagnosticsPanelScope: DiagnosticsPanelScope {
+        get { diagnosticsModel.diagnosticsPanelScope }
+        set { diagnosticsModel.diagnosticsPanelScope = newValue }
     }
 
-    var activeCurrentDiagnostic: LSPDiagnostic? {
-        let diagnostics = orderedCurrentTabDiagnostics
-        guard !diagnostics.isEmpty else { return nil }
+    var currentTabDiagnostics: [LSPDiagnostic] { diagnosticsModel.currentTabDiagnostics }
 
-        if let activeCurrentDiagnosticID,
-           let diagnostic = diagnostics.first(where: { $0.id == activeCurrentDiagnosticID }) {
-            return diagnostic
-        }
+    var currentTabDiagnosticCount: (errors: Int, warnings: Int) { diagnosticsModel.currentTabDiagnosticCount }
 
-        return inferredCurrentDiagnostic(in: diagnostics)
-    }
+    var orderedCurrentTabDiagnostics: [LSPDiagnostic] { diagnosticsModel.orderedCurrentTabDiagnostics }
 
-    var activeCurrentDiagnosticIndex: Int? {
-        guard let activeCurrentDiagnostic else { return nil }
-        return orderedCurrentTabDiagnostics.firstIndex(of: activeCurrentDiagnostic)
-    }
+    var activeCurrentDiagnostic: LSPDiagnostic? { diagnosticsModel.activeCurrentDiagnostic }
 
-    var currentProblemPositionText: String? {
-        switch diagnosticsPanelScope {
-        case .currentFile:
-            guard let activeCurrentDiagnosticIndex else { return nil }
-            let total = orderedCurrentTabDiagnostics.count
-            return "Problem \(activeCurrentDiagnosticIndex + 1) of \(total)"
-        case .workspace:
-            guard let activeWorkspaceDiagnosticIndex else { return nil }
-            let total = orderedWorkspaceDiagnostics.count
-            return "Problem \(activeWorkspaceDiagnosticIndex + 1) of \(total)"
-        }
-    }
+    var activeCurrentDiagnosticIndex: Int? { diagnosticsModel.activeCurrentDiagnosticIndex }
 
-    var workspaceDiagnosticCount: (errors: Int, warnings: Int) {
-        orderedWorkspaceDiagnostics.reduce(into: (errors: 0, warnings: 0)) { partialResult, item in
-            switch item.diagnostic.severity {
-            case .error:
-                partialResult.errors += 1
-            case .warning:
-                partialResult.warnings += 1
-            default:
-                break
-            }
-        }
-    }
+    var currentProblemPositionText: String? { diagnosticsModel.currentProblemPositionText }
 
-    var workspaceDiagnosticFileCount: Int {
-        Set(orderedWorkspaceDiagnostics.map { normalizedPath(for: $0.fileURL) }).count
-    }
+    var workspaceDiagnosticCount: (errors: Int, warnings: Int) { diagnosticsModel.workspaceDiagnosticCount }
 
-    var canNavigateCurrentProblems: Bool {
-        !currentTabDiagnostics.isEmpty
-    }
+    var workspaceDiagnosticFileCount: Int { diagnosticsModel.workspaceDiagnosticFileCount }
 
-    var hasWorkspaceDiagnostics: Bool {
-        !orderedWorkspaceDiagnostics.isEmpty
-    }
+    var canNavigateCurrentProblems: Bool { diagnosticsModel.canNavigateCurrentProblems }
 
-    var canNavigateProblems: Bool {
-        switch diagnosticsPanelScope {
-        case .currentFile:
-            return canNavigateCurrentProblems
-        case .workspace:
-            return hasWorkspaceDiagnostics
-        }
-    }
+    var hasWorkspaceDiagnostics: Bool { diagnosticsModel.hasWorkspaceDiagnostics }
+
+    var canNavigateProblems: Bool { diagnosticsModel.canNavigateProblems }
 
     var canShowProblemsPanel: Bool {
-        hasOpenFile || hasWorkspaceDiagnostics
+        hasOpenFile || diagnosticsModel.hasWorkspaceDiagnostics
     }
 
-    var orderedWorkspaceDiagnostics: [WorkspaceDiagnosticItem] {
-        if let cachedWorkspaceDiagnostics {
-            return cachedWorkspaceDiagnostics
-        }
+    var orderedWorkspaceDiagnostics: [WorkspaceDiagnosticItem] { diagnosticsModel.orderedWorkspaceDiagnostics }
 
-        let diagnostics = lspService.diagnosticsByURI
-            .compactMap { uri, diagnostics -> [WorkspaceDiagnosticItem]? in
-                guard let fileURL = URL(string: uri), fileURL.isFileURL else { return nil }
-                return diagnostics.map { diagnostic in
-                    WorkspaceDiagnosticItem(
-                        fileURL: fileURL,
-                        displayPath: relativeDisplayPath(for: fileURL),
-                        lineText: lineText(for: fileURL, lineNumber: diagnostic.range.start.line + 1),
-                        diagnostic: diagnostic
-                    )
-                }
-            }
-            .flatMap { $0 }
-            .sorted(by: compareWorkspaceDiagnostics)
+    var activeWorkspaceDiagnostic: WorkspaceDiagnosticItem? { diagnosticsModel.activeWorkspaceDiagnostic }
 
-        cachedWorkspaceDiagnostics = diagnostics
-        return diagnostics
-    }
+    var activeWorkspaceDiagnosticIndex: Int? { diagnosticsModel.activeWorkspaceDiagnosticIndex }
 
-    var activeWorkspaceDiagnostic: WorkspaceDiagnosticItem? {
-        let diagnostics = orderedWorkspaceDiagnostics
-        guard !diagnostics.isEmpty else { return nil }
-
-        if let activeWorkspaceDiagnosticID,
-           let diagnostic = diagnostics.first(where: { $0.id == activeWorkspaceDiagnosticID }) {
-            return diagnostic
-        }
-
-        return inferredWorkspaceDiagnostic(in: diagnostics)
-    }
-
-    var activeWorkspaceDiagnosticIndex: Int? {
-        guard let activeWorkspaceDiagnostic else { return nil }
-        return orderedWorkspaceDiagnostics.firstIndex(of: activeWorkspaceDiagnostic)
-    }
-
-    var activeProblemScrollID: String? {
-        switch diagnosticsPanelScope {
-        case .currentFile:
-            return activeCurrentDiagnostic?.id
-        case .workspace:
-            return activeWorkspaceDiagnostic?.id
-        }
-    }
+    var activeProblemScrollID: String? { diagnosticsModel.activeProblemScrollID }
 
     var selectedDebugConfiguration: DebugConfiguration? {
         guard let selectedDebugConfigurationName else { return nil }
@@ -707,7 +628,7 @@ final class ProjectViewModel: ObservableObject {
     var cachedWorkspaceSymbolsByPath: [String: [WorkspaceSymbolMatch]] = [:]
     var workspaceSymbolUpdateTask: Task<Void, Never>?
     let workspaceSymbolUpdateDebounceNanoseconds: UInt64 = 250_000_000
-    private var cachedWorkspaceDiagnostics: [WorkspaceDiagnosticItem]?
+    // cachedWorkspaceDiagnostics now lives on `diagnosticsModel`.
     private var cachedFileLineContents: [String: [String]] = [:]
     private var stickyScopeCacheKey: EditorStickyScopeCacheKey?
     private var stickyScopeCache: [EditorStickyScopeItem] = []
@@ -2369,7 +2290,7 @@ final class ProjectViewModel: ObservableObject {
     }
 
     func isActiveDiagnostic(_ diagnostic: LSPDiagnostic) -> Bool {
-        activeCurrentDiagnostic?.id == diagnostic.id
+        diagnosticsModel.isActiveDiagnostic(diagnostic)
     }
 
     func showNextProjectSearchResult() {
@@ -3065,7 +2986,7 @@ final class ProjectViewModel: ObservableObject {
         guard let selectedTabIndex, openTabs.indices.contains(selectedTabIndex) else { return }
         let previousLine = openTabs[selectedTabIndex].cursorPosition.line
         openTabs[selectedTabIndex].cursorPosition = CursorPosition(line: line, column: column)
-        synchronizeActiveDiagnosticSelection()
+        pushDiagnosticsContext()
         if previousLine != line {
             pendingCursorLineChange = true
         }
@@ -3218,96 +3139,16 @@ final class ProjectViewModel: ObservableObject {
         pasteboard.setString(value, forType: .string)
     }
 
-    private func sortedCurrentDiagnostics() -> [LSPDiagnostic] {
-        currentTabDiagnostics.sorted { lhs, rhs in
-            let lhsPosition = diagnosticSortPosition(for: lhs)
-            let rhsPosition = diagnosticSortPosition(for: rhs)
-            if lhsPosition.line != rhsPosition.line {
-                return lhsPosition.line < rhsPosition.line
-            }
-            if lhsPosition.column != rhsPosition.column {
-                return lhsPosition.column < rhsPosition.column
-            }
-            let lhsSeverity = lhs.severity?.rawValue ?? Int.max
-            let rhsSeverity = rhs.severity?.rawValue ?? Int.max
-            if lhsSeverity != rhsSeverity {
-                return lhsSeverity < rhsSeverity
-            }
-            return lhs.message.localizedCaseInsensitiveCompare(rhs.message) == .orderedAscending
-        }
-    }
-
-    func diagnosticSortPosition(for diagnostic: LSPDiagnostic) -> (line: Int, column: Int) {
-        (diagnostic.range.start.line, diagnostic.range.start.character)
-    }
-
-    private func compareWorkspaceDiagnostics(_ lhs: WorkspaceDiagnosticItem, _ rhs: WorkspaceDiagnosticItem) -> Bool {
-        if lhs.displayPath != rhs.displayPath {
-            return lhs.displayPath.localizedStandardCompare(rhs.displayPath) == .orderedAscending
-        }
-
-        if lhs.lineNumber != rhs.lineNumber {
-            return lhs.lineNumber < rhs.lineNumber
-        }
-
-        if lhs.columnNumber != rhs.columnNumber {
-            return lhs.columnNumber < rhs.columnNumber
-        }
-
-        let lhsSeverity = lhs.diagnostic.severity?.rawValue ?? Int.max
-        let rhsSeverity = rhs.diagnostic.severity?.rawValue ?? Int.max
-        if lhsSeverity != rhsSeverity {
-            return lhsSeverity < rhsSeverity
-        }
-
-        return lhs.diagnostic.message.localizedCaseInsensitiveCompare(rhs.diagnostic.message) == .orderedAscending
-    }
-
-    func currentProblemReferencePosition() -> (line: Int, column: Int) {
-        let currentLine = max((selectedTab?.cursorPosition.line ?? 1) - 1, 0)
-        let currentColumn = max((selectedTab?.cursorPosition.column ?? 1) - 1, 0)
-        return (line: currentLine, column: currentColumn)
-    }
-
-    func inferredCurrentDiagnostic(in diagnostics: [LSPDiagnostic]) -> LSPDiagnostic? {
-        guard !diagnostics.isEmpty else { return nil }
-        let currentPosition = currentProblemReferencePosition()
-        return diagnostics.last(where: { diagnostic in
-            let position = diagnosticSortPosition(for: diagnostic)
-            return position.line < currentPosition.line
-                || (position.line == currentPosition.line && position.column <= currentPosition.column)
-        }) ?? diagnostics.first
-    }
-
-    func inferredWorkspaceDiagnostic(in diagnostics: [WorkspaceDiagnosticItem]) -> WorkspaceDiagnosticItem? {
-        guard !diagnostics.isEmpty else { return nil }
-
-        if let selectedFilePath = selectedTab?.filePath.map(normalizedPath(for:)) {
-            let sameFileDiagnostics = diagnostics.filter { normalizedPath(for: $0.fileURL) == selectedFilePath }
-            if !sameFileDiagnostics.isEmpty {
-                let currentPosition = currentProblemReferencePosition()
-                return sameFileDiagnostics.last(where: { diagnostic in
-                    let position = (line: diagnostic.lineNumber - 1, column: diagnostic.columnNumber - 1)
-                    return position.line < currentPosition.line
-                        || (position.line == currentPosition.line && position.column <= currentPosition.column)
-                }) ?? sameFileDiagnostics.first
-            }
-        }
-
-        return diagnostics.first
-    }
-
-    func synchronizeActiveDiagnosticSelection() {
-        // Guard the @Published writes: this runs on every caret move, and a no-op assignment
-        // still fires objectWillChange and re-renders every view observing the view model.
-        let current = inferredCurrentDiagnostic(in: orderedCurrentTabDiagnostics)?.id
-        if activeCurrentDiagnosticID != current {
-            activeCurrentDiagnosticID = current
-        }
-        let workspace = inferredWorkspaceDiagnostic(in: orderedWorkspaceDiagnostics)?.id
-        if activeWorkspaceDiagnosticID != workspace {
-            activeWorkspaceDiagnosticID = workspace
-        }
+    /// Pushes the active tab/cursor context into `diagnosticsModel` so it can derive the active
+    /// diagnostic without a back-reference to this view model. Called on tab switch and caret moves;
+    /// the model absorbs no-op cursor moves, so this stays cheap on the hot caret path.
+    func pushDiagnosticsContext() {
+        diagnosticsModel.updateContext(
+            documentURI: selectedTab?.documentURI,
+            normalizedFilePath: selectedTab?.filePath.map(normalizedPath(for:)),
+            cursorLine: selectedTab?.cursorPosition.line ?? 1,
+            cursorColumn: selectedTab?.cursorPosition.column ?? 1
+        )
     }
 
     private func navigatedBreakpoint(step: Int) -> Breakpoint? {
@@ -4719,12 +4560,13 @@ final class ProjectViewModel: ObservableObject {
 
     private func handleDiagnosticsChanged() {
         invalidateWorkspaceDiagnosticsCache()
-        synchronizeActiveDiagnosticSelection()
+        // Push current editor context, then re-derive the active selection (guarded writes inside).
+        pushDiagnosticsContext()
         objectWillChange.send()
     }
 
     private func invalidateWorkspaceDiagnosticsCache() {
-        cachedWorkspaceDiagnostics = nil
+        diagnosticsModel.invalidateWorkspaceDiagnosticsCache()
     }
 
     private func invalidateCachedFileContent(for fileURL: URL) {

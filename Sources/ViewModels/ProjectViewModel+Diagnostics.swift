@@ -7,14 +7,14 @@ extension ProjectViewModel {
             if !canNavigateCurrentProblems && hasWorkspaceDiagnostics {
                 diagnosticsPanelScope = .workspace
             }
-            synchronizeActiveDiagnosticSelection()
+            diagnosticsModel.synchronizeActiveDiagnosticSelection()
         }
         persistDebugPreferences()
     }
 
     func setDiagnosticsPanelScope(_ scope: DiagnosticsPanelScope) {
         diagnosticsPanelScope = scope
-        synchronizeActiveDiagnosticSelection()
+        diagnosticsModel.synchronizeActiveDiagnosticSelection()
     }
 
     func toggleReferencesPanel() {
@@ -41,7 +41,7 @@ extension ProjectViewModel {
     }
 
     func openNextProblem() {
-        guard let diagnostic = navigatedProblem(step: 1) else { return }
+        guard let diagnostic = diagnosticsModel.navigatedProblem(step: 1) else { return }
         switch diagnostic {
         case .current(let item):
             openDiagnostic(item)
@@ -51,7 +51,7 @@ extension ProjectViewModel {
     }
 
     func openPreviousProblem() {
-        guard let diagnostic = navigatedProblem(step: -1) else { return }
+        guard let diagnostic = diagnosticsModel.navigatedProblem(step: -1) else { return }
         switch diagnostic {
         case .current(let item):
             openDiagnostic(item)
@@ -80,52 +80,5 @@ extension ProjectViewModel {
             return
         }
         openTabs[selectedTabIndex].pendingLineJump = result.line
-    }
-
-    private func navigatedProblem(step: Int) -> NavigableProblem? {
-        switch diagnosticsPanelScope {
-        case .currentFile:
-            let diagnostics = orderedCurrentTabDiagnostics
-            guard !diagnostics.isEmpty else { return nil }
-            let firstDiagnostic = diagnostics[0]
-            let lastDiagnostic = diagnostics[diagnostics.count - 1]
-
-            if let activeCurrentDiagnostic,
-               let currentIndex = diagnostics.firstIndex(of: activeCurrentDiagnostic) {
-                let nextIndex = (currentIndex + step + diagnostics.count) % diagnostics.count
-                return .current(diagnostics[nextIndex])
-            }
-
-            let currentPosition = currentProblemReferencePosition()
-
-            if step >= 0 {
-                return .current(
-                    diagnostics.first(where: { diagnostic in
-                        let position = diagnosticSortPosition(for: diagnostic)
-                        return position.line > currentPosition.line
-                            || (position.line == currentPosition.line && position.column > currentPosition.column)
-                    }) ?? firstDiagnostic
-                )
-            }
-
-            return .current(
-                diagnostics.last(where: { diagnostic in
-                    let position = diagnosticSortPosition(for: diagnostic)
-                    return position.line < currentPosition.line
-                        || (position.line == currentPosition.line && position.column < currentPosition.column)
-                }) ?? lastDiagnostic
-            )
-        case .workspace:
-            let diagnostics = orderedWorkspaceDiagnostics
-            guard !diagnostics.isEmpty else { return nil }
-
-            if let activeWorkspaceDiagnostic,
-               let currentIndex = diagnostics.firstIndex(of: activeWorkspaceDiagnostic) {
-                let nextIndex = (currentIndex + step + diagnostics.count) % diagnostics.count
-                return .workspace(diagnostics[nextIndex])
-            }
-
-            return .workspace(inferredWorkspaceDiagnostic(in: diagnostics) ?? diagnostics[0])
-        }
     }
 }
