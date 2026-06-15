@@ -188,6 +188,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItem
              #selector(handleUseSelectionForFind),
              #selector(handleShowReplace),
              #selector(handleToggleLineComment),
+             #selector(handleMoveLineUp),
+             #selector(handleMoveLineDown),
+             #selector(handleDuplicateLine),
              #selector(handleGoToLine):
             return projectViewModel?.hasOpenFile ?? false
         case #selector(handleSave),
@@ -414,6 +417,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItem
         let toggleCommentItem = NSMenuItem(title: "Toggle Comment", action: #selector(handleToggleLineComment), keyEquivalent: "/")
         toggleCommentItem.keyEquivalentModifierMask = [.command]
         editMenu.addItem(toggleCommentItem)
+
+        let moveLineUpItem = NSMenuItem(title: "Move Line Up", action: #selector(handleMoveLineUp), keyEquivalent: String(UnicodeScalar(NSUpArrowFunctionKey)!))
+        moveLineUpItem.keyEquivalentModifierMask = [.option]
+        editMenu.addItem(moveLineUpItem)
+
+        let moveLineDownItem = NSMenuItem(title: "Move Line Down", action: #selector(handleMoveLineDown), keyEquivalent: String(UnicodeScalar(NSDownArrowFunctionKey)!))
+        moveLineDownItem.keyEquivalentModifierMask = [.option]
+        editMenu.addItem(moveLineDownItem)
+
+        let duplicateLineItem = NSMenuItem(title: "Duplicate Line", action: #selector(handleDuplicateLine), keyEquivalent: "d")
+        duplicateLineItem.keyEquivalentModifierMask = [.command, .shift]
+        editMenu.addItem(duplicateLineItem)
         editMenu.addItem(NSMenuItem.separator())
 
         let findMenuItem = NSMenuItem(title: "Find", action: nil, keyEquivalent: "")
@@ -623,6 +638,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItem
         dispatch(.toggleLineComment, legacyNotification: .handleToggleLineComment)
     }
 
+    @objc func handleMoveLineUp() {
+        dispatch(.moveLineUp, legacyNotification: .handleMoveLineUp)
+    }
+
+    @objc func handleMoveLineDown() {
+        dispatch(.moveLineDown, legacyNotification: .handleMoveLineDown)
+    }
+
+    @objc func handleDuplicateLine() {
+        dispatch(.duplicateLine, legacyNotification: .handleDuplicateLine)
+    }
+
     @objc func handleFindNext() {
         dispatch(.findNext, legacyNotification: .handleFindNext)
     }
@@ -809,6 +836,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItem
 extension Notification.Name {
     static let handleFindInFile = Notification.Name("handleFindInFile")
     static let handleToggleLineComment = Notification.Name("handleToggleLineComment")
+    static let handleMoveLineUp = Notification.Name("handleMoveLineUp")
+    static let handleMoveLineDown = Notification.Name("handleMoveLineDown")
+    static let handleDuplicateLine = Notification.Name("handleDuplicateLine")
     static let handleFindNext = Notification.Name("handleFindNext")
     static let handleFindPrevious = Notification.Name("handleFindPrevious")
     static let handleNextProblem = Notification.Name("handleNextProblem")

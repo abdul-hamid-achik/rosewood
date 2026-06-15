@@ -830,11 +830,36 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
                         handleFindReferencesFromCursor()
                     case .toggleLineComment:
                         toggleLineComment()
+                    case .moveLineUp:
+                        moveSelectedLines(up: true)
+                    case .moveLineDown:
+                        moveSelectedLines(up: false)
+                    case .duplicateLine:
+                        applyLineEdit { LineEditing.duplicateLines(in: $0, selection: $1) }
                     default:
                         break
                     }
                 }
                 .store(in: &commandCancellables)
+        }
+
+        private func moveSelectedLines(up: Bool) {
+            applyLineEdit { text, selection in
+                up ? LineEditing.moveLinesUp(in: text, selection: selection)
+                   : LineEditing.moveLinesDown(in: text, selection: selection)
+            }
+        }
+
+        /// Apply a LineEditing operation through the NSTextView undo/binding path. `compute` returns
+        /// the minimal edit (nil = no-op, e.g. moving the top line up).
+        private func applyLineEdit(_ compute: (NSString, NSRange) -> LineEditing.Edit?) {
+            guard let textView = containerView?.textView else { return }
+            guard let edit = compute(textView.string as NSString, textView.selectedRange()) else { return }
+            guard textView.shouldChangeText(in: edit.range, replacementString: edit.replacement) else { return }
+            textView.textStorage?.replaceCharacters(in: edit.range, with: edit.replacement)
+            textView.didChangeText()
+            textView.setSelectedRange(edit.selection)
+            textView.scrollRangeToVisible(edit.selection)
         }
 
         private func toggleLineComment() {
