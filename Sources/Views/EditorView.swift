@@ -1898,7 +1898,13 @@ final class EditorContainerView: NSView {
     func refreshAfterEditing(text: String, themeColors: ThemeColors) {
         currentDisplayText = text
         currentDisplayVersion += 1
-        textView.setAccessibilityValue(text)
+        // Only override the accessibility value while folds are active (then the displayed text
+        // differs from the logical text). Otherwise NSTextView already reports its own string, so
+        // skip this per-keystroke set — it was copying the whole document on every edit of any
+        // file over 2KB (the deferred-highlight path).
+        if !lineNumberView.foldedLines.isEmpty {
+            textView.setAccessibilityValue(text)
+        }
         textView.typingAttributes = [
             .font: editorFont,
             .foregroundColor: themeColors.nsForeground
@@ -2165,9 +2171,7 @@ private final class LineNumberRulerView: NSRulerView {
             return
         }
 
-        var lineNumber = textNSString.substring(to: min(characterRange.location, textNSString.length)).reduce(1) { partial, character in
-            character == "\n" ? partial + 1 : partial
-        }
+        var lineNumber = TextMetrics.lineNumber(atUTF16Offset: characterRange.location, in: textNSString)
 
         textNSString.enumerateSubstrings(
             in: NSRange(location: characterRange.location, length: textNSString.length - characterRange.location),
