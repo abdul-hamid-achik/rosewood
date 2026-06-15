@@ -316,23 +316,39 @@ final class ProjectViewModel: ObservableObject {
     @Published var debugStoppedLine: Int?
     // referencesModel.referenceResults moved to `referencesModel` (a child ObservableObject) so the references
     // panel observes only that; the building/navigation logic below still writes into it.
-    @Published var gitRepositoryStatus: GitRepositoryStatus = .empty {
-        didSet {
-            rebuildGitCaches()
-        }
-    }
-    @Published var selectedGitDiff: GitDiffResult?
-    @Published var selectedGitDiffPath: String?
     @Published var isGitDiffWorkspaceVisible: Bool = false
-    // currentLineBlame lives on `gitModel` (a child ObservableObject) so the per-line-change blame
-    // refresh re-renders only the status bar, not every view observing this model.
+    // Git status/diff DISPLAY state lives on `gitModel` (a child ObservableObject) so a save-triggered
+    // refreshGitState (autosave is on by default) re-renders only the git consumers, not every view
+    // observing this model. These forwarders keep the +Git drivers and tests unchanged; the git views
+    // observe `gitModel` directly. isGitDiffWorkspaceVisible stays here — it is editor-area CHROME.
+    var gitRepositoryStatus: GitRepositoryStatus {
+        get { gitModel.gitRepositoryStatus }
+        set { gitModel.gitRepositoryStatus = newValue }
+    }
+    var selectedGitDiff: GitDiffResult? {
+        get { gitModel.selectedGitDiff }
+        set { gitModel.selectedGitDiff = newValue }
+    }
+    var selectedGitDiffPath: String? {
+        get { gitModel.selectedGitDiffPath }
+        set { gitModel.selectedGitDiffPath = newValue }
+    }
     var currentLineBlame: GitBlameInfo? {
         get { gitModel.currentLineBlame }
         set { gitModel.currentLineBlame = newValue }
     }
-    @Published var isRefreshingGitStatus: Bool = false
-    @Published var isLoadingGitDiff: Bool = false
-    @Published var isGitToolAvailable: Bool = true
+    var isRefreshingGitStatus: Bool {
+        get { gitModel.isRefreshingGitStatus }
+        set { gitModel.isRefreshingGitStatus = newValue }
+    }
+    var isLoadingGitDiff: Bool {
+        get { gitModel.isLoadingGitDiff }
+        set { gitModel.isLoadingGitDiff = newValue }
+    }
+    var isGitToolAvailable: Bool {
+        get { gitModel.isGitToolAvailable }
+        set { gitModel.isGitToolAvailable = newValue }
+    }
     @Published var isRipgrepToolAvailable: Bool = true
     // Diagnostics selection/scope state lives on `diagnosticsModel` (see the forwarders below).
 
@@ -570,12 +586,14 @@ final class ProjectViewModel: ObservableObject {
         configService.hasProjectConfig()
     }
 
+    // These resolve a FileItem to a repository-relative path (needs the repo root + path
+    // normalization, which stay here) and then delegate the cache lookup to `gitModel`.
     func gitChange(for item: FileItem) -> GitChangedFile? {
         guard !item.isDirectory,
               let relativePath = gitRelativePath(for: item.path) else {
             return nil
         }
-        return gitChangedFileByPath[relativePath]
+        return gitModel.gitChange(forRelativePath: relativePath)
     }
 
     func gitChangedDescendantCount(for item: FileItem) -> Int {
@@ -584,29 +602,22 @@ final class ProjectViewModel: ObservableObject {
             return gitChange(for: item) == nil ? 0 : 1
         }
 
-        return gitChangedDescendantCountByDirectoryPath[relativePath] ?? 0
+        return gitModel.gitChangedDescendantCount(forRelativePath: relativePath)
     }
 
     func isGitIgnored(_ item: FileItem) -> Bool {
         guard let relativePath = gitRelativePath(for: item.path) else {
             return false
         }
-
-        for ignoredPath in normalizedIgnoredGitPathsCache {
-            if relativePath == ignoredPath || relativePath.hasPrefix(ignoredPath + "/") {
-                return true
-            }
-        }
-
-        return false
+        return gitModel.isGitIgnored(relativePath: relativePath)
     }
 
     var gitChangeSections: [GitChangeSectionGroup] {
-        cachedGitChangeSections
+        gitModel.gitChangeSections
     }
 
     func gitChangeIndex(for changedFile: GitChangedFile) -> Int {
-        gitChangeIndexByPath[changedFile.path] ?? 0
+        gitModel.gitChangeIndex(for: changedFile)
     }
 
     let fileService: FileService
@@ -682,11 +693,7 @@ final class ProjectViewModel: ObservableObject {
     private var stickyScopeCache: [EditorStickyScopeItem] = []
     private var breadcrumbCacheKey: EditorBreadcrumbCacheKey?
     private var breadcrumbCache: [EditorBreadcrumbSegment] = []
-    private var gitChangedFileByPath: [String: GitChangedFile] = [:]
-    private var gitChangedDescendantCountByDirectoryPath: [String: Int] = [:]
-    private var gitChangeIndexByPath: [String: Int] = [:]
-    private var cachedGitChangeSections: [GitChangeSectionGroup] = []
-    private var normalizedIgnoredGitPathsCache: [String] = []
+    // Git derived caches now live on `gitModel` (rebuilt by its gitRepositoryStatus.didSet).
     var presentedDependencyWarningIDs: Set<String> = []
     private var recentlyClosedTabs: [EditorTab] = []
     private var cachedCurrentTabBreakpointLinesPath: String?
@@ -4809,32 +4816,6 @@ final class ProjectViewModel: ObservableObject {
         stickyScopeCache = []
         breadcrumbCacheKey = nil
         breadcrumbCache = []
-    }
-
-    private func rebuildGitCaches() {
-        gitChangedFileByPath = Dictionary(uniqueKeysWithValues: gitRepositoryStatus.changedFiles.map { ($0.path, $0) })
-        gitChangeIndexByPath = Dictionary(uniqueKeysWithValues: gitRepositoryStatus.changedFiles.enumerated().map { ($0.element.path, $0.offset) })
-        normalizedIgnoredGitPathsCache = gitRepositoryStatus.ignoredPaths.map { ignoredPath in
-            ignoredPath.hasSuffix("/") ? String(ignoredPath.dropLast()) : ignoredPath
-        }
-        cachedGitChangeSections = GitChangeSection.allCases.compactMap { section in
-            let files = gitRepositoryStatus.changedFiles.filter { $0.section == section }
-            guard !files.isEmpty else { return nil }
-            return GitChangeSectionGroup(section: section, files: files)
-        }
-
-        var descendantCounts: [String: Int] = [:]
-        for changedFile in gitRepositoryStatus.changedFiles {
-            let components = changedFile.path.split(separator: "/").map(String.init)
-            guard components.count > 1 else { continue }
-
-            var currentPath = ""
-            for component in components.dropLast() {
-                currentPath = currentPath.isEmpty ? component : currentPath + "/" + component
-                descendantCounts[currentPath, default: 0] += 1
-            }
-        }
-        gitChangedDescendantCountByDirectoryPath = descendantCounts
     }
 
     private func restoreSession() {

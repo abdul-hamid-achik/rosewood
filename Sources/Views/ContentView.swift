@@ -2,6 +2,9 @@ import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject var projectViewModel: ProjectViewModel
+    // Observed so the source-control sidebar subtitle (isRepository) still reflects git changes;
+    // git status data lives on GitModel now and the view model no longer republishes it.
+    @EnvironmentObject private var gitModel: GitModel
     @EnvironmentObject private var lspService: LSPService
     @EnvironmentObject private var commandPaletteViewModel: CommandPaletteViewModel
     @EnvironmentObject private var configService: ConfigurationService
@@ -421,6 +424,8 @@ struct ActivitySidebarView: View {
     @EnvironmentObject var projectViewModel: ProjectViewModel
     @EnvironmentObject private var dockerModel: DockerModel
     @EnvironmentObject private var diagnosticsModel: DiagnosticsModel
+    // Observed so the source-control activity badge (changed-file count) refreshes on git change.
+    @EnvironmentObject private var gitModel: GitModel
     @EnvironmentObject private var configService: ConfigurationService
 
     private var themeColors: ThemeColors {

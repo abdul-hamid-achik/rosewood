@@ -301,6 +301,50 @@ struct ProjectViewModelTests {
     }
 
     @Test
+    func gitStatusChangeDoesNotFireViewModelObjectWillChange() async throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let configURL = tempConfigURL()
+        defer { try? FileManager.default.removeItem(at: configURL) }
+
+        let viewModel = makeViewModel(
+            sessionStore: makeDefaults(),
+            sessionKey: "git-norerender-test",
+            configService: ConfigurationService(userConfigURL: configURL),
+            fileWatcher: FileWatcherService(),
+            ui: TestProjectUI()
+        )
+
+        var vmPublishCount = 0
+        let vmCancellable = viewModel.objectWillChange.sink { _ in vmPublishCount += 1 }
+        var gitPublishCount = 0
+        let gitCancellable = viewModel.gitModel.objectWillChange.sink { _ in gitPublishCount += 1 }
+        defer { vmCancellable.cancel(); gitCancellable.cancel() }
+
+        let status = GitRepositoryStatus(
+            repositoryRoot: rootURL,
+            branchName: "main",
+            changedFiles: [
+                GitChangedFile(path: "Sub/A.swift", previousPath: nil, kind: .modified, indexStatus: " ", workingTreeStatus: "M")
+            ],
+            ignoredPaths: ["build/"]
+        )
+        // Mirror what refreshGitState writes on a save-triggered refresh.
+        viewModel.isRefreshingGitStatus = true
+        viewModel.gitRepositoryStatus = status
+        viewModel.isRefreshingGitStatus = false
+
+        // The whole point: a git status change re-renders only the git consumers (GitModel),
+        // not every view observing the app-wide view model.
+        #expect(vmPublishCount == 0)
+        #expect(gitPublishCount > 0)
+        // Forwarders still resolve through GitModel, and the derived caches rebuilt on GitModel's didSet.
+        #expect(viewModel.gitRepositoryStatus.branchName == "main")
+        #expect(viewModel.isRefreshingGitStatus == false)
+        #expect(viewModel.gitChangeSections.isEmpty == false)
+    }
+
+    @Test
     func sessionPersistenceDoesNotSerializeEditorBuffers() async throws {
         let fileURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)

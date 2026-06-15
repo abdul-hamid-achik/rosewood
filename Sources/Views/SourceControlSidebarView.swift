@@ -2,6 +2,9 @@ import SwiftUI
 
 struct SourceControlSidebarView: View {
     @EnvironmentObject var projectViewModel: ProjectViewModel
+    // Observed so git status/changes re-render here (the data lives on GitModel now; the view model
+    // no longer publishes on git change). Reads stay via projectViewModel forwarders.
+    @EnvironmentObject private var gitModel: GitModel
     @EnvironmentObject private var configService: ConfigurationService
 
     private var themeColors: ThemeColors {
@@ -115,6 +118,9 @@ struct SourceControlSidebarView: View {
 
 private struct SourceControlSectionView: View {
     @EnvironmentObject var projectViewModel: ProjectViewModel
+    // Observed so git status/changes re-render here (the data lives on GitModel now; the view model
+    // no longer publishes on git change). Reads stay via projectViewModel forwarders.
+    @EnvironmentObject private var gitModel: GitModel
     @EnvironmentObject private var configService: ConfigurationService
 
     let section: GitChangeSectionGroup
@@ -155,6 +161,9 @@ private struct SourceControlSectionView: View {
 
 private struct SourceControlChangeRowView: View {
     @EnvironmentObject var projectViewModel: ProjectViewModel
+    // Observed so git status/changes re-render here (the data lives on GitModel now; the view model
+    // no longer publishes on git change). Reads stay via projectViewModel forwarders.
+    @EnvironmentObject private var gitModel: GitModel
     @EnvironmentObject private var configService: ConfigurationService
 
     let changedFile: GitChangedFile

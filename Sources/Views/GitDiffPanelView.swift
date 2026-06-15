@@ -4,6 +4,8 @@ struct GitDiffPanelView: View {
     let layoutStyle: GitDiffLayoutStyle
 
     @EnvironmentObject var projectViewModel: ProjectViewModel
+    // Observed so the diff selection/loading state re-renders here (data lives on GitModel now).
+    @EnvironmentObject private var gitModel: GitModel
     @EnvironmentObject private var configService: ConfigurationService
 
     @State private var presentationMode: GitDiffPresentationMode = .split

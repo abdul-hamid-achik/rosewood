@@ -236,6 +236,10 @@ private struct ExplorerVisibleItem: Identifiable, Equatable {
 
 private struct FileTreeRow: View {
     @EnvironmentObject var projectViewModel: ProjectViewModel
+    // Observed so git decorations (change badges / ignored dimming) refresh: the row calls
+    // projectViewModel.gitChange(for:) etc., but that data now lives in GitModel, which the view
+    // model no longer republishes. Without this the decorations would silently stop updating.
+    @EnvironmentObject private var gitModel: GitModel
     @EnvironmentObject private var configService: ConfigurationService
 
     let entry: ExplorerVisibleItem
