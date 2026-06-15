@@ -171,6 +171,20 @@ final class ProjectViewModel: ObservableObject {
     @Published var fileTree: [FileItem] = []
     @Published private(set) var workspaceFileURLs: [URL] = []
     @Published var openTabs: [EditorTab] = []
+
+    // Live, NON-@Published edit buffer for the active tab. Per-keystroke edits land here instead of
+    // mutating the @Published `openTabs`, so typing no longer fires objectWillChange on the whole
+    // view model (the app-wide per-keystroke re-render storm). It is flushed into the struct via
+    // `commitActiveEditBuffer()` at every content-reading boundary (save/tab-switch/close/reload/…),
+    // so all existing `openTabs[i].content` readers stay correct. `tabID` ties the buffer to a
+    // specific EditorTab.id so a stale buffer can never be committed to the wrong tab.
+    private struct ActiveEditBuffer {
+        let tabID: UUID
+        var text: String
+        var documentVersion: Int
+    }
+    private var activeEditBuffer: ActiveEditBuffer?
+
     @Published var selectedTabIndex: Int? = nil {
         didSet {
             editorVisibleLineRange = nil
@@ -2951,6 +2965,65 @@ final class ProjectViewModel: ObservableObject {
             guard saveTab(at: index) else { return false }
         }
         return true
+    }
+
+    // MARK: - Active edit buffer (live content funnel)
+
+    /// Authoritative current text for a tab: the live buffer if it belongs to this tab, else the
+    /// committed struct value. Every content reader funnels through here so it can never read stale.
+    private func liveContent(forTabID id: UUID) -> String? {
+        if let buffer = activeEditBuffer, buffer.tabID == id { return buffer.text }
+        return openTabs.first(where: { $0.id == id })?.content
+    }
+
+    private func liveContent(at index: Int) -> String {
+        guard openTabs.indices.contains(index) else { return "" }
+        let tab = openTabs[index]
+        if let buffer = activeEditBuffer, buffer.tabID == tab.id { return buffer.text }
+        return tab.content
+    }
+
+    private func liveDocumentVersion(at index: Int) -> Int {
+        guard openTabs.indices.contains(index) else { return 0 }
+        let tab = openTabs[index]
+        if let buffer = activeEditBuffer, buffer.tabID == tab.id { return buffer.documentVersion }
+        return tab.documentVersion
+    }
+
+    /// The live text of the selected tab — the only PUBLIC accessor (the editor binding reads it).
+    func liveSelectedTabContent() -> String? {
+        selectedTabIndex.map { liveContent(at: $0) }
+    }
+
+    /// Flush the live buffer into the @Published struct. The ONLY path that writes struct content
+    /// from the buffer. Publishes at most once (struct mutation), acceptable because flush happens
+    /// only at boundaries (save/switch/close/…), never per keystroke. Returns whether anything changed.
+    @discardableResult
+    private func commitActiveEditBuffer() -> Bool {
+        guard let buffer = activeEditBuffer,
+              let index = openTabs.firstIndex(where: { $0.id == buffer.tabID }) else { return false }
+        var changed = false
+        if openTabs[index].content != buffer.text {
+            openTabs[index].content = buffer.text
+            changed = true
+        }
+        if openTabs[index].documentVersion != buffer.documentVersion {
+            openTabs[index].documentVersion = buffer.documentVersion
+            changed = true
+        }
+        let nowDirty = buffer.text != openTabs[index].originalContent
+        if openTabs[index].isDirty != nowDirty {
+            openTabs[index].isDirty = nowDirty
+            changed = true
+        }
+        return changed
+    }
+
+    /// Commit then drop the buffer — used when leaving a tab or when the struct content is about to
+    /// be replaced from disk, so the buffer no longer shadows the (new) struct value.
+    private func commitAndClearActiveEditBuffer() {
+        commitActiveEditBuffer()
+        activeEditBuffer = nil
     }
 
     func updateTabContent(_ content: String) {
