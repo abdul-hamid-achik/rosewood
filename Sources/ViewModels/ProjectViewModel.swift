@@ -645,6 +645,7 @@ final class ProjectViewModel: ObservableObject {
     let referencesModel: ReferencesModel
     let gitModel: GitModel
     let cursorDisplayModel: CursorDisplayModel
+    let outlineModel: OutlineModel
     // `lazy` so its dependency closures can capture self (built on first access, post-init).
     lazy var diagnosticsModel: DiagnosticsModel = DiagnosticsModel(
         lspService: lspService,
@@ -763,6 +764,7 @@ final class ProjectViewModel: ObservableObject {
         self.referencesModel = ReferencesModel()
         self.gitModel = GitModel()
         self.cursorDisplayModel = CursorDisplayModel()
+        self.outlineModel = OutlineModel()
         self.gitRepositoryStatus = .empty
         self.debugSessionService.setEventHandler { [weak self] event in
             Task { @MainActor [weak self] in

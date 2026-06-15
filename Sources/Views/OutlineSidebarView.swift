@@ -3,6 +3,9 @@ import SwiftUI
 struct OutlineSidebarView: View {
     @EnvironmentObject private var projectViewModel: ProjectViewModel
     @EnvironmentObject private var configService: ConfigurationService
+    // Observed so the outline re-renders when the (debounced, off-main) symbol index updates,
+    // without ProjectViewModel having to re-render every view to deliver that refresh.
+    @EnvironmentObject private var outlineModel: OutlineModel
 
     private var themeColors: ThemeColors {
         configService.currentThemeColors

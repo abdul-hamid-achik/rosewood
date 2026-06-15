@@ -49,6 +49,7 @@
 		41FA3A9E08C57A4384962E3A /* FileServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1A6C869FE137B135BD494BD /* FileServiceTests.swift */; };
 		427B2B6FBCB144212373066D /* ProjectViewModel+Diagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = B310B9BCDA5F4AC15F1E00F4 /* ProjectViewModel+Diagnostics.swift */; };
 		446A8A413857138BAB626068 /* LSPPositionConverterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17556CB8AA236346DFD52D65 /* LSPPositionConverterTests.swift */; };
+		463B950FE84B11E96765A3BC /* OutlineModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68C6C6E186BC605903964FA8 /* OutlineModel.swift */; };
 		4754DAADFE6EDC49C0CC1EA8 /* ContentType.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CEF311D2F9F38CFB74DAB34 /* ContentType.swift */; };
 		495860AFDF9552AB8015932A /* EditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E1B11BE228F78309D859B13 /* EditorView.swift */; };
 		4A379E53F553E14727CD7AEE /* LSPServerRegistryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A165B3CE2826AE1A763168AD /* LSPServerRegistryTests.swift */; };
@@ -207,6 +208,7 @@
 		64C610EC296FC028C3645A41 /* LSPTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LSPTypes.swift; sourceTree = "<group>"; };
 		65343F46122A84D1C89ED7F4 /* FoldingParserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FoldingParserTests.swift; sourceTree = "<group>"; };
 		68A5335869847ADA25622DA9 /* CompletionPopupTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompletionPopupTests.swift; sourceTree = "<group>"; };
+		68C6C6E186BC605903964FA8 /* OutlineModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutlineModel.swift; sourceTree = "<group>"; };
 		69E1334AC3C780DBDDCAD61E /* DebugSidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugSidebarView.swift; sourceTree = "<group>"; };
 		6A07AE57F8ECFE229E3D8BE8 /* DAPTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DAPTypes.swift; sourceTree = "<group>"; };
 		6B3213F9514A5F89932BD31F /* TerminalService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalService.swift; sourceTree = "<group>"; };
@@ -530,6 +532,7 @@
 				365D56DD96B77B74CF3F630E /* DiagnosticsModel.swift */,
 				C8E471EAAF9B4CE8DE65339A /* DockerModel.swift */,
 				8775E3B84E7DD09B4E76FBE3 /* GitModel.swift */,
+				68C6C6E186BC605903964FA8 /* OutlineModel.swift */,
 				C13B8E092507E3C5394A265A /* ProjectViewModel.swift */,
 				D048A486426520ECB87A4D3C /* ProjectViewModel+Debug.swift */,
 				B310B9BCDA5F4AC15F1E00F4 /* ProjectViewModel+Diagnostics.swift */,
@@ -726,6 +729,7 @@
 				F81BFE80E10CFBE912A5CAB2 /* LargeFileWarningView.swift in Sources */,
 				7306CB617505D7E8D5478F78 /* NotificationBannerView.swift in Sources */,
 				937CD141F688D236912E76C0 /* NotificationManager.swift in Sources */,
+				463B950FE84B11E96765A3BC /* OutlineModel.swift in Sources */,
 				9E5AFB6AF680F78D4BBCD9C9 /* OutlineSidebarView.swift in Sources */,
 				74DC3A2BCFC8B3586B2FD67F /* ProblemsPanelView.swift in Sources */,
 				023CD02CB6DB33720A83E8E1 /* ProcessRunner.swift in Sources */,

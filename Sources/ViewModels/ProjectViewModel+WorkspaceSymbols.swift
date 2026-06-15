@@ -157,9 +157,10 @@ extension ProjectViewModel {
             guard let self, !Task.isCancelled else { return }
             self.cachedWorkspaceSymbolsByPath[normalizedFilePath] = symbols
             self.cachedWorkspaceSymbols = nil
-            // The symbols feed the outline/breadcrumbs; nudge observers since this lands
-            // after the @Published edit that triggered it.
-            self.objectWillChange.send()
+            // The symbols feed the outline sidebar (its only consumer). Bump the outline child rather
+            // than the view model, so this ~250ms-debounced refresh re-renders ONLY the outline, not
+            // every view observing ProjectViewModel while the user types.
+            self.outlineModel.revision &+= 1
         }
     }
 
