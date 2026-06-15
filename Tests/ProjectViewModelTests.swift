@@ -4141,10 +4141,12 @@ struct ProjectViewModelTests {
             ui: TestProjectUI()
         )
 
-        // Docker state was extracted into a child DockerModel; the view model must construct
-        // and expose it (it's injected separately as its own @EnvironmentObject).
+        // Docker/Terminal state was extracted into child models; the view model must construct
+        // and expose them (each injected separately as its own @EnvironmentObject).
         #expect(viewModel.dockerModel.dockerContainers.isEmpty)
         #expect(viewModel.dockerModel.selectedDockerTab == .containers)
+        #expect(viewModel.terminalModel.terminalSessions.isEmpty)
+        #expect(viewModel.terminalModel.currentTerminalSessionId == nil)
     }
 
     @Test

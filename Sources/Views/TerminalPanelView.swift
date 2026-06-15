@@ -2,6 +2,7 @@ import SwiftUI
 
 struct TerminalPanelView: View {
     @EnvironmentObject var projectViewModel: ProjectViewModel
+    @EnvironmentObject var terminalModel: TerminalModel
     @EnvironmentObject private var configService: ConfigurationService
 
     private var themeColors: ThemeColors {
@@ -14,7 +15,7 @@ struct TerminalPanelView: View {
 
             ThemedDivider()
 
-            if projectViewModel.terminalSessions.isEmpty {
+            if terminalModel.terminalSessions.isEmpty {
                 emptyStateView
             } else {
                 terminalContent
@@ -31,11 +32,11 @@ struct TerminalPanelView: View {
 
             Spacer()
 
-            if !projectViewModel.terminalSessions.isEmpty {
+            if !terminalModel.terminalSessions.isEmpty {
                 sessionPicker
                 
                 Button {
-                    projectViewModel.createTerminalSession()
+                    terminalModel.createTerminalSession()
                 } label: {
                     Image(systemName: "plus")
                         .font(.system(size: 11))
@@ -60,13 +61,13 @@ struct TerminalPanelView: View {
 
     private var sessionPicker: some View {
         Menu {
-            ForEach(projectViewModel.terminalSessions) { session in
+            ForEach(terminalModel.terminalSessions) { session in
                 Button {
-                    projectViewModel.selectTerminalSession(session.id)
+                    terminalModel.selectTerminalSession(session.id)
                 } label: {
                     HStack {
                         Text(session.displayName)
-                        if session.id == projectViewModel.currentTerminalSessionId {
+                        if session.id == terminalModel.currentTerminalSessionId {
                             Image(systemName: "checkmark")
                         }
                     }
@@ -75,9 +76,9 @@ struct TerminalPanelView: View {
             
             Divider()
             
-            if let currentId = projectViewModel.currentTerminalSessionId {
+            if let currentId = terminalModel.currentTerminalSessionId {
                 Button(role: .destructive) {
-                    projectViewModel.closeTerminalSession(currentId)
+                    terminalModel.closeTerminalSession(currentId)
                 } label: {
                     Label("Close Current", systemImage: "xmark")
                 }
@@ -96,8 +97,8 @@ struct TerminalPanelView: View {
     }
 
     private var currentSessionName: String {
-        guard let currentId = projectViewModel.currentTerminalSessionId,
-              let session = projectViewModel.terminalSessions.first(where: { $0.id == currentId }) else {
+        guard let currentId = terminalModel.currentTerminalSessionId,
+              let session = terminalModel.terminalSessions.first(where: { $0.id == currentId }) else {
             return "Terminal"
         }
         return session.displayName
@@ -111,8 +112,8 @@ struct TerminalPanelView: View {
                     .foregroundColor(themeColors.mutedText)
                     .padding(RosewoodUI.spacing5)
 
-                if let currentId = projectViewModel.currentTerminalSessionId,
-                   let session = projectViewModel.terminalSessions.first(where: { $0.id == currentId }) {
+                if let currentId = terminalModel.currentTerminalSessionId,
+                   let session = terminalModel.terminalSessions.first(where: { $0.id == currentId }) {
                     sessionInfo(session)
                 }
             }

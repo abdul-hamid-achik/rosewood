@@ -8,7 +8,7 @@ extension ProjectViewModel {
     // MARK: - Terminal Integration
 
     func openTerminalInContainer(_ container: DockerContainer) {
-        createTerminalSession(type: .dockerExec(containerId: container.id))
+        terminalModel.createTerminalSession(type: .dockerExec(containerId: container.id))
         bottomPanel = .terminal
     }
 

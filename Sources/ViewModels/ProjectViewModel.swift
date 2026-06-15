@@ -300,8 +300,8 @@ final class ProjectViewModel: ObservableObject {
     // Docker refreshes only re-render the Docker views, not every view observing this model.
 
     // MARK: - Terminal State
-    @Published var terminalSessions: [TerminalSession] = []
-    @Published var currentTerminalSessionId: UUID?
+    // Terminal session state lives on `terminalModel` (a child ObservableObject injected
+    // separately) so terminal changes only re-render the terminal panel.
 
     var currentTabDiagnostics: [LSPDiagnostic] {
         guard let uri = selectedTab?.documentURI else { return [] }
@@ -675,6 +675,7 @@ final class ProjectViewModel: ObservableObject {
     let gitService: GitServiceProtocol
     let commandPaletteViewModel: CommandPaletteViewModel
     let dockerModel: DockerModel
+    let terminalModel: TerminalModel
     private var fileTreeLoadToken = UUID()
     private var workspaceFilesLoadToken = UUID()
     var projectSearchToken = UUID()
@@ -782,6 +783,7 @@ final class ProjectViewModel: ObservableObject {
         self.statusBarDetailDebounceNanoseconds = statusBarDetailDebounceNanoseconds
         self.commandPaletteViewModel = CommandPaletteViewModel(commandDispatcher: commandDispatcher)
         self.dockerModel = DockerModel()
+        self.terminalModel = TerminalModel(configService: configService)
         self.gitRepositoryStatus = .empty
         self.debugSessionService.setEventHandler { [weak self] event in
             Task { @MainActor [weak self] in

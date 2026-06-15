@@ -93,6 +93,7 @@
 		980205B90CD3FD88943FD364 /* HoverPopupController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3E1EF1E30E9F8E096AF6A23 /* HoverPopupController.swift */; };
 		9969D70855ECB7521007FAC6 /* LSPServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE3A94EA6E52B4F5DCDA61D9 /* LSPServiceTests.swift */; };
 		9B11C5E66E3FBF0DFBD41EBF /* BreakpointStoreProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D79D7EEF136DC073FD5303C /* BreakpointStoreProtocol.swift */; };
+		9CA16C456B47FAD6BAFF1F45 /* TerminalModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DA09E4012FAE59E019BBC2B /* TerminalModel.swift */; };
 		9E5AFB6AF680F78D4BBCD9C9 /* OutlineSidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B47186A4F55BFDEB1C130AB /* OutlineSidebarView.swift */; };
 		A3962A4AA149165629B39F82 /* DebugPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19F68E2145D1FED1C2E575FB /* DebugPanelView.swift */; };
 		A4A45DA37C2C1ABF124A7B81 /* DockerService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0FBC17FAC9FF8FD0FFC55C20 /* DockerService.swift */; };
@@ -228,6 +229,7 @@
 		9C854D8DE762DA72DCFDA643 /* HighlightService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HighlightService.swift; sourceTree = "<group>"; };
 		9D3315E13F7E364C3F5CD623 /* AppDelegateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegateTests.swift; sourceTree = "<group>"; };
 		9D79D7EEF136DC073FD5303C /* BreakpointStoreProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BreakpointStoreProtocol.swift; sourceTree = "<group>"; };
+		9DA09E4012FAE59E019BBC2B /* TerminalModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalModel.swift; sourceTree = "<group>"; };
 		9FCF6E3B3F366096BD8D03DC /* ImageViewerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageViewerView.swift; sourceTree = "<group>"; };
 		A165B3CE2826AE1A763168AD /* LSPServerRegistryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LSPServerRegistryTests.swift; sourceTree = "<group>"; };
 		A5851770351162D5C956BA51 /* HighlightServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HighlightServiceTests.swift; sourceTree = "<group>"; };
@@ -527,6 +529,7 @@
 				CDC17B870150041F79EE7929 /* ProjectViewModel+Tooling.swift */,
 				EDCD3FD5EFD358C49DA53B81 /* ProjectViewModel+UITestFixtures.swift */,
 				B0278A3EAE897137978D9558 /* ProjectViewModel+WorkspaceSymbols.swift */,
+				9DA09E4012FAE59E019BBC2B /* TerminalModel.swift */,
 			);
 			path = ViewModels;
 			sourceTree = "<group>";
@@ -729,6 +732,7 @@
 				AD6C95F4660B72BA4C0D436F /* SourceControlSidebarView.swift in Sources */,
 				B4260D5AE6159EE2EF1F10DF /* StatusBarView.swift in Sources */,
 				221959B628D173C5782C920B /* TabBarView.swift in Sources */,
+				9CA16C456B47FAD6BAFF1F45 /* TerminalModel.swift in Sources */,
 				1888E12FA9E3D8CF9E6BD6F3 /* TerminalPanelView.swift in Sources */,
 				6A92FE1284B8183CE553E96C /* TerminalService.swift in Sources */,
 				65BB7BBE407E4986E6B5C0B8 /* TerminalSession.swift in Sources */,
