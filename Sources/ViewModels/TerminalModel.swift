@@ -13,6 +13,10 @@ final class TerminalModel: ObservableObject {
 
     init(configService: ConfigurationService) {
         self.configService = configService
+        // A new window gets a fresh TerminalModel, but TerminalService is a shared
+        // singleton that already holds any sessions opened in other windows. Sync on
+        // init so those sessions are visible immediately rather than showing "No terminals open".
+        syncTerminalSessions()
     }
 
     private var terminalService: TerminalService {

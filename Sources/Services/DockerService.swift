@@ -305,15 +305,25 @@ final class DockerService: DockerServiceProtocol, ObservableObject {
     
     func streamLogs(containerId: String, tail: Int? = 500) -> AsyncStream<LogLine> {
         AsyncStream { continuation in
-            Task {
+            let task = Task {
                 do {
                     let stream = try await cli.streamLogs(containerId: containerId, tail: tail)
                     for await line in stream {
                         continuation.yield(line)
                     }
                 } catch {
-                    continuation.finish()
+                    // fall through to finish
                 }
+                // Finish on normal completion too — otherwise the consumer's `for await`
+                // would hang forever once the underlying `docker logs` process exits.
+                continuation.finish()
+            }
+            // When the consumer stops iterating (e.g. the logs panel closes and cancels its
+            // task), tear down the relay task. Cancelling it ends its `for await`, which
+            // triggers DockerCLI's onTermination to terminate the `docker logs -f` process —
+            // without this the process and its file handles leak until GC.
+            continuation.onTermination = { _ in
+                task.cancel()
             }
         }
     }

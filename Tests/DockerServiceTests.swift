@@ -345,3 +345,62 @@ struct AppSettingsDockerTests {
         #expect(decoded.terminalShell == settings.terminalShell)
     }
 }
+
+struct DockerComposeParsingTests {
+
+    @Test
+    func parsesServicesWithLFLineEndings() {
+        let yaml = "version: '3'\nservices:\n  web:\n  db:\n"
+        let services = DockerCLI.parseComposeServiceNames(from: yaml)
+        #expect(services.map(\.name) == ["web", "db"])
+    }
+
+    @Test
+    func parsesServicesWithCRLFLineEndings() {
+        // Windows / Docker Desktop compose files use CRLF. `split(separator: "\n")` failed
+        // here because "\r\n" is a single grapheme cluster that never equals the "\n" separator.
+        let yaml = "version: '3'\r\nservices:\r\n  web:\r\n  db:\r\n"
+        let services = DockerCLI.parseComposeServiceNames(from: yaml)
+        #expect(services.map(\.name) == ["web", "db"])
+    }
+
+    @Test
+    func stopsAtBlankLineAfterServicesSection() {
+        let yaml = "services:\n  web:\n\nvolumes:\n  data:\n"
+        let services = DockerCLI.parseComposeServiceNames(from: yaml)
+        #expect(services.map(\.name) == ["web"])
+    }
+}
+
+struct DockerLogStreamBufferTests {
+
+    @Test
+    func yieldsLineEvenWithInvalidUTF8() async {
+        let buffer = LogStreamBuffer(stream: .stdout)
+        let (stream, continuation) = AsyncStream.makeStream(of: LogLine.self)
+
+        // "Line" + invalid byte 0xFF + "2" + newline — previously dropped wholesale.
+        buffer.append(Data([0x4C, 0x69, 0x6E, 0x65, 0xFF, 0x32, 0x0A]), into: continuation)
+        continuation.finish()
+
+        var lines: [LogLine] = []
+        for await line in stream { lines.append(line) }
+
+        #expect(lines.count == 1)
+        #expect(lines.first?.text == "Line\u{FFFD}2")
+    }
+
+    @Test
+    func decodesValidLinesAndPreservesEmptyLines() async {
+        let buffer = LogStreamBuffer(stream: .stdout)
+        let (stream, continuation) = AsyncStream.makeStream(of: LogLine.self)
+
+        buffer.append(Data("hello\n\nworld\n".utf8), into: continuation)
+        continuation.finish()
+
+        var texts: [String] = []
+        for await line in stream { texts.append(line.text) }
+
+        #expect(texts == ["hello", "", "world"])
+    }
+}

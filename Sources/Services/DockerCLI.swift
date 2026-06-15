@@ -202,22 +202,30 @@ actor DockerCLI {
         guard let contents = try? String(contentsOf: configPath, encoding: .utf8) else {
             return []
         }
-        
+        return Self.parseComposeServiceNames(from: contents)
+    }
+
+    /// Pure parsing of service names from a compose file's text. Split on any newline
+    /// (`Character.isNewline` matches LF, CRLF, and lone CR — `split(separator: "\n")`
+    /// would not, because the `"\r\n"` grapheme cluster never equals the `"\n"` separator,
+    /// leaving Windows/Docker-Desktop files completely unparsed). Empty subsequences are kept
+    /// so the first blank line still terminates the `services:` block.
+    static func parseComposeServiceNames(from contents: String) -> [DockerComposeService] {
         var services: [DockerComposeService] = []
         var inServicesSection = false
-        
-        for line in contents.split(separator: "\n") {
+
+        for line in contents.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline) {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
-            
+
             if trimmed == "services:" {
                 inServicesSection = true
                 continue
             }
-            
+
             if inServicesSection && trimmed.isEmpty {
                 break
             }
-            
+
             if inServicesSection && trimmed.hasSuffix(":") && !trimmed.hasPrefix("#") && !trimmed.hasPrefix("-") {
                 let serviceName = String(trimmed.dropLast()).trimmingCharacters(in: .whitespaces)
                 if !serviceName.isEmpty && !serviceName.contains("volume") && !serviceName.contains("network") {
@@ -225,7 +233,7 @@ actor DockerCLI {
                 }
             }
         }
-        
+
         return services
     }
     
@@ -290,7 +298,7 @@ actor DockerCLI {
     }
 }
 
-private final class LogStreamBuffer {
+final class LogStreamBuffer {
     private let stream: LogStream
     private var pending = Data()
 
@@ -305,14 +313,18 @@ private final class LogStreamBuffer {
             let lineData = pending.prefix(upTo: newlineIndex)
             pending.removeSubrange(...newlineIndex)
 
-            guard let text = String(data: lineData, encoding: .utf8) else { continue }
+            // Lossy UTF-8 decoding: a single invalid byte anywhere in the line must not
+            // discard the whole line. `String(decoding:as:)` substitutes U+FFFD for bad
+            // sequences instead of returning nil, so the line is still surfaced.
+            let text = String(decoding: lineData, as: UTF8.self)
             continuation.yield(LogLine(text: text, stream: stream))
         }
     }
 
     func flush(into continuation: AsyncStream<LogLine>.Continuation) {
         guard !pending.isEmpty else { return }
-        if let text = String(data: pending, encoding: .utf8), !text.isEmpty {
+        let text = String(decoding: pending, as: UTF8.self)
+        if !text.isEmpty {
             continuation.yield(LogLine(text: text, stream: stream))
         }
         pending.removeAll(keepingCapacity: false)

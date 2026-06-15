@@ -120,4 +120,40 @@ struct SemanticTokenDecoderTests {
         #expect(tokens.first?.isReadonly == true)
         #expect(tokens.first?.isStatic == true)
     }
+
+    // MARK: - Malformed / adversarial server data (must not trap on integer overflow)
+
+    @Test
+    func decodeDoesNotTrapOnOverflowingDeltaStart() {
+        let decoder = SemanticTokenDecoder(legend: Self.legend)
+        // Two huge deltaStart values: the column accumulation would overflow Int and trap.
+        let data = [0, Int.max, 1, 0, 0, 0, Int.max, 1, 0, 0]
+        let tokens = decoder.decode(data, text: "let value = 1")
+        #expect(tokens.isEmpty)
+    }
+
+    @Test
+    func decodeDoesNotTrapOnOverflowingDeltaLine() {
+        let decoder = SemanticTokenDecoder(legend: Self.legend)
+        // Two huge deltaLine values: the line accumulation would overflow Int and trap.
+        let data = [Int.max, 0, 1, 0, 0, Int.max, 0, 1, 0, 0]
+        let tokens = decoder.decode(data, text: "abc")
+        #expect(tokens.isEmpty)
+    }
+
+    @Test
+    func decodeClampsOverflowingTokenLength() {
+        let decoder = SemanticTokenDecoder(legend: Self.legend)
+        let text = "abcdef"
+        // Second token starts at offset 4 with length Int.max → 4 + Int.max overflows Int.
+        let data = [
+            0, 0, 3, 0, 0,        // valid token at 0..3
+            0, 4, Int.max, 0, 0   // overflowing length
+        ]
+        let tokens = decoder.decode(data, text: text)
+        #expect(tokens.count == 2)
+        #expect(tokens[0].range == NSRange(location: 0, length: 3))
+        // Overflowing length clamps to end of text rather than trapping.
+        #expect(tokens[1].range == NSRange(location: 4, length: 2))
+    }
 }

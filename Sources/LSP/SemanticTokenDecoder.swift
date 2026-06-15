@@ -52,15 +52,24 @@ struct SemanticTokenDecoder {
 
             index += 5
 
-            currentLine += deltaLine
+            // Deltas come straight from the language server and are untrusted. Integer `+`
+            // traps on overflow in every build configuration, so a broken/malicious server
+            // sending values near Int.max would crash the editor — use overflow-checked
+            // arithmetic and abandon decoding on corrupt data instead.
+            let (newLine, lineOverflow) = currentLine.addingReportingOverflow(deltaLine)
+            guard !lineOverflow else { break }
+            currentLine = newLine
+
             if deltaLine == 0 {
-                currentCharacter += deltaStart
+                let (newCharacter, characterOverflow) = currentCharacter.addingReportingOverflow(deltaStart)
+                guard !characterOverflow else { break }
+                currentCharacter = newCharacter
             } else {
                 currentCharacter = deltaStart
             }
 
-            // Deltas always advance forward; out-of-range lines are unrecoverable.
-            guard currentLine >= 0 else { break }
+            // Deltas always advance forward; out-of-range lines/columns are unrecoverable.
+            guard currentLine >= 0, currentCharacter >= 0 else { break }
 
             let lineStart: Int
             if currentLine < lineOffsets.count {
@@ -69,10 +78,14 @@ struct SemanticTokenDecoder {
                 lineStart = textLength
             }
 
-            let startOffset = min(lineStart + currentCharacter, textLength)
+            let (rawStart, startOverflow) = lineStart.addingReportingOverflow(currentCharacter)
+            guard !startOverflow else { continue }
+            let startOffset = min(rawStart, textLength)
             guard startOffset >= 0, startOffset < textLength else { continue }
 
-            let endOffset = min(startOffset + length, textLength)
+            guard length >= 0 else { continue }
+            let (rawEnd, endOverflow) = startOffset.addingReportingOverflow(length)
+            let endOffset = endOverflow ? textLength : min(rawEnd, textLength)
             guard endOffset > startOffset else { continue }
 
             if let visibleRange,
