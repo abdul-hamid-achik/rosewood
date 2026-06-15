@@ -278,7 +278,11 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
                 self?.containerViewDidLayout()
             }
             containerView.onScroll = { [weak self] in
+                // Cancel in-flight async requests too, so a late response can't re-show a popup
+                // anchored to a position that has since scrolled away.
+                self?.completionTask?.cancel()
                 self?.completionPopup.dismiss()
+                self?.hoverTask?.cancel()
                 self?.hoverPopup.dismiss()
             }
             setupMouseMonitor()
@@ -483,7 +487,10 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
 
         func textViewDidChangeSelection(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView, !isApplyingExternalUpdate else { return }
-            // A mouse-driven hover popup shouldn't linger once the caret moves elsewhere.
+            // A mouse-driven hover popup shouldn't linger once the caret moves elsewhere. Cancel any
+            // in-flight hover request too, so a late LSP response can't re-show the popup at a now
+            // stale position (the document/caret has moved since the request was sent).
+            hoverTask?.cancel()
             hoverPopup.dismiss()
             refreshEditorDecorations(in: textView)
             updateCursorPosition(in: textView)
@@ -1518,8 +1525,11 @@ final class EditorContainerView: NSView {
             fullHighlightTask?.cancel()
             // A single NSTextView is reused across tabs. Clear the undo stack on document
             // switch so Cmd+Z can't replay the previous file's edits against this buffer
-            // (content corruption / NSRangeException).
-            textView.undoManager?.removeAllActions()
+            // (content corruption / NSRangeException). Skip while the manager is mid-undo/redo —
+            // removeAllActions() during a transaction can corrupt its internal state.
+            if let undoManager = textView.undoManager, !undoManager.isUndoing, !undoManager.isRedoing {
+                undoManager.removeAllActions()
+            }
             textView.breakUndoCoalescing()
         }
 
