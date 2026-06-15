@@ -452,4 +452,46 @@ struct FileServiceTests {
         let keep = "cedar"
         """)
     }
+
+    @Test
+    func replaceSearchResultsSkipsLinesThatChangedSinceSearch() throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let fileURL = rootURL.appendingPathComponent("Alpha.swift")
+
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        // Search-time content: "foo" matches on lines 1 and 2.
+        try """
+        foo A
+        foo B
+        """.write(to: fileURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        // The user selects only the line-2 match ("foo B").
+        let allResults = FileService.shared.searchProject(at: rootURL, query: "foo")
+        let line2 = try #require(allResults.first { $0.lineNumber == 2 })
+
+        // The file then changes the way an edit+save would: a line is inserted at the top, so the
+        // matched "foo B" is now line 3 and line 2 holds a DIFFERENT match ("foo A"). The stale
+        // line-2 result must NOT replace that different line — doing so silently corrupts content.
+        try """
+        inserted
+        foo A
+        foo B
+        """.write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let summary = try FileService.shared.replaceSearchResults(
+            [line2],
+            searchQuery: "foo",
+            replacement: "BAR"
+        )
+
+        #expect(summary.replacementCount == 0)
+        #expect(summary.modifiedFiles.isEmpty)
+        #expect(try FileService.shared.readFile(at: fileURL) == """
+        inserted
+        foo A
+        foo B
+        """)
+    }
 }

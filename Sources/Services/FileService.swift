@@ -1030,11 +1030,25 @@ final class FileService {
 
             var updatedContent = document.content
             var fileReplacementCount = 0
+            // The (trimmed) line text recorded at search time, per line number, used to detect a
+            // file whose line structure shifted since the search (e.g. edited + saved before the
+            // replace was applied).
+            let recordedLineText = Dictionary(
+                groupedResult.map { ($0.lineNumber, $0.lineText) },
+                uniquingKeysWith: { first, _ in first }
+            )
             let targetLineNumbers = Set(groupedResult.map(\.lineNumber)).sorted(by: >)
 
             for lineNumber in targetLineNumbers {
                 guard let lineRange = rangeForLineNumber(lineNumber, in: updatedContent) else { continue }
                 let line = String(updatedContent[lineRange])
+                // Stale-line guard: only replace when the current line still matches what the search
+                // recorded. If the file shifted since the search, the line at this number is now a
+                // different one, and re-matching the query there would corrupt unintended text.
+                if let recorded = recordedLineText[lineNumber],
+                   line.trimmingCharacters(in: .whitespaces) != recorded {
+                    continue
+                }
                 let replacementResult = matcher.replacingMatches(in: line, replacement: replacement)
                 guard replacementResult.replacementCount > 0 else { continue }
 
