@@ -2,6 +2,7 @@ import SwiftUI
 
 struct DockerLogsPanelView: View {
     @EnvironmentObject var projectViewModel: ProjectViewModel
+    @EnvironmentObject var dockerModel: DockerModel
     @EnvironmentObject private var configService: ConfigurationService
     
     @State private var logLines: [LogLine] = []
@@ -32,14 +33,14 @@ struct DockerLogsPanelView: View {
         .onDisappear {
             stopStreamingLogs()
         }
-        .onChange(of: projectViewModel.selectedContainer?.id) {
+        .onChange(of: dockerModel.selectedContainer?.id) {
             startStreamingLogs()
         }
     }
     
     private var headerView: some View {
         HStack {
-            if let container = projectViewModel.selectedContainer {
+            if let container = dockerModel.selectedContainer {
                 HStack(spacing: 8) {
                     Circle()
                         .fill(statusColor(for: container.status))
@@ -88,7 +89,7 @@ struct DockerLogsPanelView: View {
             
             Button {
                 projectViewModel.bottomPanel = nil
-                projectViewModel.selectedContainer = nil
+                dockerModel.selectedContainer = nil
             } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 10, weight: .semibold))
@@ -163,7 +164,7 @@ struct DockerLogsPanelView: View {
     }
     
     private func startStreamingLogs() {
-        guard let container = projectViewModel.selectedContainer else { return }
+        guard let container = dockerModel.selectedContainer else { return }
 
         stopStreamingLogs()
         isStreaming = true
@@ -171,7 +172,7 @@ struct DockerLogsPanelView: View {
 
         let logLineLimit = max(configService.settings.docker.logLineLimit, 1)
         streamingTask = Task {
-            let stream = projectViewModel.getLogStream(for: container.id, tail: logLineLimit)
+            let stream = dockerModel.getLogStream(for: container.id, tail: logLineLimit)
             for await line in stream {
                 guard !Task.isCancelled else { break }
                 await MainActor.run {

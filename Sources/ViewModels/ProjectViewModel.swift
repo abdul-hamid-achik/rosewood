@@ -296,14 +296,8 @@ final class ProjectViewModel: ObservableObject {
     @Published var diagnosticsPanelScope: DiagnosticsPanelScope = .currentFile
     
     // MARK: - Docker State
-    @Published var dockerContainers: [DockerContainer] = []
-    @Published var dockerImages: [DockerImage] = []
-    @Published var dockerVolumes: [DockerVolume] = []
-    @Published var dockerComposeProjects: [DockerComposeProject] = []
-    @Published var dockerConnectionState: DockerConnectionState = .connecting
-    @Published var isRefreshingDocker: Bool = false
-    @Published var selectedDockerTab: DockerTab = .containers
-    @Published var selectedContainer: DockerContainer?
+    // Docker state lives on `dockerModel` (a child ObservableObject injected separately) so
+    // Docker refreshes only re-render the Docker views, not every view observing this model.
 
     // MARK: - Terminal State
     @Published var terminalSessions: [TerminalSession] = []
@@ -680,6 +674,7 @@ final class ProjectViewModel: ObservableObject {
     let debugSessionService: DebugSessionServiceProtocol
     let gitService: GitServiceProtocol
     let commandPaletteViewModel: CommandPaletteViewModel
+    let dockerModel: DockerModel
     private var fileTreeLoadToken = UUID()
     private var workspaceFilesLoadToken = UUID()
     var projectSearchToken = UUID()
@@ -786,6 +781,7 @@ final class ProjectViewModel: ObservableObject {
         self.outlineSidebarDataDebounceNanoseconds = outlineSidebarDataDebounceNanoseconds
         self.statusBarDetailDebounceNanoseconds = statusBarDetailDebounceNanoseconds
         self.commandPaletteViewModel = CommandPaletteViewModel(commandDispatcher: commandDispatcher)
+        self.dockerModel = DockerModel()
         self.gitRepositoryStatus = .empty
         self.debugSessionService.setEventHandler { [weak self] event in
             Task { @MainActor [weak self] in
@@ -1320,7 +1316,7 @@ final class ProjectViewModel: ObservableObject {
                     aliases: ["docker", "containers", "compose", "show docker"]
                 ) {
                     self.sidebarMode = .docker
-                    self.refreshDockerState()
+                    self.dockerModel.refreshDockerState()
                 }
             )
         }
@@ -3622,7 +3618,7 @@ final class ProjectViewModel: ObservableObject {
         guard oldValue != sidebarMode else { return }
 
         if sidebarMode == .docker {
-            refreshDockerState()
+            dockerModel.refreshDockerState()
             return
         }
 

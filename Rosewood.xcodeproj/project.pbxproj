@@ -28,9 +28,11 @@
 		221959B628D173C5782C920B /* TabBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C934F12EA29C0BB1468C6713 /* TabBarView.swift */; };
 		22200B232F0F32447E993ACE /* WorkspaceSymbolIndexer.swift in Sources */ = {isa = PBXBuildFile; fileRef = C38A645A72B0796CDFAF6BB8 /* WorkspaceSymbolIndexer.swift */; };
 		230A1D1EAAC33A7CBDD1014B /* EditorTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E5BD33FB585F36C04ED2489 /* EditorTab.swift */; };
+		24060D5819223275011B435B /* DockerModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8E471EAAF9B4CE8DE65339A /* DockerModel.swift */; };
 		26660D492C69C1692CFF20FB /* CommandPaletteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C03E37445832BA5ECDF32F6E /* CommandPaletteView.swift */; };
 		2896EF33CC92D274DF2D7E4C /* EditorTabLSPTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DF1DCB788593285D11AFA32 /* EditorTabLSPTests.swift */; };
 		28AEE726216E009197959513 /* AppSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8C3C5BC3586B4EE563DE1EA /* AppSettings.swift */; };
+		28E7EC01C34E795FE8EF22EE /* DockerModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60F32ADFAFAF63EC49E318CE /* DockerModelTests.swift */; };
 		2C1CD9C052981FD0CA9DBDD6 /* LSPClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A2EA394D9F69A6C4020607E /* LSPClient.swift */; };
 		2DA5C571A3BB3470808F11C5 /* GitModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B48DDA833DEADA90B732B3EE /* GitModels.swift */; };
 		2E73A871CFB1DC00E6BBABD8 /* CompletionPopupTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68A5335869847ADA25622DA9 /* CompletionPopupTests.swift */; };
@@ -192,6 +194,7 @@
 		58BD898A73291023D816C6BB /* ConfigurationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigurationService.swift; sourceTree = "<group>"; };
 		5924388FD7C033B1C9A32DD9 /* FileServiceProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileServiceProtocol.swift; sourceTree = "<group>"; };
 		5D967306FE62CF65BA60E427 /* LSPPositionConverter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LSPPositionConverter.swift; sourceTree = "<group>"; };
+		60F32ADFAFAF63EC49E318CE /* DockerModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DockerModelTests.swift; sourceTree = "<group>"; };
 		632152F0199014518B4D4FFD /* CommandPaletteViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandPaletteViewModel.swift; sourceTree = "<group>"; };
 		64C610EC296FC028C3645A41 /* LSPTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LSPTypes.swift; sourceTree = "<group>"; };
 		65343F46122A84D1C89ED7F4 /* FoldingParserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FoldingParserTests.swift; sourceTree = "<group>"; };
@@ -248,6 +251,7 @@
 		C3D25452665CFFDCE71BF732 /* ReferencesPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReferencesPanelView.swift; sourceTree = "<group>"; };
 		C7CD6EC8132E408FD5BE8144 /* HexViewerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HexViewerView.swift; sourceTree = "<group>"; };
 		C81240BE71E2D93EB154C349 /* GitDiffPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitDiffPanelView.swift; sourceTree = "<group>"; };
+		C8E471EAAF9B4CE8DE65339A /* DockerModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DockerModel.swift; sourceTree = "<group>"; };
 		C934F12EA29C0BB1468C6713 /* TabBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabBarView.swift; sourceTree = "<group>"; };
 		CD402AEA93E8E4D803CEC473 /* FileWatcherService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileWatcherService.swift; sourceTree = "<group>"; };
 		CDC17B870150041F79EE7929 /* ProjectViewModel+Tooling.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ProjectViewModel+Tooling.swift"; sourceTree = "<group>"; };
@@ -479,6 +483,7 @@
 				8400FDA8A7E11C0A42969CC2 /* ConfigurationServiceTests.swift */,
 				B17DCB9145E3044B18854525 /* DAPClientTests.swift */,
 				83CA571E1FE285D163FE12F8 /* DebugConfigurationServiceTests.swift */,
+				60F32ADFAFAF63EC49E318CE /* DockerModelTests.swift */,
 				D7020B033691C036279E4CBC /* DockerServiceTests.swift */,
 				4446E1EFAACFE22DBF67A2E2 /* EditorRenderStateTests.swift */,
 				E02FD8EDAEF7187FA4699C70 /* EditorSupportTests.swift */,
@@ -511,6 +516,7 @@
 			isa = PBXGroup;
 			children = (
 				632152F0199014518B4D4FFD /* CommandPaletteViewModel.swift */,
+				C8E471EAAF9B4CE8DE65339A /* DockerModel.swift */,
 				C13B8E092507E3C5394A265A /* ProjectViewModel.swift */,
 				D048A486426520ECB87A4D3C /* ProjectViewModel+Debug.swift */,
 				B310B9BCDA5F4AC15F1E00F4 /* ProjectViewModel+Diagnostics.swift */,
@@ -666,6 +672,7 @@
 				5072678B390CF1DE51450DB2 /* DebugSidebarView.swift in Sources */,
 				F1C00AE5DC6A3C6DB1A84DDA /* DockerCLI.swift in Sources */,
 				EFA607A4B99A07977420BEDB /* DockerLogsPanelView.swift in Sources */,
+				24060D5819223275011B435B /* DockerModel.swift in Sources */,
 				A4A45DA37C2C1ABF124A7B81 /* DockerService.swift in Sources */,
 				8A17AE24295F7A19B741862A /* DockerSidebarView.swift in Sources */,
 				0AC878022908AC97B8716EA2 /* DockerTypes.swift in Sources */,
@@ -752,6 +759,7 @@
 				86293A3DE1D7982E81817C90 /* ConfigurationServiceTests.swift in Sources */,
 				8520791F684F7167D7181B49 /* DAPClientTests.swift in Sources */,
 				398396F46497BCE2ECA34452 /* DebugConfigurationServiceTests.swift in Sources */,
+				28E7EC01C34E795FE8EF22EE /* DockerModelTests.swift in Sources */,
 				97503C9A4642FD83F2CA3C6F /* DockerServiceTests.swift in Sources */,
 				B4650BD7AB695139CAF6C0AA /* EditorRenderStateTests.swift in Sources */,
 				DE1021E7F6B0E4E318BA699C /* EditorSupportTests.swift in Sources */,

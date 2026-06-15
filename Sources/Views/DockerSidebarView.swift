@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct DockerSidebarView: View {
-    @EnvironmentObject var projectViewModel: ProjectViewModel
+    @EnvironmentObject var dockerModel: DockerModel
     @EnvironmentObject private var configService: ConfigurationService
 
     private var themeColors: ThemeColors {
@@ -45,12 +45,12 @@ struct DockerSidebarView: View {
 
                 Spacer()
 
-                if projectViewModel.isRefreshingDocker {
+                if dockerModel.isRefreshingDocker {
                     ProgressView()
                         .scaleEffect(0.6)
                 } else {
                     Button {
-                        projectViewModel.refreshDockerState()
+                        dockerModel.refreshDockerState()
                     } label: {
                         Image(systemName: "arrow.clockwise")
                             .font(.system(size: 11))
@@ -68,7 +68,7 @@ struct DockerSidebarView: View {
             ForEach(DockerTab.allCases) { tab in
                 Button {
                     withAnimation(.rosewoodFast) {
-                        projectViewModel.selectedDockerTab = tab
+                        dockerModel.selectedDockerTab = tab
                     }
                 } label: {
                     VStack(spacing: 4) {
@@ -80,12 +80,12 @@ struct DockerSidebarView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, RosewoodUI.spacing3)
                     .background(
-                        projectViewModel.selectedDockerTab == tab
+                        dockerModel.selectedDockerTab == tab
                             ? themeColors.accent.opacity(RosewoodUI.stateOpacityHover)
                             : Color.clear
                     )
                     .foregroundColor(
-                        projectViewModel.selectedDockerTab == tab
+                        dockerModel.selectedDockerTab == tab
                             ? themeColors.accent
                             : themeColors.mutedText
                     )
@@ -103,7 +103,7 @@ struct DockerSidebarView: View {
 
     @ViewBuilder
     private var tabContent: some View {
-        switch projectViewModel.selectedDockerTab {
+        switch dockerModel.selectedDockerTab {
         case .containers:
             containersSection
         case .images:
@@ -119,15 +119,15 @@ struct DockerSidebarView: View {
         RosewoodSidebarCard {
             sectionTitle("Containers")
 
-            if projectViewModel.dockerContainers.isEmpty {
+            if dockerModel.dockerContainers.isEmpty {
                 emptyState(
                     icon: "shippingbox",
-                    message: projectViewModel.isDockerAvailable
+                    message: dockerModel.isDockerAvailable
                         ? "No containers running"
                         : "Connect to Docker to view containers"
                 )
             } else {
-                ForEach(projectViewModel.dockerContainers) { container in
+                ForEach(dockerModel.dockerContainers) { container in
                     ContainerRowView(container: container)
                 }
             }
@@ -138,15 +138,15 @@ struct DockerSidebarView: View {
         RosewoodSidebarCard {
             sectionTitle("Images")
 
-            if projectViewModel.dockerImages.isEmpty {
+            if dockerModel.dockerImages.isEmpty {
                 emptyState(
                     icon: "photo.stack",
-                    message: projectViewModel.isDockerAvailable
+                    message: dockerModel.isDockerAvailable
                         ? "No images found"
                         : "Connect to Docker to view images"
                 )
             } else {
-                ForEach(projectViewModel.dockerImages) { image in
+                ForEach(dockerModel.dockerImages) { image in
                     ImageRowView(image: image)
                 }
             }
@@ -157,15 +157,15 @@ struct DockerSidebarView: View {
         RosewoodSidebarCard {
             sectionTitle("Compose Projects")
 
-            if projectViewModel.dockerComposeProjects.isEmpty {
+            if dockerModel.dockerComposeProjects.isEmpty {
                 emptyState(
                     icon: "doc.text.fill",
-                    message: projectViewModel.isDockerAvailable
+                    message: dockerModel.isDockerAvailable
                         ? "No compose projects detected"
                         : "Connect to Docker to view projects"
                 )
             } else {
-                ForEach(projectViewModel.dockerComposeProjects) { project in
+                ForEach(dockerModel.dockerComposeProjects) { project in
                     ComposeProjectRowView(project: project)
                 }
             }
@@ -176,15 +176,15 @@ struct DockerSidebarView: View {
         RosewoodSidebarCard {
             sectionTitle("Volumes")
 
-            if projectViewModel.dockerVolumes.isEmpty {
+            if dockerModel.dockerVolumes.isEmpty {
                 emptyState(
                     icon: "externaldrive.fill",
-                    message: projectViewModel.isDockerAvailable
+                    message: dockerModel.isDockerAvailable
                         ? "No volumes found"
                         : "Connect to Docker to view volumes"
                 )
             } else {
-                ForEach(projectViewModel.dockerVolumes) { volume in
+                ForEach(dockerModel.dockerVolumes) { volume in
                     VolumeRowView(volume: volume)
                 }
             }
@@ -212,7 +212,7 @@ struct DockerSidebarView: View {
     }
 
     private var connectionIcon: String {
-        switch projectViewModel.dockerConnectionState {
+        switch dockerModel.dockerConnectionState {
         case .connected:
             return "checkmark.circle.fill"
         case .connecting:
@@ -227,7 +227,7 @@ struct DockerSidebarView: View {
     }
 
     private var connectionColor: Color {
-        switch projectViewModel.dockerConnectionState {
+        switch dockerModel.dockerConnectionState {
         case .connected:
             return themeColors.success
         case .connecting, .reconnecting:
@@ -240,9 +240,9 @@ struct DockerSidebarView: View {
     }
 
     private var connectionStatusText: String {
-        switch projectViewModel.dockerConnectionState {
+        switch dockerModel.dockerConnectionState {
         case .connected:
-            let runningCount = projectViewModel.dockerContainers.filter { $0.status == .running }.count
+            let runningCount = dockerModel.dockerContainers.filter { $0.status == .running }.count
             return "\(runningCount) containers running"
         case .connecting:
             return "Connecting..."
@@ -258,6 +258,7 @@ struct DockerSidebarView: View {
 
 struct ContainerRowView: View {
     @EnvironmentObject var projectViewModel: ProjectViewModel
+    @EnvironmentObject var dockerModel: DockerModel
     @EnvironmentObject private var configService: ConfigurationService
     let container: DockerContainer
 
@@ -310,9 +311,9 @@ struct ContainerRowView: View {
         Menu {
             Button {
                 if container.status == .running {
-                    projectViewModel.stopContainer(container)
+                    dockerModel.stopContainer(container)
                 } else {
-                    projectViewModel.startContainer(container)
+                    dockerModel.startContainer(container)
                 }
             } label: {
                 Label(
@@ -323,7 +324,7 @@ struct ContainerRowView: View {
 
             if container.status == .running {
                 Button {
-                    projectViewModel.restartContainer(container)
+                    dockerModel.restartContainer(container)
                 } label: {
                     Label("Restart", systemImage: "arrow.clockwise")
                 }
@@ -346,7 +347,7 @@ struct ContainerRowView: View {
             Divider()
 
             Button(role: .destructive) {
-                projectViewModel.removeContainer(container)
+                dockerModel.removeContainer(container)
             } label: {
                 Label("Remove", systemImage: "trash")
             }
@@ -375,7 +376,7 @@ struct ContainerRowView: View {
 }
 
 struct ImageRowView: View {
-    @EnvironmentObject var projectViewModel: ProjectViewModel
+    @EnvironmentObject var dockerModel: DockerModel
     @EnvironmentObject private var configService: ConfigurationService
     let image: DockerImage
 
@@ -404,7 +405,7 @@ struct ImageRowView: View {
 
             Menu {
                 Button(role: .destructive) {
-                    projectViewModel.removeImage(image)
+                    dockerModel.removeImage(image)
                 } label: {
                     Label("Remove", systemImage: "trash")
                 }
@@ -420,7 +421,7 @@ struct ImageRowView: View {
 }
 
 struct ComposeProjectRowView: View {
-    @EnvironmentObject var projectViewModel: ProjectViewModel
+    @EnvironmentObject var dockerModel: DockerModel
     @EnvironmentObject private var configService: ConfigurationService
     let project: DockerComposeProject
 
@@ -456,13 +457,13 @@ struct ComposeProjectRowView: View {
 
             Menu {
                 Button {
-                    projectViewModel.composeUp(project: project)
+                    dockerModel.composeUp(project: project)
                 } label: {
                     Label("Start All", systemImage: "play.fill")
                 }
 
                 Button {
-                    projectViewModel.composeDown(project: project)
+                    dockerModel.composeDown(project: project)
                 } label: {
                     Label("Stop All", systemImage: "stop.fill")
                 }

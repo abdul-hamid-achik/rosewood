@@ -419,6 +419,7 @@ struct ContentView: View {
 
 struct ActivitySidebarView: View {
     @EnvironmentObject var projectViewModel: ProjectViewModel
+    @EnvironmentObject private var dockerModel: DockerModel
     @EnvironmentObject private var configService: ConfigurationService
 
     private var themeColors: ThemeColors {
@@ -457,7 +458,7 @@ struct ActivitySidebarView: View {
                 mode: .docker,
                 systemImage: "shippingbox",
                 label: "Docker",
-                badge: projectViewModel.dockerBadgeCount
+                badge: dockerModel.dockerBadgeCount
             )
 
             Spacer()

@@ -4129,6 +4129,25 @@ struct ProjectViewModelTests {
     }
 
     @Test
+    func projectViewModelConstructsAndExposesDockerModel() {
+        let configURL = tempConfigURL()
+        defer { try? FileManager.default.removeItem(at: configURL) }
+
+        let viewModel = makeViewModel(
+            sessionStore: makeDefaults(),
+            sessionKey: "docker-model-wiring-test",
+            configService: ConfigurationService(userConfigURL: configURL),
+            fileWatcher: FileWatcherService(),
+            ui: TestProjectUI()
+        )
+
+        // Docker state was extracted into a child DockerModel; the view model must construct
+        // and expose it (it's injected separately as its own @EnvironmentObject).
+        #expect(viewModel.dockerModel.dockerContainers.isEmpty)
+        #expect(viewModel.dockerModel.selectedDockerTab == .containers)
+    }
+
+    @Test
     func projectSearchValidatesRegexPattern() {
         let configURL = tempConfigURL()
         defer { try? FileManager.default.removeItem(at: configURL) }
