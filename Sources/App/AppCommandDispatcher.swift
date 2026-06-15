@@ -29,6 +29,7 @@ enum AppCommand: Equatable {
     case findReferences
     case nextProblem
     case previousProblem
+    case toggleLineComment
 }
 
 final class AppCommandDispatcher: ObservableObject {

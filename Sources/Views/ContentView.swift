@@ -103,7 +103,7 @@ struct ContentView: View {
             projectViewModel.openPreviousProblem()
         case .settings:
             projectViewModel.showSettings = true
-        case .findInFile, .useSelectionForFind, .showReplace, .goToDefinition, .findReferences:
+        case .findInFile, .useSelectionForFind, .showReplace, .goToDefinition, .findReferences, .toggleLineComment:
             break
         }
     }

@@ -828,11 +828,32 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
                         handleGoToDefinitionFromCursor()
                     case .findReferences:
                         handleFindReferencesFromCursor()
+                    case .toggleLineComment:
+                        toggleLineComment()
                     default:
                         break
                     }
                 }
                 .store(in: &commandCancellables)
+        }
+
+        private func toggleLineComment() {
+            guard let textView = containerView?.textView,
+                  let token = LineCommentToggler.token(forLanguage: parent.language) else { return }
+            let nsString = textView.string as NSString
+            // Expand the selection to whole lines, toggle, and replace through the text-change path so
+            // it participates in undo and notifies the binding (textDidChange -> updateTabContent).
+            let lineRange = nsString.lineRange(for: textView.selectedRange())
+            let selectedText = nsString.substring(with: lineRange)
+            let toggled = LineCommentToggler
+                .toggle(lines: selectedText.components(separatedBy: "\n"), token: token)
+                .joined(separator: "\n")
+            guard toggled != selectedText,
+                  textView.shouldChangeText(in: lineRange, replacementString: toggled) else { return }
+            textView.textStorage?.replaceCharacters(in: lineRange, with: toggled)
+            textView.didChangeText()
+            // Keep the affected lines selected so the user can re-toggle or keep editing the block.
+            textView.setSelectedRange(NSRange(location: lineRange.location, length: (toggled as NSString).length))
         }
 
         private func handleMouseEvent(_ event: NSEvent) -> NSEvent? {

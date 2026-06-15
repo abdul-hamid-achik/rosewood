@@ -187,6 +187,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItem
         case #selector(handleFindInFile),
              #selector(handleUseSelectionForFind),
              #selector(handleShowReplace),
+             #selector(handleToggleLineComment),
              #selector(handleGoToLine):
             return projectViewModel?.hasOpenFile ?? false
         case #selector(handleSave),
@@ -409,6 +410,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItem
         editMenu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
         editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
         editMenu.addItem(NSMenuItem.separator())
+
+        let toggleCommentItem = NSMenuItem(title: "Toggle Comment", action: #selector(handleToggleLineComment), keyEquivalent: "/")
+        toggleCommentItem.keyEquivalentModifierMask = [.command]
+        editMenu.addItem(toggleCommentItem)
+        editMenu.addItem(NSMenuItem.separator())
+
         let findMenuItem = NSMenuItem(title: "Find", action: nil, keyEquivalent: "")
         let findMenu = NSMenu(title: "Find")
         findMenuItem.submenu = findMenu
@@ -612,6 +619,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItem
         dispatch(.findInFile, legacyNotification: .handleFindInFile)
     }
 
+    @objc func handleToggleLineComment() {
+        dispatch(.toggleLineComment, legacyNotification: .handleToggleLineComment)
+    }
+
     @objc func handleFindNext() {
         dispatch(.findNext, legacyNotification: .handleFindNext)
     }
@@ -797,6 +808,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItem
 
 extension Notification.Name {
     static let handleFindInFile = Notification.Name("handleFindInFile")
+    static let handleToggleLineComment = Notification.Name("handleToggleLineComment")
     static let handleFindNext = Notification.Name("handleFindNext")
     static let handleFindPrevious = Notification.Name("handleFindPrevious")
     static let handleNextProblem = Notification.Name("handleNextProblem")
