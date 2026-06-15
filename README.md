@@ -133,6 +133,12 @@ export PATH="$HOME/.local/bin:$PATH"
 | Cmd+Shift+F | Find in Project |
 | F12 | Go to Definition |
 | Shift+F12 | Find References |
+| Cmd+/ | Toggle Line Comment |
+| Opt+Up / Opt+Down | Move Line Up / Down |
+| Cmd+Shift+D | Duplicate Line |
+| Cmd+Shift+K | Delete Line |
+| Ctrl+Shift+J | Join Lines |
+| Tab / Shift+Tab | Indent / Outdent Selection |
 | Cmd+Z | Undo |
 | Cmd+Shift+Z | Redo |
 
