@@ -18,7 +18,7 @@ extension ProjectViewModel {
     }
 
     func toggleReferencesPanel() {
-        guard !referenceResults.isEmpty else { return }
+        guard !referencesModel.referenceResults.isEmpty else { return }
         bottomPanel = isReferencesPanelVisible ? nil : .references
     }
 
@@ -61,12 +61,12 @@ extension ProjectViewModel {
     }
 
     func showReferences(_ locations: [LSPLocation]) {
-        referenceResults = locations.compactMap(makeReferenceResult(for:)).sorted(by: compareReferenceResults)
+        referencesModel.referenceResults = locations.compactMap(makeReferenceResult(for:)).sorted(by: compareReferenceResults)
         bottomPanel = .references
     }
 
     func closeReferencesPanel() {
-        referenceResults = []
+        referencesModel.referenceResults = []
         if isReferencesPanelVisible {
             bottomPanel = nil
         }

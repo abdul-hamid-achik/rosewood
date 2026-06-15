@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ReferencesPanelView: View {
     @EnvironmentObject var projectViewModel: ProjectViewModel
+    @EnvironmentObject var referencesModel: ReferencesModel
     @EnvironmentObject private var configService: ConfigurationService
 
     private var themeColors: ThemeColors {
@@ -9,7 +10,7 @@ struct ReferencesPanelView: View {
     }
 
     private var referenceFileCount: Int {
-        Set(projectViewModel.referenceResults.map(\.fileURL.standardizedFileURL.path)).count
+        Set(referencesModel.referenceResults.map(\.fileURL.standardizedFileURL.path)).count
     }
 
     var body: some View {
@@ -18,12 +19,12 @@ struct ReferencesPanelView: View {
 
             ThemedDivider()
 
-            if projectViewModel.referenceResults.isEmpty {
+            if referencesModel.referenceResults.isEmpty {
                 emptyStateView
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 8) {
-                        ForEach(Array(projectViewModel.referenceResults.enumerated()), id: \.element.id) { index, result in
+                        ForEach(Array(referencesModel.referenceResults.enumerated()), id: \.element.id) { index, result in
                             Button {
                                 projectViewModel.openReferenceResult(result)
                             } label: {
@@ -82,7 +83,7 @@ struct ReferencesPanelView: View {
                 .foregroundColor(themeColors.subduedText)
                 .accessibilityIdentifier("references-panel-title")
 
-            RosewoodHeaderChip(text: "\(projectViewModel.referenceResults.count)", tint: themeColors.mutedText)
+            RosewoodHeaderChip(text: "\(referencesModel.referenceResults.count)", tint: themeColors.mutedText)
 
             if referenceFileCount > 1 {
                 RosewoodHeaderChip(text: "\(referenceFileCount) files", tint: themeColors.mutedText)

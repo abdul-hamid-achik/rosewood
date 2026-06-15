@@ -277,7 +277,8 @@ final class ProjectViewModel: ObservableObject {
     @Published var debugConsoleEntries: [DebugConsoleEntry] = []
     @Published var debugStoppedFilePath: String?
     @Published var debugStoppedLine: Int?
-    @Published var referenceResults: [ReferenceResult] = []
+    // referencesModel.referenceResults moved to `referencesModel` (a child ObservableObject) so the references
+    // panel observes only that; the building/navigation logic below still writes into it.
     @Published var gitRepositoryStatus: GitRepositoryStatus = .empty {
         didSet {
             rebuildGitCaches()
@@ -676,6 +677,7 @@ final class ProjectViewModel: ObservableObject {
     let commandPaletteViewModel: CommandPaletteViewModel
     let dockerModel: DockerModel
     let terminalModel: TerminalModel
+    let referencesModel: ReferencesModel
     private var fileTreeLoadToken = UUID()
     private var workspaceFilesLoadToken = UUID()
     var projectSearchToken = UUID()
@@ -784,6 +786,7 @@ final class ProjectViewModel: ObservableObject {
         self.commandPaletteViewModel = CommandPaletteViewModel(commandDispatcher: commandDispatcher)
         self.dockerModel = DockerModel()
         self.terminalModel = TerminalModel(configService: configService)
+        self.referencesModel = ReferencesModel()
         self.gitRepositoryStatus = .empty
         self.debugSessionService.setEventHandler { [weak self] event in
             Task { @MainActor [weak self] in
@@ -1499,7 +1502,7 @@ final class ProjectViewModel: ObservableObject {
             }
         }
 
-        if !referenceResults.isEmpty {
+        if !referencesModel.referenceResults.isEmpty {
             actions.append(
                 makeCommandPaletteAction(
                     id: isReferencesPanelVisible ? "hideReferencesPanel" : "showReferencesPanel",

@@ -3637,7 +3637,7 @@ struct ProjectViewModelTests {
         }
 
         #expect(fileWatcher.watchedURLs.isEmpty)
-        #expect(viewModel.referenceResults.isEmpty)
+        #expect(viewModel.referencesModel.referenceResults.isEmpty)
         #expect(viewModel.isReferencesPanelVisible == false)
     }
 
@@ -3736,7 +3736,7 @@ struct ProjectViewModelTests {
         }
 
         #expect(fileWatcher.watchedURLs.isEmpty)
-        #expect(viewModel.referenceResults.isEmpty)
+        #expect(viewModel.referencesModel.referenceResults.isEmpty)
         #expect(viewModel.isReferencesPanelVisible == false)
     }
 
@@ -4147,6 +4147,7 @@ struct ProjectViewModelTests {
         #expect(viewModel.dockerModel.selectedDockerTab == .containers)
         #expect(viewModel.terminalModel.terminalSessions.isEmpty)
         #expect(viewModel.terminalModel.currentTerminalSessionId == nil)
+        #expect(viewModel.referencesModel.referenceResults.isEmpty)
     }
 
     @Test
@@ -5349,9 +5350,9 @@ struct ProjectViewModelTests {
         ])
 
         #expect(viewModel.isReferencesPanelVisible == true)
-        #expect(viewModel.referenceResults.count == 2)
-        #expect(viewModel.referenceResults[0].path == "Alpha.swift")
-        #expect(viewModel.referenceResults[1].path == "Beta.swift")
+        #expect(viewModel.referencesModel.referenceResults.count == 2)
+        #expect(viewModel.referencesModel.referenceResults[0].path == "Alpha.swift")
+        #expect(viewModel.referencesModel.referenceResults[1].path == "Beta.swift")
     }
 
     @Test
@@ -5481,13 +5482,13 @@ struct ProjectViewModelTests {
         ])
 
         #expect(viewModel.isReferencesPanelVisible == true)
-        #expect(viewModel.referenceResults.count == 1)
+        #expect(viewModel.referencesModel.referenceResults.count == 1)
 
         viewModel.openFolder()
 
         #expect(viewModel.rootDirectory == replacementRootURL)
         #expect(viewModel.isReferencesPanelVisible == false)
-        #expect(viewModel.referenceResults.isEmpty)
+        #expect(viewModel.referencesModel.referenceResults.isEmpty)
     }
 
     @Test

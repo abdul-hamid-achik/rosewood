@@ -17,6 +17,7 @@
 		0EF385CC70E6AC7021A75C77 /* FileWatcherServiceProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CF70CA7E00B268639E05C89 /* FileWatcherServiceProtocol.swift */; };
 		124F8AEA112C6B8B9688700F /* BinaryPlaceholderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F78CDB35D05AAEBC835E4AD9 /* BinaryPlaceholderView.swift */; };
 		127362C6B844AFC7EBA38E0B /* ProcessRunnerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FF822CE9A7456B3020790E5 /* ProcessRunnerTests.swift */; };
+		15B99C49C25379B4874A8335 /* ReferencesModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51920034BB6BDA7AE3C52B6C /* ReferencesModel.swift */; };
 		1888E12FA9E3D8CF9E6BD6F3 /* TerminalPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E11070C4A5E78DE1E7D4B455 /* TerminalPanelView.swift */; };
 		18D2D8AD3068DAA61DD06E15 /* CommandPaletteViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 632152F0199014518B4D4FFD /* CommandPaletteViewModel.swift */; };
 		19C3DC274B0D61EF93A4AFD9 /* CompletionPopupController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BEF7C942E735DEBCD2A5BFD7 /* CompletionPopupController.swift */; };
@@ -190,6 +191,7 @@
 		4E5BD33FB585F36C04ED2489 /* EditorTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorTab.swift; sourceTree = "<group>"; };
 		507610D847C4D76CBDDEDE84 /* DebugConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugConfiguration.swift; sourceTree = "<group>"; };
 		516B62751331D34E26650B25 /* BreakpointStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BreakpointStoreTests.swift; sourceTree = "<group>"; };
+		51920034BB6BDA7AE3C52B6C /* ReferencesModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReferencesModel.swift; sourceTree = "<group>"; };
 		51D53DAF136E73DEE6EAE746 /* SemanticTokenDecoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SemanticTokenDecoder.swift; sourceTree = "<group>"; };
 		55F5D5D96F388975838657C3 /* NotificationBannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationBannerView.swift; sourceTree = "<group>"; };
 		58BD898A73291023D816C6BB /* ConfigurationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigurationService.swift; sourceTree = "<group>"; };
@@ -529,6 +531,7 @@
 				CDC17B870150041F79EE7929 /* ProjectViewModel+Tooling.swift */,
 				EDCD3FD5EFD358C49DA53B81 /* ProjectViewModel+UITestFixtures.swift */,
 				B0278A3EAE897137978D9558 /* ProjectViewModel+WorkspaceSymbols.swift */,
+				51920034BB6BDA7AE3C52B6C /* ReferencesModel.swift */,
 				9DA09E4012FAE59E019BBC2B /* TerminalModel.swift */,
 			);
 			path = ViewModels;
@@ -725,6 +728,7 @@
 				71E1C298FC30476C73477F08 /* ProjectViewModel+UITestFixtures.swift in Sources */,
 				A4DE79D96EDB9388E5EA71F9 /* ProjectViewModel+WorkspaceSymbols.swift in Sources */,
 				77D8D2235FA1927595446691 /* ProjectViewModel.swift in Sources */,
+				15B99C49C25379B4874A8335 /* ReferencesModel.swift in Sources */,
 				548A3646426FD824BF0A6CE9 /* ReferencesPanelView.swift in Sources */,
 				D64F7B24D26CBD7AD0356934 /* RosewoodApp.swift in Sources */,
 				8589AC0AAB0AF57084DFCF85 /* SemanticTokenDecoder.swift in Sources */,

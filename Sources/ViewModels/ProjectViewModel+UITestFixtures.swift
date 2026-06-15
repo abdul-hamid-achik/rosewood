@@ -186,7 +186,7 @@ extension ProjectViewModel {
         expandedDirectoryPaths = []
         openTabs = []
         selectedTabIndex = nil
-        referenceResults = []
+        referencesModel.referenceResults = []
         pendingNewItemDirectory = nil
         clearProjectSearchResults()
 
@@ -283,7 +283,7 @@ extension ProjectViewModel {
         if shouldInstallReferencesFixture {
             let betaReferenceURL = rootURL.appendingPathComponent("Beta.txt")
             try? "let beta = alpha\n".write(to: betaReferenceURL, atomically: true, encoding: .utf8)
-            referenceResults = [
+            referencesModel.referenceResults = [
                 ReferenceResult(
                     location: LSPLocation(
                         uri: alphaURL.absoluteString,
