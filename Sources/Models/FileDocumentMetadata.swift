@@ -28,19 +28,44 @@ enum LineEndingStyle: String, Codable, Equatable, Sendable, CaseIterable {
     }
 
     static func detect(in text: String) -> LineEndingStyle {
-        if text.contains("\r\n") {
-            return .crlf
+        // Count each style rather than first-match-wins. The old logic returned .crlf if the file
+        // contained even a single "\r\n", so a predominantly-LF file with one stray CRLF was
+        // normalized entirely to CRLF on save — corrupting every other line.
+        var crlfCount = 0
+        var lfCount = 0
+        var crCount = 0
+
+        // Iterate Unicode scalars, NOT Characters: Swift treats "\r\n" as a single grapheme
+        // cluster, so a Character compare against "\r"/"\n" would never match CRLF.
+        let scalars = text.unicodeScalars
+        var index = scalars.startIndex
+        while index < scalars.endIndex {
+            let scalar = scalars[index]
+            if scalar == "\r" {
+                let next = scalars.index(after: index)
+                if next < scalars.endIndex, scalars[next] == "\n" {
+                    crlfCount += 1
+                    index = scalars.index(after: next)
+                    continue
+                }
+                crCount += 1
+            } else if scalar == "\n" {
+                lfCount += 1
+            }
+            index = scalars.index(after: index)
         }
 
-        if text.contains("\n") {
+        if crlfCount == 0, lfCount == 0, crCount == 0 {
             return .lf
         }
-
-        if text.contains("\r") {
-            return .cr
+        // Ties favor CRLF then LF, preserving the previous behavior for pure / evenly-mixed files.
+        if crlfCount >= lfCount, crlfCount >= crCount {
+            return .crlf
         }
-
-        return .lf
+        if lfCount >= crCount {
+            return .lf
+        }
+        return .cr
     }
 }
 

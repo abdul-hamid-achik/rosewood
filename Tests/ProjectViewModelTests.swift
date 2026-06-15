@@ -822,7 +822,8 @@ struct ProjectViewModelTests {
         let fileURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
             .appendingPathExtension("swift")
-        try "print(\"hello\")".write(to: fileURL, atomically: true, encoding: .utf8)
+        // Three lines so the restored cursor (line 3) is in range and not clamped.
+        try "line one\nline two\nprint(\"hello\")\n".write(to: fileURL, atomically: true, encoding: .utf8)
         defer { try? FileManager.default.removeItem(at: fileURL) }
 
         let configURL = tempConfigURL()
@@ -858,6 +859,47 @@ struct ProjectViewModelTests {
         #expect(viewModel.selectedTab?.cursorPosition.line == 3)
         #expect(viewModel.selectedTab?.cursorPosition.column == 7)
         #expect(fileWatcher.watchedURLs == Set([fileURL]))
+    }
+
+    @Test
+    func restoreSessionClampsCursorToFileLineCount() throws {
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("swift")
+        // The file now has only two lines (it shrank since the session was saved).
+        try "first\nsecond".write(to: fileURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+
+        let configURL = tempConfigURL()
+        defer { try? FileManager.default.removeItem(at: configURL) }
+        let defaults = makeDefaults()
+
+        let session = ProjectSessionState(
+            rootDirectoryPath: nil,
+            expandedDirectoryPaths: [],
+            openTabs: [
+                ProjectSessionTabState(
+                    filePath: fileURL.path,
+                    fileName: fileURL.lastPathComponent,
+                    cursorLine: 9,
+                    cursorColumn: 2
+                )
+            ],
+            selectedTabPath: fileURL.path
+        )
+        defaults.set(try JSONEncoder().encode(session), forKey: "restore-clamp-test")
+
+        let viewModel = makeViewModel(
+            sessionStore: defaults,
+            sessionKey: "restore-clamp-test",
+            configService: ConfigurationService(userConfigURL: configURL),
+            fileWatcher: FileWatcherService(),
+            ui: TestProjectUI()
+        )
+
+        // The out-of-range saved line (9) is clamped to the file's actual line count (2).
+        #expect(viewModel.selectedTab?.cursorPosition.line == 2)
+        #expect(viewModel.selectedTab?.cursorPosition.column == 2)
     }
 
     @Test

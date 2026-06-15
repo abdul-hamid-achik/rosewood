@@ -4783,7 +4783,7 @@ final class ProjectViewModel: ObservableObject {
                     fileName: tabState.fileName,
                     content: document.content,
                     originalContent: document.content,
-                    cursorPosition: restoredCursorPosition(for: tabState),
+                    cursorPosition: restoredCursorPosition(for: tabState, clampedTo: document.content),
                     documentMetadata: document.metadata,
                     contentType: contentType
                 )
@@ -4846,9 +4846,16 @@ final class ProjectViewModel: ObservableObject {
         return isDirectory.boolValue
     }
 
-    private func restoredCursorPosition(for tabState: ProjectSessionTabState) -> CursorPosition {
-        CursorPosition(
-            line: max(tabState.cursorLine ?? 1, 1),
+    private func restoredCursorPosition(for tabState: ProjectSessionTabState, clampedTo content: String? = nil) -> CursorPosition {
+        var line = max(tabState.cursorLine ?? 1, 1)
+        // Clamp to the file's current line count: a file edited externally to be shorter than when
+        // the session was saved would otherwise restore an out-of-range cursor line.
+        if let content {
+            let lineCount = max(content.components(separatedBy: .newlines).count, 1)
+            line = min(line, lineCount)
+        }
+        return CursorPosition(
+            line: line,
             column: max(tabState.cursorColumn ?? 1, 1)
         )
     }

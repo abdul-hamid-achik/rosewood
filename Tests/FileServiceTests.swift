@@ -454,6 +454,18 @@ struct FileServiceTests {
     }
 
     @Test
+    func lineEndingDetectionPrefersMostCommonStyle() {
+        #expect(LineEndingStyle.detect(in: "a\nb\nc\n") == .lf)
+        #expect(LineEndingStyle.detect(in: "a\r\nb\r\n") == .crlf)
+        #expect(LineEndingStyle.detect(in: "a\rb\r") == .cr)
+        // Majority LF with a single stray CRLF must NOT flip the whole file to CRLF.
+        #expect(LineEndingStyle.detect(in: "a\nb\nc\r\nd\n") == .lf)
+        // Majority CRLF stays CRLF.
+        #expect(LineEndingStyle.detect(in: "a\r\nb\r\nc\n") == .crlf)
+        #expect(LineEndingStyle.detect(in: "no newlines") == .lf)
+    }
+
+    @Test
     func replaceSearchResultsSkipsLinesThatChangedSinceSearch() throws {
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
