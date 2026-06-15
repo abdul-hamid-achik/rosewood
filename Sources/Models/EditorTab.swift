@@ -93,7 +93,7 @@ struct EditorTab: Identifiable {
     }
 }
 
-struct CursorPosition {
+struct CursorPosition: Equatable {
     var line: Int = 1
     var column: Int = 1
 

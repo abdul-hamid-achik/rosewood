@@ -185,6 +185,17 @@ final class ProjectViewModel: ObservableObject {
     }
     private var activeEditBuffer: ActiveEditBuffer?
 
+    // Live, NON-@Published caret buffer for the active tab — mirrors activeEditBuffer. Caret moves
+    // (every keystroke/arrow/click) land here instead of mutating @Published openTabs, so they don't
+    // fire objectWillChange on the whole view model. Flushed into the tab struct at the same
+    // boundaries as the edit buffer (tab switch / save / close / …). Keyed by tab id so a stale
+    // buffer can never commit to the wrong tab.
+    private struct ActiveCursorBuffer {
+        let tabID: UUID
+        var position: CursorPosition
+    }
+    private var activeCursorBuffer: ActiveCursorBuffer?
+
     @Published var selectedTabIndex: Int? = nil {
         willSet {
             // Flush the outgoing tab's live edits into its struct before the selection changes.
@@ -629,6 +640,7 @@ final class ProjectViewModel: ObservableObject {
     let terminalModel: TerminalModel
     let referencesModel: ReferencesModel
     let gitModel: GitModel
+    let cursorDisplayModel: CursorDisplayModel
     // `lazy` so its dependency closures can capture self (built on first access, post-init).
     lazy var diagnosticsModel: DiagnosticsModel = DiagnosticsModel(
         lspService: lspService,
@@ -746,6 +758,7 @@ final class ProjectViewModel: ObservableObject {
         self.terminalModel = TerminalModel(configService: configService)
         self.referencesModel = ReferencesModel()
         self.gitModel = GitModel()
+        self.cursorDisplayModel = CursorDisplayModel()
         self.gitRepositoryStatus = .empty
         self.debugSessionService.setEventHandler { [weak self] event in
             Task { @MainActor [weak self] in
@@ -3021,11 +3034,15 @@ final class ProjectViewModel: ObservableObject {
         selectedTabIndex.map { liveContent(at: $0) }
     }
 
-    /// Flush the live buffer into the @Published struct. The ONLY path that writes struct content
-    /// from the buffer. Publishes at most once (struct mutation), acceptable because flush happens
-    /// only at boundaries (save/switch/close/…), never per keystroke. Returns whether anything changed.
+    /// Flush the live buffers into the @Published struct at a content boundary. The ONLY path that
+    /// writes struct content/caret from the buffers. Publishes at most once, acceptable because flush
+    /// happens only at boundaries (save/switch/close/…), never per keystroke/caret-move. Returns
+    /// whether the content changed. Also flushes the caret buffer (independent of the content buffer:
+    /// the caret can move without an edit), so cursor + content always commit together at every
+    /// boundary — see commitActiveCursorBuffer.
     @discardableResult
     func commitActiveEditBuffer() -> Bool {
+        commitActiveCursorBuffer()
         guard let buffer = activeEditBuffer,
               let index = openTabs.firstIndex(where: { $0.id == buffer.tabID }) else { return false }
         var changed = false
@@ -3045,11 +3062,57 @@ final class ProjectViewModel: ObservableObject {
         return changed
     }
 
-    /// Commit then drop the buffer — used when leaving a tab or when the struct content is about to
-    /// be replaced from disk, so the buffer no longer shadows the (new) struct value.
+    /// Commit then drop the buffers — used when leaving a tab or when the struct content is about to
+    /// be replaced from disk, so the buffers no longer shadow the (new) struct values.
     func commitAndClearActiveEditBuffer() {
         commitActiveEditBuffer()
         activeEditBuffer = nil
+        activeCursorBuffer = nil
+    }
+
+    // MARK: - Active cursor buffer (live caret funnel)
+
+    /// Authoritative current caret for a tab: the live buffer if it belongs to this tab, else the
+    /// committed struct value. Every caret reader funnels through here so it can never read stale.
+    func liveCursorPosition(forTabID id: UUID) -> CursorPosition {
+        if let buffer = activeCursorBuffer, buffer.tabID == id { return buffer.position }
+        return openTabs.first(where: { $0.id == id })?.cursorPosition ?? CursorPosition()
+    }
+
+    func liveCursorPosition(at index: Int) -> CursorPosition {
+        guard openTabs.indices.contains(index) else { return CursorPosition() }
+        let tab = openTabs[index]
+        if let buffer = activeCursorBuffer, buffer.tabID == tab.id { return buffer.position }
+        return tab.cursorPosition
+    }
+
+    /// The live caret of the selected tab — the public accessor the status bar / diagnostics path use.
+    func liveSelectedTabCursorPosition() -> CursorPosition? {
+        selectedTabIndex.map { liveCursorPosition(at: $0) }
+    }
+
+    /// VM-level bridge to the displayed caret so callers/tests don't import CursorDisplayModel
+    /// (mirrors the currentLineBlame bridge).
+    var displayedCursorPosition: CursorPosition {
+        get { cursorDisplayModel.position }
+        set { cursorDisplayModel.position = newValue }
+    }
+
+    /// Flush the live caret buffer into the @Published tab struct. The ONLY path that writes struct
+    /// cursor from the buffer; publishes at most once and only at boundaries (never per caret move).
+    @discardableResult
+    func commitActiveCursorBuffer() -> Bool {
+        guard let buffer = activeCursorBuffer,
+              let index = openTabs.firstIndex(where: { $0.id == buffer.tabID }) else { return false }
+        guard openTabs[index].cursorPosition != buffer.position else { return false }
+        openTabs[index].cursorPosition = buffer.position
+        return true
+    }
+
+    /// Commit then drop the caret buffer — used when leaving a tab or replacing its struct.
+    func commitAndClearActiveCursorBuffer() {
+        commitActiveCursorBuffer()
+        activeCursorBuffer = nil
     }
 
     func updateTabContent(_ content: String) {

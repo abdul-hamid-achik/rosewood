@@ -61,6 +61,7 @@
 		548A3646426FD824BF0A6CE9 /* ReferencesPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3D25452665CFFDCE71BF732 /* ReferencesPanelView.swift */; };
 		549002ED55F63B77509C8AAE /* GitDiffPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81240BE71E2D93EB154C349 /* GitDiffPanelView.swift */; };
 		55048687A0790B89F7E04EFC /* JSONRPCTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7DB9D55197C7DE1B9B57F7EA /* JSONRPCTransport.swift */; };
+		575AEB10DFE37C27942D2EBE /* CursorDisplayModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 024E4318BA22BC75173231D5 /* CursorDisplayModel.swift */; };
 		5C3B2AF5814EF86FA142A974 /* DAPClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF1AFA39C70E01EFC16F2A59 /* DAPClient.swift */; };
 		5FEF371D9856B4133D42E5A5 /* ProjectViewModel+Terminal.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4763A15DE2DF9F633A634A4C /* ProjectViewModel+Terminal.swift */; };
 		607763A28F99777606FB39BB /* FileTreeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06AB4CD4F3393CF04D83F18D /* FileTreeView.swift */; };
@@ -157,6 +158,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		024E4318BA22BC75173231D5 /* CursorDisplayModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CursorDisplayModel.swift; sourceTree = "<group>"; };
 		059BCE5B43EE99FBF46397A7 /* HoverMarkdownRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HoverMarkdownRenderer.swift; sourceTree = "<group>"; };
 		06AB4CD4F3393CF04D83F18D /* FileTreeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileTreeView.swift; sourceTree = "<group>"; };
 		0D208E8EA661925BAEC0BF80 /* Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Extensions.swift; sourceTree = "<group>"; };
@@ -524,6 +526,7 @@
 			isa = PBXGroup;
 			children = (
 				632152F0199014518B4D4FFD /* CommandPaletteViewModel.swift */,
+				024E4318BA22BC75173231D5 /* CursorDisplayModel.swift */,
 				365D56DD96B77B74CF3F630E /* DiagnosticsModel.swift */,
 				C8E471EAAF9B4CE8DE65339A /* DockerModel.swift */,
 				8775E3B84E7DD09B4E76FBE3 /* GitModel.swift */,
@@ -674,6 +677,7 @@
 				347606E262B9C29D6F3B5E60 /* ConfigurationServiceProtocol.swift in Sources */,
 				4754DAADFE6EDC49C0CC1EA8 /* ContentType.swift in Sources */,
 				0DDC1ADBC5DBEC2E6238C089 /* ContentView.swift in Sources */,
+				575AEB10DFE37C27942D2EBE /* CursorDisplayModel.swift in Sources */,
 				5C3B2AF5814EF86FA142A974 /* DAPClient.swift in Sources */,
 				C39EC76A7FC0D7ACEFB1BAAF /* DAPTypes.swift in Sources */,
 				FD64595931B4C938DEAFF3F4 /* DebugConfiguration.swift in Sources */,
