@@ -191,8 +191,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItem
             return projectViewModel?.hasOpenFile ?? false
         case #selector(handleSave),
              #selector(handleSaveAs),
+             #selector(handleSaveAll),
              #selector(handleCloseTab):
             return projectViewModel?.hasOpenFile ?? false
+        case #selector(handleNextTab),
+             #selector(handlePreviousTab):
+            return (projectViewModel?.openTabs.count ?? 0) > 1
+        case #selector(handleGoToTab(_:)):
+            return menuItem.tag <= (projectViewModel?.openTabs.count ?? 0)
         case #selector(handleReopenClosedTab):
             return projectViewModel?.canReopenClosedTab ?? false
         default:
@@ -375,6 +381,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItem
         fileMenu.addItem(withTitle: "Save", action: #selector(handleSave), keyEquivalent: "s")
         let saveAsItem = fileMenu.addItem(withTitle: "Save As...", action: #selector(handleSaveAs), keyEquivalent: "S")
         saveAsItem.keyEquivalentModifierMask = [.command, .shift]
+        let saveAllItem = fileMenu.addItem(withTitle: "Save All", action: #selector(handleSaveAll), keyEquivalent: "s")
+        saveAllItem.keyEquivalentModifierMask = [.command, .option]
         fileMenu.addItem(NSMenuItem.separator())
         fileMenu.addItem(withTitle: "Close Tab", action: #selector(handleCloseTab), keyEquivalent: "w")
         let reopenClosedTabItem = fileMenu.addItem(withTitle: "Reopen Last Closed Tab", action: #selector(handleReopenClosedTab), keyEquivalent: "T")
@@ -439,6 +447,35 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItem
         let problemsItem = NSMenuItem(title: "Show Problems", action: #selector(handleToggleProblems), keyEquivalent: "m")
         problemsItem.keyEquivalentModifierMask = [.command, .shift]
         viewMenu.addItem(problemsItem)
+
+        let terminalItem = NSMenuItem(title: "Terminal", action: #selector(handleToggleTerminal), keyEquivalent: "`")
+        terminalItem.keyEquivalentModifierMask = [.control]
+        viewMenu.addItem(terminalItem)
+
+        viewMenu.addItem(NSMenuItem.separator())
+
+        let nextTabItem = NSMenuItem(title: "Show Next Tab", action: #selector(handleNextTab), keyEquivalent: "]")
+        nextTabItem.keyEquivalentModifierMask = [.command, .shift]
+        viewMenu.addItem(nextTabItem)
+
+        let previousTabItem = NSMenuItem(title: "Show Previous Tab", action: #selector(handlePreviousTab), keyEquivalent: "[")
+        previousTabItem.keyEquivalentModifierMask = [.command, .shift]
+        viewMenu.addItem(previousTabItem)
+
+        let goToTabItem = NSMenuItem(title: "Go to Tab", action: nil, keyEquivalent: "")
+        let goToTabMenu = NSMenu(title: "Go to Tab")
+        goToTabItem.submenu = goToTabMenu
+        for tabNumber in 1...9 {
+            let item = NSMenuItem(
+                title: "Tab \(tabNumber)",
+                action: #selector(handleGoToTab(_:)),
+                keyEquivalent: "\(tabNumber)"
+            )
+            item.keyEquivalentModifierMask = [.command]
+            item.tag = tabNumber
+            goToTabMenu.addItem(item)
+        }
+        viewMenu.addItem(goToTabItem)
 
         let goMenuItem = NSMenuItem()
         mainMenu.addItem(goMenuItem)
@@ -520,6 +557,22 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItem
         dispatch(.saveAs, legacyNotification: .handleSaveAs)
     }
 
+    @objc func handleSaveAll() {
+        dispatch(.saveAll, legacyNotification: .handleSaveAll)
+    }
+
+    @objc func handleNextTab() {
+        dispatch(.nextTab, legacyNotification: .handleNextTab)
+    }
+
+    @objc func handlePreviousTab() {
+        dispatch(.previousTab, legacyNotification: .handlePreviousTab)
+    }
+
+    @objc func handleGoToTab(_ sender: NSMenuItem) {
+        dispatch(.goToTab(sender.tag), legacyNotification: .handleGoToTab)
+    }
+
     @objc func handleQuickOpen() {
         dispatch(.quickOpen, legacyNotification: .handleQuickOpen)
     }
@@ -530,6 +583,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItem
 
     @objc func handleToggleProblems() {
         dispatch(.toggleProblems, legacyNotification: .handleToggleProblems)
+    }
+
+    @objc func handleToggleTerminal() {
+        dispatch(.toggleTerminal, legacyNotification: .handleToggleTerminal)
     }
 
     @objc func handleCloseTab() {
@@ -748,9 +805,14 @@ extension Notification.Name {
     static let handleOpenFolder = Notification.Name("handleOpenFolder")
     static let handleSave = Notification.Name("handleSave")
     static let handleSaveAs = Notification.Name("handleSaveAs")
+    static let handleSaveAll = Notification.Name("handleSaveAll")
+    static let handleNextTab = Notification.Name("handleNextTab")
+    static let handlePreviousTab = Notification.Name("handlePreviousTab")
+    static let handleGoToTab = Notification.Name("handleGoToTab")
     static let handleQuickOpen = Notification.Name("handleQuickOpen")
     static let handleCommandPalette = Notification.Name("handleCommandPalette")
     static let handleToggleProblems = Notification.Name("handleToggleProblems")
+    static let handleToggleTerminal = Notification.Name("handleToggleTerminal")
     static let handleCloseTab = Notification.Name("handleCloseTab")
     static let handleReopenClosedTab = Notification.Name("handleReopenClosedTab")
     static let handleProjectSearch = Notification.Name("handleProjectSearch")

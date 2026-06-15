@@ -7,10 +7,15 @@ enum AppCommand: Equatable {
     case openFolder
     case save
     case saveAs
+    case saveAll
+    case nextTab
+    case previousTab
+    case goToTab(Int)
     case reopenClosedTab
     case quickOpen
     case commandPalette
     case toggleProblems
+    case toggleTerminal
     case closeTab
     case projectSearch
     case findInFile
