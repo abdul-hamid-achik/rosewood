@@ -106,10 +106,17 @@ final class ConfigurationService: ObservableObject {
         startWatchingConfigFiles()
     }
 
-    func updateSettings(_ newSettings: AppSettings) {
+    /// Applies settings to the live in-memory state (published settings, font, theme) WITHOUT
+    /// writing to disk. Used to live-preview changes in the Settings sheet so they can be
+    /// rolled back on Cancel without churning the config file.
+    func previewSettings(_ newSettings: AppSettings) {
         settings = newSettings
         applyEditorFont(using: newSettings.editor)
         applyTheme(named: newSettings.theme.name)
+    }
+
+    func updateSettings(_ newSettings: AppSettings) {
+        previewSettings(newSettings)
         try? saveUserSettings()
     }
 

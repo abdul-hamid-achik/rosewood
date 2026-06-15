@@ -10,8 +10,12 @@ class NotificationManager: ObservableObject {
     private init() {}
     
     func show(_ item: NotificationItem) {
-        notifications.append(item)
-        
+        // Mutate inside an animation transaction so NotificationBannerView's move+opacity
+        // transition actually plays on insertion.
+        withAnimation(.rosewoodStandard) {
+            notifications.append(item)
+        }
+
         // Auto-dismiss after duration (unless it's an error)
         if item.autoDismiss {
             Task {
@@ -20,9 +24,11 @@ class NotificationManager: ObservableObject {
             }
         }
     }
-    
+
     func dismiss(_ id: UUID) {
-        notifications.removeAll { $0.id == id }
+        withAnimation(.rosewoodStandard) {
+            notifications.removeAll { $0.id == id }
+        }
     }
 }
 
@@ -61,15 +67,6 @@ enum NotificationType {
         case .success: return "checkmark.circle.fill"
         case .warning: return "exclamationmark.triangle.fill"
         case .error: return "xmark.octagon.fill"
-        }
-    }
-    
-    var color: Color {
-        switch self {
-        case .info: return .blue
-        case .success: return .green
-        case .warning: return .orange
-        case .error: return .red
         }
     }
 }

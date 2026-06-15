@@ -12,8 +12,38 @@ final class HighlightService {
     private let highlightingQueue = DispatchQueue(label: "rosewood.highlighting", qos: .userInitiated)
     private(set) var currentHighlightrThemeName: String = HighlightService.defaultHighlightrThemeName
 
-    private var highlightCache: [String: NSAttributedString] = [:]
-    private let cacheLimit = 10
+    // Reusable Highlightr for the async editor path. Highlightr wraps a JSContext, which is
+    // NOT thread-safe, so the instance is only ever created or touched from inside
+    // `highlightingQueue`. Reusing it avoids spinning up a fresh JSContext and re-evaluating
+    // highlight.js + theme CSS on every keystroke.
+    private let queuePool = HighlightrPool()
+
+    /// Confines a reusable Highlightr to the highlighting queue. Every method MUST be called
+    /// from that queue only; `@unchecked Sendable` reflects that the queue provides the
+    /// serialization the compiler otherwise can't see.
+    private final class HighlightrPool: @unchecked Sendable {
+        private var highlightr: Highlightr?
+        private var themeName: String?
+
+        func instance(
+            themeName: String,
+            factory: () -> Highlightr?,
+            forceRebuild: Bool = false
+        ) -> Highlightr? {
+            if !forceRebuild, let existing = highlightr {
+                if self.themeName != themeName {
+                    existing.setTheme(to: themeName)
+                    self.themeName = themeName
+                }
+                return existing
+            }
+
+            let created = HighlightService.makeConfiguredHighlightr(using: factory, themeName: themeName)
+            highlightr = created
+            self.themeName = created == nil ? nil : themeName
+            return created
+        }
+    }
 
     init(highlightrFactory: @escaping () -> Highlightr? = { Highlightr() }) {
         self.highlightrFactory = highlightrFactory
@@ -73,12 +103,13 @@ final class HighlightService {
     ) async -> NSAttributedString {
         let themeName = currentHighlightrThemeName
         let factory = highlightrFactory
+        let pool = queuePool
 
         return await withCheckedContinuation { continuation in
             highlightingQueue.async {
                 let font = NSFont(name: fontName, size: fontSize)
                     ?? NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
-                let highlightr = Self.makeConfiguredHighlightr(using: factory, themeName: themeName)
+                let highlightr = pool.instance(themeName: themeName, factory: factory)
                 let highlighted = Self.makeHighlightedAttributedString(
                     code,
                     language: language,
@@ -86,8 +117,10 @@ final class HighlightService {
                     font: font,
                     highlightr: highlightr,
                     fallbackHighlighter: {
-                        let rebuiltHighlightr = Self.makeConfiguredHighlightr(using: factory, themeName: themeName)
-                        return Self.highlight(code, as: language, using: rebuiltHighlightr)
+                        // Rebuild the pooled instance once (recovers a wedged JSContext)
+                        // and reuse it for subsequent calls.
+                        let rebuilt = pool.instance(themeName: themeName, factory: factory, forceRebuild: true)
+                        return Self.highlight(code, as: language, using: rebuilt)
                     },
                     validator: { attributed in
                         Self.shouldAcceptHighlightedResult(attributed, language: language)
