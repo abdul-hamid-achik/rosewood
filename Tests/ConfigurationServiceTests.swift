@@ -6,6 +6,28 @@ import Testing
 @MainActor
 struct ConfigurationServiceTests {
     @Test
+    func updateSettingsAppliesInMemoryEvenWhenSaveFails() throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        // Point the config at a path whose parent is a regular FILE, so the save write fails.
+        let blocker = rootURL.appendingPathComponent("blocker")
+        try "x".write(to: blocker, atomically: true, encoding: .utf8)
+        let userConfigURL = blocker.appendingPathComponent("config.toml")
+
+        let service = ConfigurationService(userConfigURL: userConfigURL)
+        var newSettings = service.settings
+        newSettings.editor.fontSize = 22
+        service.updateSettings(newSettings)   // save fails internally; must surface, not crash
+
+        // The change is applied in-memory (not silently lost), and nothing was written to disk.
+        #expect(service.settings.editor.fontSize == 22)
+        #expect(!FileManager.default.fileExists(atPath: userConfigURL.path))
+    }
+
+    @Test
     func watchesBothUserAndProjectConfigFiles() async throws {
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

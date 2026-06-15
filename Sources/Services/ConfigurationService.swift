@@ -117,7 +117,18 @@ final class ConfigurationService: ObservableObject {
 
     func updateSettings(_ newSettings: AppSettings) {
         previewSettings(newSettings)
-        try? saveUserSettings()
+        do {
+            try saveUserSettings()
+        } catch {
+            // Don't silently lose the user's settings on a write failure (disk full, permissions, …).
+            // The change stays applied for this session; warn that it won't persist until a save works.
+            NotificationManager.shared.show(NotificationItem(
+                type: .error,
+                title: "Couldn't Save Settings",
+                message: "Your changes are applied for now, but couldn't be written to disk: \(error.localizedDescription)",
+                duration: 6.0
+            ))
+        }
     }
 
     var font: NSFont {

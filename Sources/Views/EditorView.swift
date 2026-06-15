@@ -1567,6 +1567,23 @@ final class EditorContainerView: NSView {
             scrollView.hasHorizontalScroller = true
             textView.isHorizontallyResizable = true
         }
+
+        // Re-highlight with the new theme: the syntax token colors were computed with the previous
+        // theme, and applyText (which re-highlights on a theme change) is skipped when the text and
+        // language are unchanged — so a theme switch alone would leave stale token colors. Runs only
+        // on a theme change; keep lastAppliedThemeColors in sync so applyText doesn't redundantly
+        // re-highlight afterward.
+        if !textView.string.isEmpty {
+            lastAppliedThemeColors = themeColors
+            applyBaseTextAttributes(themeColors: themeColors)
+            requestHighlighting(
+                text: textView.string,
+                language: lastAppliedLanguage,
+                themeColors: themeColors,
+                debounceNanoseconds: 0,
+                scope: highlightScope(for: textView.string)
+            )
+        }
     }
 
     var isReadyForDisplay: Bool {

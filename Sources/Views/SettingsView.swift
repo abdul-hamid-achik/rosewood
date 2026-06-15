@@ -326,6 +326,7 @@ struct SettingsView: View {
 
             VStack(alignment: .leading, spacing: 12) {
                 settingsStepperRow("Large file mode", value: $largeFileThresholdKB, range: 100...2000, suffix: "KB")
+                settingsStepperRow("Reduce features above", value: $textSizeWarningKB, range: 100...20000, suffix: "KB")
                 settingsStepperRow("Text size limit", value: $textSizeLimitKB, range: 500...20000, suffix: "KB")
                 settingsStepperRow("Hex viewer limit", value: $binarySizeHexKB, range: 16...1024, suffix: "KB")
                 settingsStepperRow("Binary warning", value: $binarySizeWarningKB, range: 128...10000, suffix: "KB")
