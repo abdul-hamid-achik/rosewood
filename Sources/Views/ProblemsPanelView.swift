@@ -167,23 +167,19 @@ struct ProblemsPanelView: View {
                 .accessibilityIdentifier("problems-panel-close")
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.horizontal, RosewoodUI.spacing5)
+        .padding(.vertical, RosewoodUI.spacing3)
         .accessibilityElement(children: .contain)
     }
 
     private var emptyStateView: some View {
-        VStack(spacing: 8) {
-            Spacer()
-            Image(systemName: "checkmark.circle")
-                .font(.system(size: 22))
-                .foregroundColor(themeColors.success)
-            Text(projectViewModel.diagnosticsPanelScope == .workspace ? "No problems in the workspace." : "No problems in the current file.")
-                .font(RosewoodType.subheadline)
-                .foregroundColor(themeColors.subduedText)
-            Spacer()
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        RosewoodEmptyState(
+            systemImage: "checkmark.circle",
+            title: projectViewModel.diagnosticsPanelScope == .workspace
+                ? "No problems in the workspace."
+                : "No problems in the current file.",
+            tint: themeColors.success
+        )
     }
 
     private func diagnosticRow(_ diagnostic: LSPDiagnostic, index: Int) -> some View {

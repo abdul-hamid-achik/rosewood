@@ -51,8 +51,8 @@ struct ImageViewerView: View {
                     zoomScale = 1
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(.horizontal, RosewoodUI.spacing5)
+            .padding(.vertical, RosewoodUI.spacing3)
             .background(themeColors.panelBackground)
 
             ThemedDivider()

@@ -150,7 +150,7 @@ final class CompletionPopupController {
         if prefix.isEmpty {
             filteredItems = items
         } else {
-            filteredItems = items.filter { $0.label.localizedCaseInsensitiveContains(prefix) }
+            filteredItems = items.filter { ($0.filterText ?? $0.label).localizedCaseInsensitiveContains(prefix) }
         }
         selectedIndex = 0
         dataSource.items = filteredItems
@@ -186,6 +186,7 @@ private final class CompletionDataSource: NSObject, NSTableViewDataSource, NSTab
         let item = items[row]
 
         let cellIdentifier = NSUserInterfaceItemIdentifier("CompletionCell")
+        let detailFieldTag = 1001
         let cell: NSTableCellView
         if let reused = tableView.makeView(withIdentifier: cellIdentifier, owner: nil) as? NSTableCellView {
             cell = reused
@@ -205,14 +206,27 @@ private final class CompletionDataSource: NSObject, NSTableViewDataSource, NSTab
             cell.addSubview(textField)
             cell.textField = textField
 
+            // Secondary column: the LSP detail (e.g. a type signature), dimmed and trailing.
+            let detailField = NSTextField(labelWithString: "")
+            detailField.translatesAutoresizingMaskIntoConstraints = false
+            detailField.lineBreakMode = .byTruncatingTail
+            detailField.alignment = .right
+            detailField.tag = detailFieldTag
+            detailField.setContentHuggingPriority(.defaultLow, for: .horizontal)
+            detailField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+            textField.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
+            cell.addSubview(detailField)
+
             NSLayoutConstraint.activate([
                 imageView.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 4),
                 imageView.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
                 imageView.widthAnchor.constraint(equalToConstant: 16),
                 imageView.heightAnchor.constraint(equalToConstant: 16),
                 textField.leadingAnchor.constraint(equalTo: imageView.trailingAnchor, constant: 4),
-                textField.trailingAnchor.constraint(lessThanOrEqualTo: cell.trailingAnchor, constant: -4),
                 textField.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+                detailField.leadingAnchor.constraint(greaterThanOrEqualTo: textField.trailingAnchor, constant: 8),
+                detailField.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -8),
+                detailField.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
             ])
         }
 
@@ -224,6 +238,12 @@ private final class CompletionDataSource: NSObject, NSTableViewDataSource, NSTab
             cell.imageView?.contentTintColor = themeColors.nsAccent
         } else {
             cell.imageView?.image = nil
+        }
+
+        if let detailField = cell.viewWithTag(detailFieldTag) as? NSTextField {
+            detailField.stringValue = item.detail ?? ""
+            detailField.font = NSFont.monospacedSystemFont(ofSize: max(font.pointSize - 2, 9), weight: .regular)
+            detailField.textColor = themeColors.nsMutedText
         }
 
         return cell

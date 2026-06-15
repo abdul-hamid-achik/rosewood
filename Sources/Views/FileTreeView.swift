@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct FileTreeView: View {
@@ -89,6 +90,9 @@ struct FileTreeView: View {
                 case .return:
                     activateSelectedItem()
                     return .handled
+                case .delete, .deleteForward:
+                    deleteSelectedItem()
+                    return .handled
                 default:
                     return .ignored
                 }
@@ -99,6 +103,11 @@ struct FileTreeView: View {
     private func activateSelectedItem() {
         guard let entry = selectedEntry else { return }
         activate(entry)
+    }
+
+    private func deleteSelectedItem() {
+        guard let entry = selectedEntry else { return }
+        projectViewModel.deleteItem(entry.item)
     }
 
     private func activate(_ entry: ExplorerVisibleItem) {
@@ -354,10 +363,32 @@ private struct FileTreeRow: View {
 
             Divider()
 
-            Button("Delete") {
+            Button("Copy Path") {
+                copyToPasteboard(projectViewModel.absoluteFilePath(for: item.path))
+            }
+
+            Button("Copy Relative Path") {
+                copyToPasteboard(projectViewModel.relativeFilePath(for: item.path))
+            }
+            .disabled(projectViewModel.relativeFilePath(for: item.path) == nil)
+
+            Button("Reveal in Finder") {
+                projectViewModel.revealInFinder(url: item.path)
+            }
+
+            Divider()
+
+            Button("Delete", role: .destructive) {
                 projectViewModel.deleteItem(item)
             }
         }
+    }
+
+    private func copyToPasteboard(_ value: String?) {
+        guard let value else { return }
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(value, forType: .string)
     }
 
     private var primaryTextColor: Color {

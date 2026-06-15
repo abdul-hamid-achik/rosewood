@@ -46,8 +46,8 @@ struct HexViewerView: View {
                 .buttonStyle(.borderless)
                 .foregroundColor(themeColors.accent)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(.horizontal, RosewoodUI.spacing5)
+            .padding(.vertical, RosewoodUI.spacing3)
             .background(themeColors.panelBackground)
 
             ThemedDivider()
@@ -62,7 +62,7 @@ struct HexViewerView: View {
             }
             .font(.system(size: 10, weight: .semibold, design: .monospaced))
             .foregroundColor(themeColors.mutedText)
-            .padding(.horizontal, 12)
+            .padding(.horizontal, RosewoodUI.spacing5)
             .padding(.vertical, 6)
             .background(themeColors.panelBackground)
 

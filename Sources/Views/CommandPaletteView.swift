@@ -254,6 +254,18 @@ struct CommandPaletteView: View {
     }
 
     private var resultsView: some View {
+        ScrollViewReader { proxy in
+            resultsScrollView
+                .onChange(of: selectedIndex) { _, newIndex in
+                    // Keep the keyboard-selected row visible as the user arrows past the fold.
+                    withAnimation(.rosewoodFast) {
+                        proxy.scrollTo(newIndex, anchor: .center)
+                    }
+                }
+        }
+    }
+
+    private var resultsScrollView: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
                 if !visibleCommandSections.isEmpty {
@@ -274,6 +286,7 @@ struct CommandPaletteView: View {
                                 }
                                 .buttonStyle(.plain)
                                 .accessibilityIdentifier("command-palette-action-\(action.id)")
+                                .id(selectionOffset + index)
                                 .onHover { hovering in
                                     if hovering {
                                         selectedIndex = selectionOffset + index
@@ -308,6 +321,7 @@ struct CommandPaletteView: View {
                                         index: selectionOffset - visibleActions.count + index
                                     )
                                 )
+                                .id(selectionOffset + index)
                                 .onHover { hovering in
                                     if hovering {
                                         selectedIndex = selectionOffset + index

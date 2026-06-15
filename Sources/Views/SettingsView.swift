@@ -1,8 +1,13 @@
+import AppKit
 import SwiftUI
 
 struct SettingsView: View {
     @EnvironmentObject var configService: ConfigurationService
     @Environment(\.dismiss) var dismiss
+
+    // Snapshot of the persisted settings taken on appear, so Cancel can roll back the live
+    // preview without having written anything to disk.
+    @State private var originalSettings: AppSettings?
 
     @State private var fontSize: Double = 13
     @State private var fontFamily: String = "SF Mono"
@@ -25,14 +30,49 @@ struct SettingsView: View {
     @State private var dockerRefreshInterval: Int = 5
     @State private var dockerTerminalShell: String = "/bin/zsh"
 
-    private let fontFamilies = [
-        "SF Mono",
-        "Menlo",
-        "Monaco",
-        "Courier",
-        "Courier New",
-        "Menlo-Regular"
-    ]
+    // Common coding fonts, filtered to those actually installed (plus the current selection),
+    // instead of a fixed list that may name fonts the user doesn't have.
+    private var fontFamilies: [String] {
+        let candidates = [
+            "SF Mono", "Menlo", "Monaco", "Courier New",
+            "JetBrains Mono", "Fira Code", "Source Code Pro",
+            "IBM Plex Mono", "Cascadia Code", "Cascadia Mono", "Hack", "Roboto Mono"
+        ]
+        var result = candidates.filter { family in
+            family == "SF Mono" || NSFont(name: family, size: 13) != nil
+        }
+        if !result.contains(fontFamily) {
+            result.insert(fontFamily, at: 0)
+        }
+        return result
+    }
+
+    // The settings represented by the current control state, layered onto the original
+    // snapshot so untouched fields are preserved.
+    private var workingSettings: AppSettings {
+        var settings = originalSettings ?? configService.settings
+        settings.editor.fontSize = fontSize
+        settings.editor.fontFamily = fontFamily
+        settings.editor.tabSize = tabSize
+        settings.editor.showLineNumbers = showLineNumbers
+        settings.editor.showMinimap = showMinimap
+        settings.editor.wordWrap = wordWrap
+        settings.editor.autoSaveEnabled = autoSaveEnabled
+        settings.editor.autoSaveDelay = autoSaveDelay
+        settings.theme.name = selectedThemeId
+        settings.fileHandling.textSizeWarningKB = textSizeWarningKB
+        settings.fileHandling.textSizeLimitKB = textSizeLimitKB
+        settings.fileHandling.largeFileThresholdKB = largeFileThresholdKB
+        settings.fileHandling.binarySizeHexKB = binarySizeHexKB
+        settings.fileHandling.binarySizeWarningKB = binarySizeWarningKB
+        settings.fileHandling.imageSizeLimitMB = imageSizeLimitMB
+        settings.docker.socketPath = dockerSocketPath
+        settings.docker.enableDockerIntegration = dockerEnabled
+        settings.docker.autoDetectComposeFiles = dockerAutoDetectCompose
+        settings.docker.refreshIntervalSeconds = dockerRefreshInterval
+        settings.docker.terminalShell = dockerTerminalShell
+        return settings
+    }
 
     private var themeColors: ThemeColors {
         configService.currentThemeColors
@@ -61,7 +101,14 @@ struct SettingsView: View {
         }
         .frame(width: 520, height: 480)
         .background(themeColors.panelBackground)
-        .onAppear { loadCurrentSettings() }
+        .onAppear {
+            originalSettings = configService.settings
+            loadCurrentSettings()
+        }
+        .onChange(of: workingSettings) { _, newValue in
+            // Apply changes live (font, theme, line numbers, etc.) without persisting yet.
+            configService.previewSettings(newValue)
+        }
     }
 
     private var headerView: some View {
@@ -303,6 +350,10 @@ struct SettingsView: View {
             Spacer()
 
             Button("Cancel") {
+                // Roll back the in-memory live preview to the snapshot taken on appear.
+                if let originalSettings {
+                    configService.previewSettings(originalSettings)
+                }
                 dismiss()
             }
             .keyboardShortcut(.cancelAction)
@@ -368,29 +419,8 @@ struct SettingsView: View {
     }
 
     private func saveSettings() {
-        var newSettings = configService.settings
-        newSettings.editor.fontSize = fontSize
-        newSettings.editor.fontFamily = fontFamily
-        newSettings.editor.tabSize = tabSize
-        newSettings.editor.showLineNumbers = showLineNumbers
-        newSettings.editor.showMinimap = showMinimap
-        newSettings.editor.wordWrap = wordWrap
-        newSettings.editor.autoSaveEnabled = autoSaveEnabled
-        newSettings.editor.autoSaveDelay = autoSaveDelay
-        newSettings.theme.name = selectedThemeId
-        newSettings.fileHandling.textSizeWarningKB = textSizeWarningKB
-        newSettings.fileHandling.textSizeLimitKB = textSizeLimitKB
-        newSettings.fileHandling.largeFileThresholdKB = largeFileThresholdKB
-        newSettings.fileHandling.binarySizeHexKB = binarySizeHexKB
-        newSettings.fileHandling.binarySizeWarningKB = binarySizeWarningKB
-        newSettings.fileHandling.imageSizeLimitMB = imageSizeLimitMB
-        newSettings.docker.socketPath = dockerSocketPath
-        newSettings.docker.enableDockerIntegration = dockerEnabled
-        newSettings.docker.autoDetectComposeFiles = dockerAutoDetectCompose
-        newSettings.docker.refreshIntervalSeconds = dockerRefreshInterval
-        newSettings.docker.terminalShell = dockerTerminalShell
-
-        configService.updateSettings(newSettings)
+        // Persist the already-previewed working settings to disk.
+        configService.updateSettings(workingSettings)
         dismiss()
     }
 

@@ -21,8 +21,8 @@ struct BinaryPlaceholderView: View {
 
                 Spacer()
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(.horizontal, RosewoodUI.spacing5)
+            .padding(.vertical, RosewoodUI.spacing3)
             .background(themeColors.panelBackground)
 
             ThemedDivider()

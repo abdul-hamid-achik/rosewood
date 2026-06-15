@@ -72,22 +72,12 @@ struct DebugPanelView: View {
             }
             .buttonStyle(.borderless)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.horizontal, RosewoodUI.spacing5)
+        .padding(.vertical, RosewoodUI.spacing3)
     }
 
     private var emptyStateView: some View {
-        VStack(spacing: 8) {
-            Spacer()
-            Image(systemName: "terminal")
-                .font(.system(size: 22))
-                .foregroundColor(themeColors.mutedText)
-            Text("Debugger output will appear here.")
-                .font(RosewoodType.subheadline)
-                .foregroundColor(themeColors.subduedText)
-            Spacer()
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        RosewoodEmptyState(systemImage: "terminal", title: "Debugger output will appear here.")
     }
 
     private func color(for kind: DebugConsoleEntry.Kind) -> Color {

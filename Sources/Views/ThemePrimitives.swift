@@ -138,6 +138,54 @@ struct RosewoodPanelIconButton: View {
     }
 }
 
+struct RosewoodEmptyState: View {
+    @EnvironmentObject private var configService: ConfigurationService
+
+    let systemImage: String
+    let title: String
+    let subtitle: String?
+    let tint: Color?
+    let prominent: Bool
+    let fillsHeight: Bool
+
+    init(
+        systemImage: String,
+        title: String,
+        subtitle: String? = nil,
+        tint: Color? = nil,
+        prominent: Bool = false,
+        fillsHeight: Bool = true
+    ) {
+        self.systemImage = systemImage
+        self.title = title
+        self.subtitle = subtitle
+        self.tint = tint
+        self.prominent = prominent
+        self.fillsHeight = fillsHeight
+    }
+
+    var body: some View {
+        let colors = configService.currentThemeColors
+        VStack(spacing: RosewoodUI.spacing4) {
+            Image(systemName: systemImage)
+                .font(.system(size: prominent ? 40 : 26))
+                .foregroundColor(tint ?? colors.mutedText)
+            Text(title)
+                .font(prominent ? RosewoodType.title : RosewoodType.subheadline)
+                .foregroundColor(colors.subduedText)
+                .multilineTextAlignment(.center)
+            if let subtitle {
+                Text(subtitle)
+                    .font(prominent ? RosewoodType.subheadline : RosewoodType.caption)
+                    .foregroundColor(colors.mutedText)
+                    .multilineTextAlignment(.center)
+            }
+        }
+        .padding(RosewoodUI.spacing6)
+        .frame(maxWidth: .infinity, maxHeight: fillsHeight ? .infinity : nil)
+    }
+}
+
 extension View {
     func rosewoodCard(_ themeColors: ThemeColors, radius: CGFloat = RosewoodUI.radiusMedium) -> some View {
         background(themeColors.elevatedBackground)

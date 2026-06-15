@@ -95,22 +95,12 @@ struct ReferencesPanelView: View {
             }
             .accessibilityIdentifier("references-panel-close")
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.horizontal, RosewoodUI.spacing5)
+        .padding(.vertical, RosewoodUI.spacing3)
         .accessibilityElement(children: .contain)
     }
 
     private var emptyStateView: some View {
-        VStack(spacing: 8) {
-            Spacer()
-            Image(systemName: "scope")
-                .font(.system(size: 22))
-                .foregroundColor(themeColors.accent)
-            Text("No references found.")
-                .font(RosewoodType.subheadline)
-                .foregroundColor(themeColors.subduedText)
-            Spacer()
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        RosewoodEmptyState(systemImage: "scope", title: "No references found.", tint: themeColors.accent)
     }
 }

@@ -61,6 +61,14 @@ struct ContentView: View {
             projectViewModel.saveCurrentFile()
         case .saveAs:
             projectViewModel.saveCurrentFileAs()
+        case .saveAll:
+            _ = projectViewModel.saveAllTabs()
+        case .nextTab:
+            projectViewModel.selectNextTab()
+        case .previousTab:
+            projectViewModel.selectPreviousTab()
+        case .goToTab(let number):
+            projectViewModel.selectTab(at: number - 1)
         case .reopenClosedTab:
             projectViewModel.reopenLastClosedTab()
         case .quickOpen:
@@ -70,6 +78,8 @@ struct ContentView: View {
         case .toggleProblems:
             guard projectViewModel.canShowProblemsPanel else { return }
             projectViewModel.toggleDiagnosticsPanel()
+        case .toggleTerminal:
+            projectViewModel.toggleTerminalPanel()
         case .closeTab:
             if let index = projectViewModel.selectedTabIndex {
                 projectViewModel.closeTab(at: index)
@@ -114,8 +124,10 @@ struct ContentView: View {
 
                     if let bottomPanel = projectViewModel.bottomPanel {
                         bottomPanelContainer(bottomPanel)
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
                     }
                 }
+                .animation(.rosewoodStandard, value: projectViewModel.bottomPanel)
             }
 
             StatusBarView()
@@ -208,8 +220,8 @@ struct ContentView: View {
 
             Spacer()
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.horizontal, RosewoodUI.spacing5)
+        .padding(.vertical, RosewoodUI.spacing3)
         .background(themeColors.panelBackground)
     }
 
@@ -319,8 +331,8 @@ struct ContentView: View {
                     projectViewModel.jumpToLineInSelectedTab(line)
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(.horizontal, RosewoodUI.spacing5)
+            .padding(.vertical, RosewoodUI.spacing3)
             .background(themeColors.panelBackground)
 
             if !projectViewModel.editorStickyScopes.isEmpty {
@@ -329,7 +341,7 @@ struct ContentView: View {
                 EditorStickyScopeBar(scopes: projectViewModel.editorStickyScopes) { line in
                     projectViewModel.jumpToLineInSelectedTab(line)
                 }
-                .padding(.horizontal, 12)
+                .padding(.horizontal, RosewoodUI.spacing5)
                 .padding(.vertical, 6)
                 .background(themeColors.panelBackground)
             }
@@ -339,20 +351,13 @@ struct ContentView: View {
     }
 
     private var emptyEditorView: some View {
-        VStack(spacing: 16) {
-            Spacer()
-            Image(systemName: "doc.text")
-                .font(.system(size: 48))
-                .foregroundColor(themeColors.mutedText.opacity(0.8))
-            Text("Select a file to edit")
-                .font(.system(size: 16))
-                .foregroundColor(themeColors.subduedText)
-            Text("or press ⌘O to open a folder")
-                .font(.system(size: 13))
-                .foregroundColor(themeColors.mutedText)
-            Spacer()
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        RosewoodEmptyState(
+            systemImage: "doc.text",
+            title: "Select a file to edit",
+            subtitle: "or press ⌘O to open a folder",
+            tint: themeColors.mutedText.opacity(0.8),
+            prominent: true
+        )
         .background(themeColors.background)
     }
 
@@ -834,14 +839,22 @@ struct SearchSidebarView: View {
             Divider()
                 .overlay(themeColors.border)
 
-            if projectViewModel.isSearchingProject {
-                searchEmptyPrompt(text: "Searching...")
+            if let regexError = projectViewModel.projectSearchRegexError {
+                searchStatusPrompt(
+                    text: regexError,
+                    systemImage: "exclamationmark.triangle.fill",
+                    tint: themeColors.danger
+                )
             } else if projectViewModel.projectSearchQuery.isEmpty {
                 searchEmptyPrompt(text: "Type a query to search across the current folder.")
-            } else if projectViewModel.projectSearchResults.isEmpty {
-                searchEmptyPrompt(text: "No results found.")
-            } else {
+            } else if !projectViewModel.projectSearchResults.isEmpty {
+                // Keep results visible even while a newer query's search is in flight,
+                // so the panel doesn't flicker on each keystroke.
                 searchResultsSurface
+            } else if projectViewModel.isSearchingProject {
+                searchEmptyPrompt(text: "Searching...")
+            } else {
+                searchEmptyPrompt(text: "No results found.")
             }
         }
         .background(themeColors.panelBackground)
@@ -875,16 +888,30 @@ struct SearchSidebarView: View {
     }
 
     private func searchEmptyPrompt(text: String) -> some View {
-        VStack(spacing: 10) {
+        searchStatusPrompt(
+            text: text,
+            systemImage: "magnifyingglass",
+            tint: themeColors.mutedText,
+            textColor: themeColors.subduedText
+        )
+    }
+
+    private func searchStatusPrompt(
+        text: String,
+        systemImage: String,
+        tint: Color,
+        textColor: Color? = nil
+    ) -> some View {
+        VStack(spacing: RosewoodUI.spacing4) {
             Spacer()
-            Image(systemName: "magnifyingglass")
+            Image(systemName: systemImage)
                 .font(.system(size: 28))
-                .foregroundColor(themeColors.mutedText)
+                .foregroundColor(tint)
             Text(text)
-                .font(.system(size: 13))
-                .foregroundColor(themeColors.subduedText)
+                .font(RosewoodType.body)
+                .foregroundColor(textColor ?? tint)
                 .multilineTextAlignment(.center)
-                .padding(.horizontal, 20)
+                .padding(.horizontal, RosewoodUI.spacing8)
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1050,7 +1077,7 @@ struct SearchSidebarView: View {
     private func scrollToActiveResult(with proxy: ScrollViewProxy) {
         guard let activeID = projectViewModel.activeProjectSearchResultID else { return }
         DispatchQueue.main.async {
-            withAnimation(.easeInOut(duration: 0.15)) {
+            withAnimation(.rosewoodStandard) {
                 proxy.scrollTo(activeID, anchor: .center)
             }
         }

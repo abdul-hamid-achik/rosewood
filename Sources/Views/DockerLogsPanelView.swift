@@ -96,8 +96,8 @@ struct DockerLogsPanelView: View {
             }
             .buttonStyle(.borderless)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.horizontal, RosewoodUI.spacing5)
+        .padding(.vertical, RosewoodUI.spacing3)
     }
     
     private var logContentView: some View {

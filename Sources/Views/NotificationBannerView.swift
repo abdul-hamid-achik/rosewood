@@ -25,11 +25,22 @@ struct NotificationBanner: View {
     private var themeColors: ThemeColors {
         configService.currentThemeColors
     }
-    
+
+    // Source the accent from the active theme so banners match Nord/Dracula/GitHub Light
+    // instead of fixed system colors.
+    private var tint: Color {
+        switch item.type {
+        case .info: return themeColors.accent
+        case .success: return themeColors.success
+        case .warning: return themeColors.warning
+        case .error: return themeColors.danger
+        }
+    }
+
     var body: some View {
         HStack(spacing: RosewoodUI.spacing5) {
             Image(systemName: item.type.icon)
-                .foregroundColor(item.type.color)
+                .foregroundColor(tint)
                 .font(.system(size: 18, weight: .medium))
 
             VStack(alignment: .leading, spacing: 2) {
@@ -79,7 +90,7 @@ struct NotificationBanner: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: RosewoodUI.radiusMedium)
-                .stroke(item.type.color.opacity(RosewoodUI.borderOpacitySubtle), lineWidth: 1)
+                .stroke(tint.opacity(RosewoodUI.borderOpacitySubtle), lineWidth: 1)
         )
     }
 }

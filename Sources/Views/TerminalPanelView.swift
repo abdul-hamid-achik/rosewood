@@ -54,8 +54,8 @@ struct TerminalPanelView: View {
             }
             .buttonStyle(.borderless)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.horizontal, RosewoodUI.spacing5)
+        .padding(.vertical, RosewoodUI.spacing3)
     }
 
     private var sessionPicker: some View {

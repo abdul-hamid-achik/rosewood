@@ -56,9 +56,9 @@ struct EditorView: View {
             text: Binding(
                 get: { projectViewModel.selectedTab?.content ?? tab.content },
                 set: { newValue in
-                    DispatchQueue.main.async {
-                        projectViewModel.updateTabContent(newValue)
-                    }
+                    // Update synchronously (already on the main thread). Deferring this to a
+                    // later runloop turn lets a Save/autosave in the gap persist stale text.
+                    projectViewModel.updateTabContent(newValue)
                 }
             ),
             language: tab.language,
@@ -275,6 +275,10 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
             containerView.onLayout = { [weak self] in
                 self?.containerViewDidLayout()
             }
+            containerView.onScroll = { [weak self] in
+                self?.completionPopup.dismiss()
+                self?.hoverPopup.dismiss()
+            }
             setupMouseMonitor()
             setupCommandObservers()
         }
@@ -395,18 +399,28 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
                 isViewReadyForDisplay: containerView?.isReadyForDisplay ?? false
             )
 
-            DispatchQueue.main.async { [weak self] in
-                self?.parent.text = updatedText
-            }
+            // Push the new text to the model synchronously so a Save/autosave firing in the
+            // same runloop turn never writes a stale buffer. Programmatic edits are guarded
+            // by `isApplyingExternalUpdate` above, so this only runs for genuine user input.
+            parent.text = updatedText
             refreshEditorDecorations(in: textView)
             updateCursorPosition(in: textView)
 
-            // Trigger completion on . or : characters
+            // Completion: (re)trigger on . or :, narrow the list while typing identifier
+            // characters, and dismiss on anything else.
             let nsText = updatedText as NSString
             let cursorLoc = textView.selectedRange().location
             if cursorLoc > 0 && cursorLoc <= nsText.length {
                 let lastChar = nsText.substring(with: NSRange(location: cursorLoc - 1, length: 1))
-                triggerCompletionIfNeeded(in: textView, trigger: lastChar)
+                if lastChar == "." || lastChar == ":" {
+                    triggerCompletionIfNeeded(in: textView, trigger: lastChar)
+                } else if completionPopup.isVisible {
+                    if Self.isCompletionIdentifierCharacter(lastChar) {
+                        completionPopup.updateFilter(currentCompletionPrefix(in: textView))
+                    } else {
+                        completionPopup.dismiss()
+                    }
+                }
             } else if completionPopup.isVisible {
                 completionPopup.dismiss()
             }
@@ -467,6 +481,8 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
 
         func textViewDidChangeSelection(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView, !isApplyingExternalUpdate else { return }
+            // A mouse-driven hover popup shouldn't linger once the caret moves elsewhere.
+            hoverPopup.dismiss()
             refreshEditorDecorations(in: textView)
             updateCursorPosition(in: textView)
         }
@@ -1062,16 +1078,54 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
 
                 let windowRect = textView.convert(rect, to: nil)
                 completionPopup.show(items: items, at: windowRect, in: textView.window)
+                // Apply any characters typed between the trigger and this async response so
+                // the list shows up already narrowed.
+                let prefix = currentCompletionPrefix(in: textView)
+                if !prefix.isEmpty {
+                    completionPopup.updateFilter(prefix)
+                }
             }
         }
 
         private func insertCompletion(_ item: CompletionItem) {
             guard let textView = containerView?.textView else { return }
-            let insertText = item.insertText ?? item.label
-            let range = textView.selectedRange()
-            textView.replaceCharacters(in: range, with: insertText)
-            textView.setSelectedRange(NSRange(location: range.location + (insertText as NSString).length, length: 0))
+            let insertText = item.insertionText
+            // Replace the identifier prefix already typed before the caret (plus any forward
+            // selection), so accepting "bar" after typing "foo.ba" yields "foo.bar", not
+            // "foo.babar".
+            let caret = textView.selectedRange()
+            let prefixRange = completionPrefixRange(in: textView)
+            let replaceRange = NSRange(
+                location: prefixRange.location,
+                length: max(0, caret.location + caret.length - prefixRange.location)
+            )
+            guard textView.shouldChangeText(in: replaceRange, replacementString: insertText) else { return }
+            textView.replaceCharacters(in: replaceRange, with: insertText)
+            textView.setSelectedRange(NSRange(location: prefixRange.location + (insertText as NSString).length, length: 0))
             textView.didChangeText()
+        }
+
+        /// The identifier run immediately before the caret (e.g. the `ba` in `foo.ba|`).
+        private func completionPrefixRange(in textView: NSTextView) -> NSRange {
+            let nsText = textView.string as NSString
+            let caret = min(textView.selectedRange().location, nsText.length)
+            var start = caret
+            while start > 0 {
+                let character = nsText.substring(with: NSRange(location: start - 1, length: 1))
+                guard Self.isCompletionIdentifierCharacter(character) else { break }
+                start -= 1
+            }
+            return NSRange(location: start, length: caret - start)
+        }
+
+        private func currentCompletionPrefix(in textView: NSTextView) -> String {
+            let nsText = textView.string as NSString
+            return nsText.substring(with: completionPrefixRange(in: textView))
+        }
+
+        static func isCompletionIdentifierCharacter(_ string: String) -> Bool {
+            guard string.unicodeScalars.count == 1, let scalar = string.unicodeScalars.first else { return false }
+            return CharacterSet.alphanumerics.contains(scalar) || scalar == "_"
         }
 
         func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
@@ -1092,6 +1146,12 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
                 default:
                     break
                 }
+            }
+            // Native "Complete" action (Option+Escape / F5) manually triggers suggestions
+            // regardless of trigger characters — avoids the Ctrl+Space input-source conflict.
+            if commandSelector == #selector(NSResponder.complete(_:)) {
+                requestCompletion(in: textView)
+                return true
             }
             return false
         }
@@ -1252,6 +1312,7 @@ final class EditorContainerView: NSView {
     fileprivate let minimapView: EditorMinimapView
     var onLayout: (() -> Void)?
     var onViewportChange: ((Int, Int) -> Void)?
+    var onScroll: (() -> Void)?
     var editorFont: NSFont
     var themeColors: ThemeColors
     var showMinimap: Bool
@@ -1453,6 +1514,11 @@ final class EditorContainerView: NSView {
             hasCompletedFullDocumentHighlight = false
             highlightTask?.cancel()
             fullHighlightTask?.cancel()
+            // A single NSTextView is reused across tabs. Clear the undo stack on document
+            // switch so Cmd+Z can't replay the previous file's edits against this buffer
+            // (content corruption / NSRangeException).
+            textView.undoManager?.removeAllActions()
+            textView.breakUndoCoalescing()
         }
 
         let fontSignature = "\(editorFont.fontName):\(editorFont.pointSize)"
@@ -1772,6 +1838,8 @@ final class EditorContainerView: NSView {
         updateTextViewFrame()
         lineNumberView.needsDisplay = true
         updateMinimap()
+        // Anchored popups would otherwise float over unrelated text once the view scrolls.
+        onScroll?()
     }
 
     private func updateTextViewFrame() {
@@ -2355,8 +2423,44 @@ struct FoldedTextSnapshot {
     }
 }
 
+/// Single-entry, equality-checked memo for pure whole-document parses. The same document is
+/// parsed by the folding system and the breadcrumb/sticky-scope navigation model; this collapses
+/// those redundant parses (the result is only recomputed when the text or language actually changes).
+final class SingleEntryParseCache<Value>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var cachedText: String?
+    private var cachedLanguage: String?
+    private var cachedValue: Value?
+
+    func value(forText text: String, language: String) -> Value? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard cachedText == text, cachedLanguage == language else { return nil }
+        return cachedValue
+    }
+
+    func store(_ value: Value, forText text: String, language: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        cachedText = text
+        cachedLanguage = language
+        cachedValue = value
+    }
+}
+
 enum FoldingParser {
+    private static let regionsCache = SingleEntryParseCache<[FoldRegion]>()
+
     static func regions(for text: String, language: String) -> [FoldRegion] {
+        if let cached = regionsCache.value(forText: text, language: language) {
+            return cached
+        }
+        let result = computeRegions(for: text, language: language)
+        regionsCache.store(result, forText: text, language: language)
+        return result
+    }
+
+    private static func computeRegions(for text: String, language: String) -> [FoldRegion] {
         let lineInfos = LineInfo.parse(text)
         guard !lineInfos.isEmpty else { return [] }
 
@@ -2488,7 +2592,18 @@ struct LineInfo {
     let trimmedText: String
     let hasTrailingNewline: Bool
 
+    private static let parseCache = SingleEntryParseCache<[LineInfo]>()
+
     static func parse(_ text: String) -> [LineInfo] {
+        if let cached = parseCache.value(forText: text, language: "") {
+            return cached
+        }
+        let result = computeParse(text)
+        parseCache.store(result, forText: text, language: "")
+        return result
+    }
+
+    private static func computeParse(_ text: String) -> [LineInfo] {
         let nsText = text as NSString
         let length = nsText.length
 

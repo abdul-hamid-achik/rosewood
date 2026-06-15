@@ -148,17 +148,7 @@ struct GitDiffPanelView: View {
                 patchView(text: diff.text)
             }
         } else {
-            VStack(spacing: 8) {
-                Spacer()
-                Image(systemName: "square.split.2x1")
-                    .font(.system(size: 22))
-                    .foregroundColor(themeColors.mutedText)
-                Text("No diff available for this change.")
-                    .font(.system(size: 12))
-                    .foregroundColor(themeColors.subduedText)
-                Spacer()
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            RosewoodEmptyState(systemImage: "square.split.2x1", title: "No diff available for this change.")
         }
     }
 
@@ -302,7 +292,7 @@ struct GitDiffPanelView: View {
                     }
                     .onChange(of: scrollTargetHunkID) { _, target in
                         guard let target else { return }
-                        withAnimation(.easeInOut(duration: 0.2)) {
+                        withAnimation(.rosewoodStandard) {
                             proxy.scrollTo(target, anchor: .top)
                         }
                     }
@@ -322,8 +312,8 @@ struct GitDiffPanelView: View {
                         .foregroundColor(themeColors.subduedText)
                     Spacer()
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
+                .padding(.horizontal, RosewoodUI.spacing5)
+                .padding(.vertical, RosewoodUI.spacing3)
                 .background(themeColors.gutterBackground)
 
                 Divider()
