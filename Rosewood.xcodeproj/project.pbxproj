@@ -103,6 +103,7 @@
 		AD399A9E01237DF536ABA9E1 /* Highlightr in Frameworks */ = {isa = PBXBuildFile; productRef = 3BD40304AB552634B7A54678 /* Highlightr */; };
 		AD6C95F4660B72BA4C0D436F /* SourceControlSidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49A0E41658146EF251DCCAF4 /* SourceControlSidebarView.swift */; };
 		AD9A5ECFD97E129D1B420EB7 /* FileService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36B03AD333CAF8A328EBA0D9 /* FileService.swift */; };
+		B3BE63E07EF7640266B14437 /* DiagnosticsModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 365D56DD96B77B74CF3F630E /* DiagnosticsModel.swift */; };
 		B4260D5AE6159EE2EF1F10DF /* StatusBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9444052C41407B1D68830B43 /* StatusBarView.swift */; };
 		B4650BD7AB695139CAF6C0AA /* EditorRenderStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4446E1EFAACFE22DBF67A2E2 /* EditorRenderStateTests.swift */; };
 		B6ED4246A35FD9E2F840E488 /* Breakpoint.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7C13A68496AA01FCF301579 /* Breakpoint.swift */; };
@@ -175,6 +176,7 @@
 		2DF1DCB788593285D11AFA32 /* EditorTabLSPTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorTabLSPTests.swift; sourceTree = "<group>"; };
 		2E9D17952CCC93C366C6283C /* ProblemsPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProblemsPanelView.swift; sourceTree = "<group>"; };
 		2F6CAA0F623BE0FD5FB8EA42 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
+		365D56DD96B77B74CF3F630E /* DiagnosticsModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticsModel.swift; sourceTree = "<group>"; };
 		36B03AD333CAF8A328EBA0D9 /* FileService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileService.swift; sourceTree = "<group>"; };
 		37D7CE593BD507240717F39A /* HoverPopupTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HoverPopupTests.swift; sourceTree = "<group>"; };
 		3C1ED559A640C0B57B9C65C5 /* DebugSessionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugSessionService.swift; sourceTree = "<group>"; };
@@ -520,6 +522,7 @@
 			isa = PBXGroup;
 			children = (
 				632152F0199014518B4D4FFD /* CommandPaletteViewModel.swift */,
+				365D56DD96B77B74CF3F630E /* DiagnosticsModel.swift */,
 				C8E471EAAF9B4CE8DE65339A /* DockerModel.swift */,
 				C13B8E092507E3C5394A265A /* ProjectViewModel.swift */,
 				D048A486426520ECB87A4D3C /* ProjectViewModel+Debug.swift */,
@@ -676,6 +679,7 @@
 				1D2B8256911EB8AA1206816E /* DebugSessionService.swift in Sources */,
 				3CFD5E5F6816ED232309692F /* DebugSessionState.swift in Sources */,
 				5072678B390CF1DE51450DB2 /* DebugSidebarView.swift in Sources */,
+				B3BE63E07EF7640266B14437 /* DiagnosticsModel.swift in Sources */,
 				F1C00AE5DC6A3C6DB1A84DDA /* DockerCLI.swift in Sources */,
 				EFA607A4B99A07977420BEDB /* DockerLogsPanelView.swift in Sources */,
 				24060D5819223275011B435B /* DockerModel.swift in Sources */,

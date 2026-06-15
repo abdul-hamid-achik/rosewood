@@ -163,10 +163,9 @@ final class ProjectViewModel: ObservableObject {
         case dockerLogs
     }
 
-    enum DiagnosticsPanelScope {
-        case currentFile
-        case workspace
-    }
+    // Diagnostics scope/selection state lives on `diagnosticsModel`; this typealias keeps
+    // existing `ProjectViewModel.DiagnosticsPanelScope` references source-compatible.
+    typealias DiagnosticsPanelScope = DiagnosticsModel.DiagnosticsPanelScope
 
     @Published var rootDirectory: URL?
     @Published var fileTree: [FileItem] = []
@@ -678,6 +677,13 @@ final class ProjectViewModel: ObservableObject {
     let dockerModel: DockerModel
     let terminalModel: TerminalModel
     let referencesModel: ReferencesModel
+    // `lazy` so its dependency closures can capture self (built on first access, post-init).
+    lazy var diagnosticsModel: DiagnosticsModel = DiagnosticsModel(
+        lspService: lspService,
+        normalize: { [weak self] in self?.normalizedPath(for: $0) ?? $0.standardizedFileURL.path },
+        displayPathProvider: { [weak self] in self?.relativeDisplayPath(for: $0) ?? $0.lastPathComponent },
+        lineProvider: { [weak self] url, line in self?.lineText(for: url, lineNumber: line) ?? "" }
+    )
     private var fileTreeLoadToken = UUID()
     private var workspaceFilesLoadToken = UUID()
     var projectSearchToken = UUID()
