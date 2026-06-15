@@ -166,6 +166,35 @@ struct ProjectViewModelTests {
     }
 
     @Test
+    func projectReplaceUndoSnapshotReadsDiskNotUnsavedEdits() async throws {
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("swift")
+        try "one\n".write(to: fileURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+
+        let configURL = tempConfigURL()
+        defer { try? FileManager.default.removeItem(at: configURL) }
+
+        let viewModel = makeViewModel(
+            sessionStore: makeDefaults(),
+            sessionKey: "replace-snapshot-test",
+            configService: ConfigurationService(userConfigURL: configURL),
+            fileWatcher: FileWatcherService(),
+            ui: TestProjectUI()
+        )
+        viewModel.openFile(at: fileURL)
+        // Unsaved edits. A project replace's unsaved-changes prompt resolves to Save or Discard
+        // BEFORE snapshotting; on Discard the tab is NOT reverted, so the snapshot must come from
+        // disk ("one") — not the discarded in-memory edit ("two") — or Undo loses the original.
+        viewModel.updateTabContent("two\n")
+
+        let snapshots = viewModel.snapshotFiles(at: [fileURL])
+        #expect(snapshots.count == 1)
+        #expect(snapshots.first?.originalContent == "one\n")
+    }
+
+    @Test
     func sessionPersistenceDoesNotSerializeEditorBuffers() async throws {
         let fileURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)

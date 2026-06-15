@@ -3459,6 +3459,10 @@ final class ProjectViewModel: ObservableObject {
 
     func renameItem(_ item: FileItem, to newName: String) {
         do {
+            // Suppress the watcher's delete/rename event for the old path: the OS fires it on a
+            // background queue and it can outrace the unwatch in updateOpenTabPaths, surfacing a
+            // bogus "file changed on disk" reload prompt for a path that no longer exists.
+            fileWatcher.suppressSelfWrite(for: item.path)
             let newURL = try fileService.rename(from: item.path, to: newName)
             updateExpandedDirectoryPaths(moving: item.path, to: newURL)
             updateOpenTabPaths(moving: item.path, to: newURL, includeDescendants: item.isDirectory)
@@ -4475,10 +4479,16 @@ final class ProjectViewModel: ObservableObject {
     }
 
     private func updateOpenTabPaths(moving oldURL: URL, to newURL: URL, includeDescendants: Bool) {
+        // Compare on normalized paths: a tab opened directly (openFile) keeps its raw path while
+        // the file tree enumerates with macOS's /private canonicalization, so a raw string compare
+        // could miss the renamed tab and leave it pointing at the old (now-deleted) URL.
+        let normalizedOld = normalizedPath(for: oldURL)
+        let normalizedNew = normalizedPath(for: newURL)
         for index in openTabs.indices {
             guard let filePath = openTabs[index].filePath else { continue }
+            let normalizedFilePath = normalizedPath(for: filePath)
 
-            if filePath.path == oldURL.path {
+            if normalizedFilePath == normalizedOld {
                 fileWatcher.unwatch(url: filePath)
                 rebindLSPDocument(at: index, movingTo: newURL)
                 openTabs[index].filePath = newURL
@@ -4487,10 +4497,10 @@ final class ProjectViewModel: ObservableObject {
                 continue
             }
 
-            guard includeDescendants, filePath.path.hasPrefix(oldURL.path + "/") else { continue }
+            guard includeDescendants, normalizedFilePath.hasPrefix(normalizedOld + "/") else { continue }
 
-            let suffix = filePath.path.dropFirst(oldURL.path.count)
-            let updatedURL = URL(fileURLWithPath: newURL.path + suffix)
+            let suffix = normalizedFilePath.dropFirst(normalizedOld.count)
+            let updatedURL = URL(fileURLWithPath: normalizedNew + String(suffix))
             fileWatcher.unwatch(url: filePath)
             rebindLSPDocument(at: index, movingTo: updatedURL)
             openTabs[index].filePath = updatedURL

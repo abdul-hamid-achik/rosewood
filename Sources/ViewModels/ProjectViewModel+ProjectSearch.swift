@@ -304,31 +304,24 @@ extension ProjectViewModel {
     }
 
     func snapshotFiles(at fileURLs: [URL]) -> [ProjectReplaceFileSnapshot] {
-        // Flush live edits so the undo snapshot captures the user's latest typed text.
-        commitActiveEditBuffer()
+        // Snapshot the on-disk state as the replace-undo baseline. This MUST read from disk, not
+        // open-tab content: by the time we snapshot, unsaved edits to affected files have already
+        // been resolved (Save -> disk holds the latest; Discard -> resolveUnsavedChanges returns
+        // true WITHOUT reverting the tab, so disk still holds the true original). Trusting tab
+        // content let a "Discard Changes" choice capture the discarded edits as the baseline, so
+        // Undo restored the discarded text instead of the original — silent data loss.
         let uniqueFileURLs = Array(Set(fileURLs)).sorted { lhs, rhs in
             normalizedPath(for: lhs).localizedStandardCompare(normalizedPath(for: rhs)) == .orderedAscending
         }
 
         return uniqueFileURLs.compactMap { fileURL in
-            guard let openTab = openTabs.first(where: {
-                guard let path = $0.filePath else { return false }
-                return normalizedPath(for: path) == normalizedPath(for: fileURL)
-            }) else {
-                return (try? fileService.readDocument(at: fileURL)).map { document in
-                    ProjectReplaceFileSnapshot(
-                        fileURL: fileURL,
-                        originalContent: document.content,
-                        metadata: document.metadata
-                    )
-                }
+            (try? fileService.readDocument(at: fileURL)).map { document in
+                ProjectReplaceFileSnapshot(
+                    fileURL: fileURL,
+                    originalContent: document.content,
+                    metadata: document.metadata
+                )
             }
-
-            return ProjectReplaceFileSnapshot(
-                fileURL: fileURL,
-                originalContent: openTab.content,
-                metadata: openTab.documentMetadata
-            )
         }
     }
 
