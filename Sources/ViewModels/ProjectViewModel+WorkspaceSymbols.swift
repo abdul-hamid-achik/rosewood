@@ -114,6 +114,55 @@ extension ProjectViewModel {
         }
     }
 
+    /// Debounced, off-main variant of `updateWorkspaceSymbolCache` for the typing hot path.
+    /// `WorkspaceSymbolIndexer.extractSymbols` re-parses the whole document, so running it
+    /// synchronously on every keystroke adds latency; instead we coalesce edits and extract
+    /// on a background priority, then publish the result.
+    func scheduleWorkspaceSymbolCacheUpdate(for fileURL: URL, contents: String) {
+        workspaceSymbolUpdateTask?.cancel()
+
+        let normalizedFilePath = normalizedPath(for: fileURL)
+        guard let originalIndex = availableWorkspaceFileURLs.firstIndex(where: {
+            normalizedPath(for: $0) == normalizedFilePath
+        }) else {
+            invalidateWorkspaceSymbolCache(for: fileURL)
+            return
+        }
+
+        guard WorkspaceSymbolIndexer.shouldIndex(fileURL: fileURL) else {
+            cachedWorkspaceSymbolsByPath.removeValue(forKey: normalizedFilePath)
+            cachedWorkspaceSymbols = nil
+            return
+        }
+
+        let displayPath = relativeDisplayPath(for: fileURL)
+
+        workspaceSymbolUpdateTask = Task { [weak self] in
+            do {
+                try await Task.sleep(nanoseconds: self?.workspaceSymbolUpdateDebounceNanoseconds ?? 0)
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else { return }
+
+            let symbols = await Task.detached(priority: .utility) {
+                WorkspaceSymbolIndexer.extractSymbols(
+                    from: contents,
+                    fileURL: fileURL,
+                    displayPath: displayPath,
+                    originalIndex: originalIndex
+                )
+            }.value
+
+            guard let self, !Task.isCancelled else { return }
+            self.cachedWorkspaceSymbolsByPath[normalizedFilePath] = symbols
+            self.cachedWorkspaceSymbols = nil
+            // The symbols feed the outline/breadcrumbs; nudge observers since this lands
+            // after the @Published edit that triggered it.
+            self.objectWillChange.send()
+        }
+    }
+
     func updateWorkspaceSymbolCache(for fileURL: URL, contents: String) {
         let normalizedFilePath = normalizedPath(for: fileURL)
         guard availableWorkspaceFileURLs.contains(where: { normalizedPath(for: $0) == normalizedFilePath }) else {

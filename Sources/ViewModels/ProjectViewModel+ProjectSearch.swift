@@ -11,6 +11,24 @@ extension ProjectViewModel {
         )
     }
 
+    /// Returns a user-facing message if the query is an invalid regular expression under the
+    /// given options, mirroring how `ProjectSearchMatcher` builds the effective pattern.
+    func projectSearchRegexValidationError(for query: String, options: ProjectSearchOptions) -> String? {
+        guard options.isRegularExpression else { return nil }
+
+        var pattern = query
+        if options.isWholeWord {
+            pattern = "\\b(?:\(pattern))\\b"
+        }
+        let regexOptions: NSRegularExpression.Options = options.isCaseSensitive ? [] : [.caseInsensitive]
+        do {
+            _ = try NSRegularExpression(pattern: pattern, options: regexOptions)
+            return nil
+        } catch {
+            return "Invalid regular expression"
+        }
+    }
+
     func performProjectSearch() {
         projectSearchDebounceTask?.cancel()
         projectSearchTask?.cancel()
@@ -32,6 +50,17 @@ extension ProjectViewModel {
             clearProjectSearchResults()
             return
         }
+
+        // Surface an invalid regex instead of silently returning zero results (which is
+        // indistinguishable from "no matches" with the Regex toggle on).
+        if let regexError = projectSearchRegexValidationError(for: trimmedQuery, options: searchOptions) {
+            isSearchingProject = false
+            clearProjectSearchResults()
+            projectSearchRegexError = regexError
+            return
+        }
+        // Valid query — clear any stale regex error (the query change no longer wipes results).
+        projectSearchRegexError = nil
 
         let normalizedRootPath = normalizedPath(for: rootDirectory)
         isSearchingProject = true
@@ -146,31 +175,45 @@ extension ProjectViewModel {
         replaceInProjectTask = Task { [weak self, fileService] in
             guard let self else { return }
 
-            do {
-                try await Task.detached(priority: .utility) {
-                    for snapshot in fileSnapshots {
-                        try fileService.writeFile(content: snapshot.originalContent, to: snapshot.fileURL)
+            // Restore each file with its original encoding/line endings. Isolate
+            // per-file failures so one un-encodable file doesn't abort the whole undo.
+            let failedURLs: [URL] = await Task.detached(priority: .utility) {
+                var failures: [URL] = []
+                for snapshot in fileSnapshots {
+                    do {
+                        try fileService.writeDocument(
+                            content: snapshot.originalContent,
+                            metadata: snapshot.metadata,
+                            to: snapshot.fileURL
+                        )
+                    } catch {
+                        failures.append(snapshot.fileURL)
                     }
-                }.value
-                guard self.replaceInProjectToken == token,
-                      self.rootDirectory.map(self.normalizedPath(for:)) == normalizedRootPath else {
-                    return
                 }
+                return failures
+            }.value
+            guard self.replaceInProjectToken == token,
+                  self.rootDirectory.map(self.normalizedPath(for:)) == normalizedRootPath else {
+                return
+            }
 
-                self.syncOpenTabs(with: fileSnapshots.map(\.fileURL))
-                self.isReplacingInProject = false
-                self.lastProjectReplaceTransaction = nil
-                self.performProjectSearch()
-                self.refreshGitState()
+            self.syncOpenTabs(with: fileSnapshots.map(\.fileURL))
+            self.isReplacingInProject = false
+            self.lastProjectReplaceTransaction = nil
+            self.performProjectSearch()
+            self.refreshGitState()
+            if failedURLs.isEmpty {
                 self.ui.alert(
                     "Replace Undone",
                     "Restored \(lastProjectReplaceTransaction.replacementCount) match\(lastProjectReplaceTransaction.replacementCount == 1 ? "" : "es") across \(lastProjectReplaceTransaction.fileCount) file\(lastProjectReplaceTransaction.fileCount == 1 ? "" : "s").",
                     .informational
                 )
-            } catch {
-                guard self.replaceInProjectToken == token else { return }
-                self.isReplacingInProject = false
-                self.ui.alert("Error", "Could not undo replace: \(error.localizedDescription)", .warning)
+            } else {
+                self.ui.alert(
+                    "Replace Partially Undone",
+                    "Restored most files, but \(failedURLs.count) file\(failedURLs.count == 1 ? "" : "s") could not be written back.",
+                    .warning
+                )
             }
         }
     }
@@ -186,6 +229,7 @@ extension ProjectViewModel {
 
     func clearProjectSearchResults() {
         projectSearchResults = []
+        projectSearchRegexError = nil
         projectSearchResultsQuery = ""
         projectSearchResultsOptions = ProjectSearchOptions()
         activeProjectSearchResultID = nil
@@ -270,11 +314,19 @@ extension ProjectViewModel {
                 return normalizedPath(for: path) == normalizedPath(for: fileURL)
             }) else {
                 return (try? fileService.readDocument(at: fileURL)).map { document in
-                    ProjectReplaceFileSnapshot(fileURL: fileURL, originalContent: document.content)
+                    ProjectReplaceFileSnapshot(
+                        fileURL: fileURL,
+                        originalContent: document.content,
+                        metadata: document.metadata
+                    )
                 }
             }
 
-            return ProjectReplaceFileSnapshot(fileURL: fileURL, originalContent: openTab.content)
+            return ProjectReplaceFileSnapshot(
+                fileURL: fileURL,
+                originalContent: openTab.content,
+                metadata: openTab.documentMetadata
+            )
         }
     }
 
@@ -374,9 +426,14 @@ extension ProjectViewModel {
         projectSearchTask?.cancel()
         projectSearchToken = UUID()
         isSearchingProject = false
-        clearProjectSearchResults()
 
-        guard sidebarMode == .search, rootDirectory != nil, !currentQuery.isEmpty else { return }
+        guard sidebarMode == .search, rootDirectory != nil, !currentQuery.isEmpty else {
+            clearProjectSearchResults()
+            return
+        }
+        // Keep the previous results on screen while the new query's search runs, so the panel
+        // doesn't flash a full "Searching…" splash on every keystroke. New results replace them
+        // when the debounced search completes.
         scheduleProjectSearch()
     }
 
@@ -402,10 +459,13 @@ extension ProjectViewModel {
         projectSearchTask?.cancel()
         projectSearchToken = UUID()
         isSearchingProject = false
-        clearProjectSearchResults()
 
         let currentQuery = projectSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard sidebarMode == .search, rootDirectory != nil, !currentQuery.isEmpty else { return }
+        guard sidebarMode == .search, rootDirectory != nil, !currentQuery.isEmpty else {
+            clearProjectSearchResults()
+            return
+        }
+        // Keep prior results visible while re-searching after an option/filter change.
         scheduleProjectSearch()
     }
 

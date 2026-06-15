@@ -24,16 +24,17 @@ extension ProjectViewModel {
     }
 
     func openGitChangedFileInEditor(_ changedFile: GitChangedFile) {
+        // "Open in Editor" promotes the review to the actual file: open it and leave the
+        // diff workspace so the editor (which the workspace otherwise covers) becomes visible.
+        loadGitDiff(for: changedFile)
         if let repositoryRoot = gitRepositoryStatus.repositoryRoot {
             let fileURL = repositoryRoot.appendingPathComponent(changedFile.path)
             if FileManager.default.fileExists(atPath: fileURL.path) {
                 openFile(at: fileURL, preservingGitDiffWorkspace: true)
             }
         }
-        sidebarMode = .sourceControl
-        isGitDiffWorkspaceVisible = true
         bottomPanel = nil
-        loadGitDiff(for: changedFile)
+        isGitDiffWorkspaceVisible = false
     }
 
     func revealSelectedGitChangeInExplorer() {

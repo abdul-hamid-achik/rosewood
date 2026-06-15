@@ -71,6 +71,9 @@ struct ProjectReplacePreview: Identifiable, Hashable {
 struct ProjectReplaceFileSnapshot: Hashable {
     let fileURL: URL
     let originalContent: String
+    // Preserve the file's original encoding and line endings so undo restores bytes
+    // faithfully instead of forcing UTF-8/LF.
+    var metadata: FileDocumentMetadata = .utf8LF
 }
 
 struct ProjectReplaceTransaction: Identifiable, Hashable {
@@ -243,6 +246,9 @@ final class ProjectViewModel: ObservableObject {
         }
     }
     @Published var projectSearchResults: [ProjectSearchResult] = []
+    /// Non-nil when the current query is an invalid regular expression (Regex toggle on),
+    /// so the UI can distinguish a pattern typo from a legitimately empty result.
+    @Published var projectSearchRegexError: String?
     @Published var activeProjectSearchResultID: String?
     @Published var collapsedProjectSearchGroupIDs: Set<String> = []
     @Published var selectedProjectSearchResultIDs: Set<String> = []
@@ -554,6 +560,36 @@ final class ProjectViewModel: ObservableObject {
         selectedTab != nil
     }
 
+    /// True when at least one open document could be served by a language server, so offering
+    /// a "restart" recovery action makes sense (e.g. after a server crash leaves it `.failed`).
+    var canRestartLanguageServers: Bool {
+        openTabs.contains { $0.contentType.isText && $0.language != "plaintext" }
+    }
+
+    /// Shut the language servers down and re-open the current documents so they respawn. The
+    /// only recovery path when a server crashes or wedges (servers stay `.failed` otherwise).
+    func restartLanguageServers() {
+        let documentsToReopen: [(uri: String, language: String, text: String)] = openTabs.compactMap { tab in
+            guard tab.contentType.isText, let uri = tab.documentURI, tab.language != "plaintext" else { return nil }
+            return (uri, tab.language, tab.content)
+        }
+
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.lspService.shutdownAll()
+            for document in documentsToReopen {
+                self.lspService.documentOpened(uri: document.uri, language: document.language, text: document.text)
+            }
+        }
+
+        NotificationManager.shared.show(NotificationItem(
+            type: .info,
+            title: "Restarting Language Server",
+            message: "Reinitializing language tooling for open files.",
+            duration: 2.0
+        ))
+    }
+
     var canReopenClosedTab: Bool {
         !recentlyClosedTabs.isEmpty
     }
@@ -665,6 +701,8 @@ final class ProjectViewModel: ObservableObject {
     var cachedWorkspaceSymbols: [WorkspaceSymbolMatch]?
     var cachedWorkspaceSymbolRootPath: String?
     var cachedWorkspaceSymbolsByPath: [String: [WorkspaceSymbolMatch]] = [:]
+    var workspaceSymbolUpdateTask: Task<Void, Never>?
+    let workspaceSymbolUpdateDebounceNanoseconds: UInt64 = 250_000_000
     private var cachedWorkspaceDiagnostics: [WorkspaceDiagnosticItem]?
     private var cachedFileLineContents: [String: [String]] = [:]
     private var stickyScopeCacheKey: EditorStickyScopeCacheKey?
@@ -1283,6 +1321,32 @@ final class ProjectViewModel: ObservableObject {
                 ) {
                     self.sidebarMode = .docker
                     self.refreshDockerState()
+                }
+            )
+        }
+
+        actions.append(
+            makeCommandPaletteAction(
+                id: "toggleTerminal",
+                title: bottomPanel == .terminal ? "Hide Terminal" : "Show Terminal",
+                shortcut: "⌃`",
+                category: "View",
+                aliases: ["terminal", "shell", "console", "open terminal", "toggle terminal"]
+            ) {
+                self.toggleTerminalPanel()
+            }
+        )
+
+        if canRestartLanguageServers {
+            actions.append(
+                makeCommandPaletteAction(
+                    id: "restartLanguageServers",
+                    title: "Restart Language Server",
+                    shortcut: "",
+                    category: "View",
+                    aliases: ["restart lsp", "reload language server", "restart language server", "fix language tooling"]
+                ) {
+                    self.restartLanguageServers()
                 }
             )
         }
@@ -2785,10 +2849,25 @@ final class ProjectViewModel: ObservableObject {
         }
     }
 
+    func selectNextTab() {
+        guard !openTabs.isEmpty, let current = selectedTabIndex else { return }
+        selectTab(at: (current + 1) % openTabs.count)
+    }
+
+    func selectPreviousTab() {
+        guard !openTabs.isEmpty, let current = selectedTabIndex else { return }
+        selectTab(at: (current - 1 + openTabs.count) % openTabs.count)
+    }
+
     func selectTab(at index: Int) {
         guard openTabs.indices.contains(index) else { return }
         dismissGitDiffWorkspace()
         selectedTabIndex = index
+        // Restore the caret to where it was when this tab was last active (the single reused
+        // text view otherwise keeps the previous tab's clamped selection).
+        if openTabs[index].contentType.isText {
+            openTabs[index].pendingLineJump = openTabs[index].cursorPosition.line
+        }
         if let filePath = openTabs[index].filePath {
             recordQuickOpenAccess(for: filePath)
         }
@@ -2954,7 +3033,8 @@ final class ProjectViewModel: ObservableObject {
         invalidateWorkspaceDiagnosticsCache()
         if let fileURL = openTabs[selectedTabIndex].filePath {
             invalidateCachedFileContent(for: fileURL)
-            updateWorkspaceSymbolCache(for: fileURL, contents: content)
+            // Debounced + off-main so whole-document symbol extraction doesn't run on every keystroke.
+            scheduleWorkspaceSymbolCacheUpdate(for: fileURL, contents: content)
         }
         invalidateEditorNavigationCaches()
 
@@ -3211,8 +3291,16 @@ final class ProjectViewModel: ObservableObject {
     }
 
     func synchronizeActiveDiagnosticSelection() {
-        activeCurrentDiagnosticID = inferredCurrentDiagnostic(in: orderedCurrentTabDiagnostics)?.id
-        activeWorkspaceDiagnosticID = inferredWorkspaceDiagnostic(in: orderedWorkspaceDiagnostics)?.id
+        // Guard the @Published writes: this runs on every caret move, and a no-op assignment
+        // still fires objectWillChange and re-renders every view observing the view model.
+        let current = inferredCurrentDiagnostic(in: orderedCurrentTabDiagnostics)?.id
+        if activeCurrentDiagnosticID != current {
+            activeCurrentDiagnosticID = current
+        }
+        let workspace = inferredWorkspaceDiagnostic(in: orderedWorkspaceDiagnostics)?.id
+        if activeWorkspaceDiagnosticID != workspace {
+            activeWorkspaceDiagnosticID = workspace
+        }
     }
 
     private func navigatedBreakpoint(step: Int) -> Breakpoint? {
@@ -3281,17 +3369,44 @@ final class ProjectViewModel: ObservableObject {
     }
 
     private func handleExternalFileChange(at url: URL) {
-        guard let tabIndex = openTabs.firstIndex(where: { $0.filePath == url }) else { return }
+        let standardizedURL = url.standardizedFileURL
+        guard let tabIndex = openTabs.firstIndex(where: {
+            $0.filePath?.standardizedFileURL == standardizedURL
+        }) else { return }
 
-        let response = ui.confirm(
-            "File Changed",
-            "\(url.lastPathComponent) was changed externally. Reload?",
-            .warning,
-            ["Reload", "Ignore"]
-        )
+        // Skip if the on-disk content already matches what we have — coalesced watcher
+        // events and lingering self-writes can fire spuriously.
+        if let onDisk = try? fileService.readDocument(at: url).content,
+           onDisk == openTabs[tabIndex].content {
+            if onDisk != openTabs[tabIndex].originalContent {
+                openTabs[tabIndex].originalContent = onDisk
+                openTabs[tabIndex].isDirty = false
+            }
+            return
+        }
 
-        if response == .alertFirstButtonReturn {
-            reloadTab(at: tabIndex)
+        if openTabs[tabIndex].isDirty {
+            // The buffer has unsaved edits — never silently discard them.
+            let response = ui.confirm(
+                "File Changed on Disk",
+                "\(url.lastPathComponent) was changed by another program, but you have unsaved changes. "
+                    + "Reloading will discard your edits.",
+                .warning,
+                ["Keep My Changes", "Reload and Discard"]
+            )
+            if response == .alertSecondButtonReturn {
+                reloadTab(at: tabIndex)
+            }
+        } else {
+            let response = ui.confirm(
+                "File Changed",
+                "\(url.lastPathComponent) was changed externally. Reload?",
+                .warning,
+                ["Reload", "Ignore"]
+            )
+            if response == .alertFirstButtonReturn {
+                reloadTab(at: tabIndex)
+            }
         }
     }
 
@@ -3339,6 +3454,20 @@ final class ProjectViewModel: ObservableObject {
 
     func deleteItem(_ item: FileItem) {
         let affectedIndices = affectedTabIndices(for: item.path, includeDescendants: item.isDirectory)
+
+        // Always confirm before deleting — even clean/closed files — since this acts on
+        // the file tree directly. Files go to the Trash, so this is recoverable.
+        let kind = item.isDirectory ? "folder" : "file"
+        let confirmation = ui.confirm(
+            "Move \u{201C}\(item.name)\u{201D} to Trash?",
+            item.isDirectory
+                ? "The folder and everything inside it will be moved to the Trash."
+                : "The \(kind) will be moved to the Trash.",
+            .warning,
+            ["Move to Trash", "Cancel"]
+        )
+        guard confirmation == .alertFirstButtonReturn else { return }
+
         guard resolveUnsavedChanges(
             for: affectedIndices,
             title: "Delete \(item.name)?",
@@ -4113,6 +4242,8 @@ final class ProjectViewModel: ObservableObject {
         let didChangeURL = previousURL != url
 
         do {
+            // Suppress the watcher event our own atomic write will trigger on `url`.
+            fileWatcher.suppressSelfWrite(for: url)
             try fileService.writeDocument(content: openTabs[index].content, metadata: openTabs[index].documentMetadata, to: url)
 
             if didChangeURL {
@@ -4130,6 +4261,10 @@ final class ProjectViewModel: ObservableObject {
                 if let uri = openTabs[index].documentURI {
                     lspService.documentOpened(uri: uri, language: openTabs[index].language, text: openTabs[index].content)
                 }
+            } else {
+                // The atomic write replaced the inode; re-establish the watch so future
+                // external edits to this file are still detected.
+                fileWatcher.rewatch(url: url)
             }
 
             openTabs[index].originalContent = openTabs[index].content
@@ -4155,15 +4290,19 @@ final class ProjectViewModel: ObservableObject {
             persistSession()
             refreshGitState()
             refreshCurrentLineBlame()
-            
-            // Show success notification
-            NotificationManager.shared.show(NotificationItem(
-                type: .success,
-                title: didChangeURL ? "File Saved As" : "File Saved",
-                message: "\(openTabs[index].fileName) saved successfully",
-                duration: 2.0
-            ))
-            
+
+            // Routine saves (⌘S and autosave) are silent — like VS Code/Zed — since the tab's
+            // dirty indicator already reflects the result and a banner on every autosave tick
+            // is noise. Only the infrequent Save-As (new location) gets a confirmation.
+            if didChangeURL {
+                NotificationManager.shared.show(NotificationItem(
+                    type: .success,
+                    title: "File Saved As",
+                    message: "\(openTabs[index].fileName) saved successfully",
+                    duration: 2.0
+                ))
+            }
+
             return true
         } catch {
             ui.alert("Error", "Could not save file: \(error.localizedDescription)", .warning)
@@ -4263,6 +4402,23 @@ final class ProjectViewModel: ObservableObject {
         return String(filePath.dropFirst(rootPath.count + 1))
     }
 
+    // URL-based variants for the file tree (which works with FileItem.path, not EditorTab).
+    func revealInFinder(url: URL) {
+        NSWorkspace.shared.activateFileViewerSelecting([url])
+    }
+
+    func absoluteFilePath(for url: URL) -> String {
+        url.path
+    }
+
+    func relativeFilePath(for url: URL) -> String? {
+        guard let root = rootDirectory else { return nil }
+        let filePath = url.path
+        let rootPath = root.path
+        guard filePath.hasPrefix(rootPath + "/") else { return filePath }
+        return String(filePath.dropFirst(rootPath.count + 1))
+    }
+
     func makeProjectReplaceTransaction(
         preview: ProjectReplacePreview,
         summary: ProjectReplaceSummary,
@@ -4347,6 +4503,7 @@ final class ProjectViewModel: ObservableObject {
 
             if filePath.path == oldURL.path {
                 fileWatcher.unwatch(url: filePath)
+                rebindLSPDocument(at: index, movingTo: newURL)
                 openTabs[index].filePath = newURL
                 openTabs[index].fileName = newURL.lastPathComponent
                 fileWatcher.watch(url: newURL)
@@ -4358,6 +4515,7 @@ final class ProjectViewModel: ObservableObject {
             let suffix = filePath.path.dropFirst(oldURL.path.count)
             let updatedURL = URL(fileURLWithPath: newURL.path + suffix)
             fileWatcher.unwatch(url: filePath)
+            rebindLSPDocument(at: index, movingTo: updatedURL)
             openTabs[index].filePath = updatedURL
             openTabs[index].fileName = updatedURL.lastPathComponent
             fileWatcher.watch(url: updatedURL)
@@ -4366,6 +4524,18 @@ final class ProjectViewModel: ObservableObject {
         if let selectedTabIndex, !openTabs.indices.contains(selectedTabIndex) {
             self.selectedTabIndex = openTabs.isEmpty ? nil : 0
         }
+    }
+
+    /// Notify the language server that an open document moved, so language features keep
+    /// working for the renamed buffer instead of pointing at a phantom old URI. Must be
+    /// called before `openTabs[index].filePath` is updated to the new location.
+    private func rebindLSPDocument(at index: Int, movingTo newURL: URL) {
+        guard openTabs.indices.contains(index), openTabs[index].contentType.isText else { return }
+        guard let oldURI = openTabs[index].documentURI else { return }
+        let oldLanguage = openTabs[index].language
+        let newLanguage = EditorTab.languageFromExtension((newURL.pathExtension as NSString).lowercased)
+        lspService.documentClosed(uri: oldURI, language: oldLanguage)
+        lspService.documentOpened(uri: newURL.absoluteString, language: newLanguage, text: openTabs[index].content)
     }
 
     private func pruneExpandedDirectoryPaths(removingDescendantsOf url: URL) {
@@ -4661,6 +4831,12 @@ final class ProjectViewModel: ObservableObject {
             selectedTabIndex = selectedIndex
         } else {
             selectedTabIndex = openTabs.isEmpty ? nil : 0
+        }
+
+        // Restore the caret in the active tab on launch (the editor only jumps to a saved
+        // position when pendingLineJump is set).
+        if let selectedTabIndex, openTabs[selectedTabIndex].contentType.isText {
+            openTabs[selectedTabIndex].pendingLineJump = openTabs[selectedTabIndex].cursorPosition.line
         }
 
         refreshGitState()
