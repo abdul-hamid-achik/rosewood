@@ -47,7 +47,8 @@ struct EditorView: View {
             // Full-document re-highlight on every keystroke is the dominant
             // typing-latency cost above ~2KB; smaller files re-highlight fast
             // enough that instant re-color feels nicer than a 180ms gap.
-            return tab.content.utf8.count > 2048
+            // Use the live buffer size so the heuristic tracks the document as it grows.
+            return (projectViewModel.liveSelectedTabContent()?.utf8.count ?? tab.content.utf8.count) > 2048
         }
         return false
     }
@@ -55,7 +56,7 @@ struct EditorView: View {
     var body: some View {
         CodeEditorRepresentable(
             text: Binding(
-                get: { projectViewModel.selectedTab?.content ?? tab.content },
+                get: { projectViewModel.liveSelectedTabContent() ?? tab.content },
                 set: { newValue in
                     // Update synchronously (already on the main thread). Deferring this to a
                     // later runloop turn lets a Save/autosave in the gap persist stale text.

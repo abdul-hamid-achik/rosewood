@@ -82,7 +82,7 @@ extension ProjectViewModel {
         }
         let openTabContents = Dictionary(uniqueKeysWithValues: openTabs.compactMap { tab -> (String, String)? in
             guard let filePath = tab.filePath, tab.contentType.isText else { return nil }
-            return (normalizedPath(for: filePath), tab.content)
+            return (normalizedPath(for: filePath), liveContent(forTabID: tab.id) ?? tab.content)
         })
 
         workspaceSymbolIndexTask = Task { [weak self] in
@@ -231,7 +231,7 @@ extension ProjectViewModel {
             guard let path = $0.filePath else { return false }
             return normalizedPath(for: path) == normalizedPath(for: fileURL)
         }) {
-            return openTab.content
+            return liveContent(forTabID: openTab.id) ?? openTab.content
         }
 
         return try? fileService.readFile(at: fileURL)

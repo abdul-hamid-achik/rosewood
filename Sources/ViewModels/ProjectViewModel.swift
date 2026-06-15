@@ -186,6 +186,15 @@ final class ProjectViewModel: ObservableObject {
     private var activeEditBuffer: ActiveEditBuffer?
 
     @Published var selectedTabIndex: Int? = nil {
+        willSet {
+            // Flush the outgoing tab's live edits into its struct before the selection changes.
+            // The buffer is keyed by tab id, so this single chokepoint correctly commits whatever
+            // tab was being edited regardless of how the switch was triggered (selectTab/openFile/
+            // goToTab/close-reindex). Guarded so re-selecting the same tab doesn't churn.
+            if newValue != selectedTabIndex {
+                commitAndClearActiveEditBuffer()
+            }
+        }
         didSet {
             editorVisibleLineRange = nil
             isEditorNavigationChromeReady = false
@@ -498,6 +507,8 @@ final class ProjectViewModel: ObservableObject {
     /// Shut the language servers down and re-open the current documents so they respawn. The
     /// only recovery path when a server crashes or wedges (servers stay `.failed` otherwise).
     func restartLanguageServers() {
+        // Reopen LSP documents with the latest typed text, not a stale struct snapshot.
+        commitActiveEditBuffer()
         let documentsToReopen: [(uri: String, language: String, text: String)] = openTabs.compactMap { tab in
             guard tab.contentType.isText, let uri = tab.documentURI, tab.language != "plaintext" else { return nil }
             return (uri, tab.language, tab.content)
@@ -804,7 +815,7 @@ final class ProjectViewModel: ObservableObject {
         let focusLine = editorVisibleLineRange?.lowerBound ?? selectedTab.cursorPosition.line
         let cacheKey = EditorStickyScopeCacheKey(
             filePath: normalizedPath(for: selectedFilePath),
-            documentVersion: selectedTab.documentVersion,
+            documentVersion: liveDocumentVersion(forTabID: selectedTab.id) ?? selectedTab.documentVersion,
             language: selectedTab.language,
             focusLine: max(focusLine, 1)
         )
@@ -813,7 +824,7 @@ final class ProjectViewModel: ObservableObject {
         }
 
         let scopes = EditorNavigationModel.stickyScopes(
-            text: selectedTab.content,
+            text: liveContent(forTabID: selectedTab.id) ?? selectedTab.content,
             language: selectedTab.language,
             focusLine: cacheKey.focusLine
         )
@@ -828,7 +839,7 @@ final class ProjectViewModel: ObservableObject {
         let cacheKey = EditorBreadcrumbCacheKey(
             filePath: normalizedPath(for: selectedFilePath),
             rootPath: rootDirectory.map(normalizedPath(for:)),
-            documentVersion: selectedTab.documentVersion,
+            documentVersion: liveDocumentVersion(forTabID: selectedTab.id) ?? selectedTab.documentVersion,
             language: selectedTab.language,
             visibleTopLine: editorVisibleLineRange?.lowerBound ?? 1,
             cursorLine: selectedTab.cursorPosition.line
@@ -840,7 +851,7 @@ final class ProjectViewModel: ObservableObject {
         let breadcrumbs = EditorNavigationModel.breadcrumbs(
             fileURL: selectedTab.filePath,
             rootURL: rootDirectory,
-            text: selectedTab.content,
+            text: liveContent(forTabID: selectedTab.id) ?? selectedTab.content,
             language: selectedTab.language,
             visibleTopLine: cacheKey.visibleTopLine,
             cursorLine: cacheKey.cursorLine
@@ -2819,6 +2830,9 @@ final class ProjectViewModel: ObservableObject {
     @discardableResult
     func closeTab(at index: Int, confirmUnsavedChanges: Bool = true) -> Bool {
         guard openTabs.indices.contains(index) else { return false }
+        // Flush + drop the live buffer so the dirty check, any save-on-close, and the
+        // recently-closed snapshot all see the latest typed text.
+        commitAndClearActiveEditBuffer()
         let shouldCloseGitDiff = isGitDiffWorkspaceVisible && selectedTabIndex == index
         var discardedUnsavedChanges = false
 
@@ -2971,23 +2985,28 @@ final class ProjectViewModel: ObservableObject {
 
     /// Authoritative current text for a tab: the live buffer if it belongs to this tab, else the
     /// committed struct value. Every content reader funnels through here so it can never read stale.
-    private func liveContent(forTabID id: UUID) -> String? {
+    func liveContent(forTabID id: UUID) -> String? {
         if let buffer = activeEditBuffer, buffer.tabID == id { return buffer.text }
         return openTabs.first(where: { $0.id == id })?.content
     }
 
-    private func liveContent(at index: Int) -> String {
+    func liveContent(at index: Int) -> String {
         guard openTabs.indices.contains(index) else { return "" }
         let tab = openTabs[index]
         if let buffer = activeEditBuffer, buffer.tabID == tab.id { return buffer.text }
         return tab.content
     }
 
-    private func liveDocumentVersion(at index: Int) -> Int {
+    func liveDocumentVersion(at index: Int) -> Int {
         guard openTabs.indices.contains(index) else { return 0 }
         let tab = openTabs[index]
         if let buffer = activeEditBuffer, buffer.tabID == tab.id { return buffer.documentVersion }
         return tab.documentVersion
+    }
+
+    func liveDocumentVersion(forTabID id: UUID) -> Int? {
+        if let buffer = activeEditBuffer, buffer.tabID == id { return buffer.documentVersion }
+        return openTabs.first(where: { $0.id == id })?.documentVersion
     }
 
     /// The live text of the selected tab — the only PUBLIC accessor (the editor binding reads it).
@@ -2999,7 +3018,7 @@ final class ProjectViewModel: ObservableObject {
     /// from the buffer. Publishes at most once (struct mutation), acceptable because flush happens
     /// only at boundaries (save/switch/close/…), never per keystroke. Returns whether anything changed.
     @discardableResult
-    private func commitActiveEditBuffer() -> Bool {
+    func commitActiveEditBuffer() -> Bool {
         guard let buffer = activeEditBuffer,
               let index = openTabs.firstIndex(where: { $0.id == buffer.tabID }) else { return false }
         var changed = false
@@ -3021,7 +3040,7 @@ final class ProjectViewModel: ObservableObject {
 
     /// Commit then drop the buffer — used when leaving a tab or when the struct content is about to
     /// be replaced from disk, so the buffer no longer shadows the (new) struct value.
-    private func commitAndClearActiveEditBuffer() {
+    func commitAndClearActiveEditBuffer() {
         commitActiveEditBuffer()
         activeEditBuffer = nil
     }
@@ -3284,6 +3303,8 @@ final class ProjectViewModel: ObservableObject {
 
     private func autoSaveAllDirtyTabs() {
         autoSaveTask = nil
+        // Flush the live buffer first so the isDirty scan + each saveTab see the latest typed text.
+        commitActiveEditBuffer()
         for index in openTabs.indices where openTabs[index].isDirty {
             _ = saveTab(at: index)
         }
@@ -3294,6 +3315,8 @@ final class ProjectViewModel: ObservableObject {
         guard let tabIndex = openTabs.firstIndex(where: {
             $0.filePath?.standardizedFileURL == standardizedURL
         }) else { return }
+        // Flush the live buffer so the on-disk comparison below is against the live text.
+        commitActiveEditBuffer()
 
         // Skip if the on-disk content already matches what we have — coalesced watcher
         // events and lingering self-writes can fire spuriously.
@@ -3333,6 +3356,8 @@ final class ProjectViewModel: ObservableObject {
 
     private func reloadTab(at index: Int) {
         guard openTabs.indices.contains(index), let url = openTabs[index].filePath else { return }
+        // Reloading replaces the struct content from disk; drop the live buffer so it can't shadow it.
+        commitAndClearActiveEditBuffer()
 
         do {
             let fileHandling = configService.settings.fileHandling
@@ -4155,6 +4180,8 @@ final class ProjectViewModel: ObservableObject {
     private func saveTab(at index: Int, destinationURL: URL? = nil) -> Bool {
         guard openTabs.indices.contains(index) else { return false }
         guard openTabs[index].contentType.isText else { return true }
+        // Flush any unsaved live-buffer edits into the struct so we persist the latest text, not stale.
+        commitActiveEditBuffer()
 
         let previousURL = openTabs[index].filePath?.standardizedFileURL
         let previousLanguage = openTabs[index].language
@@ -4232,6 +4259,9 @@ final class ProjectViewModel: ObservableObject {
     }
 
     func prepareForSessionTransition(title: String, message: String) -> Bool {
+        // Flush the live buffer so the dirty scan sees in-flight edits (else a quit/close could
+        // skip a tab whose unsaved edits are still only in the buffer).
+        commitActiveEditBuffer()
         let dirtyIndices = openTabs.indices.filter { openTabs[$0].isDirty }
         guard !dirtyIndices.isEmpty else { return true }
 
@@ -4391,7 +4421,8 @@ final class ProjectViewModel: ObservableObject {
             guard let filePath = $0.filePath else { return false }
             return normalizedPath(for: filePath) == normalizedFilePath
         }) {
-            let lines = openTab.content.components(separatedBy: .newlines)
+            let text = liveContent(forTabID: openTab.id) ?? openTab.content
+            let lines = text.components(separatedBy: .newlines)
             guard lines.indices.contains(max(lineNumber - 1, 0)) else { return "" }
             return lines[max(lineNumber - 1, 0)].trimmingCharacters(in: .whitespaces)
         }
@@ -4453,6 +4484,8 @@ final class ProjectViewModel: ObservableObject {
     private func rebindLSPDocument(at index: Int, movingTo newURL: URL) {
         guard openTabs.indices.contains(index), openTabs[index].contentType.isText else { return }
         guard let oldURI = openTabs[index].documentURI else { return }
+        // Reopen the moved document in LSP with the latest typed text.
+        commitActiveEditBuffer()
         let oldLanguage = openTabs[index].language
         let newLanguage = EditorTab.languageFromExtension((newURL.pathExtension as NSString).lowercased)
         lspService.documentClosed(uri: oldURI, language: oldLanguage)

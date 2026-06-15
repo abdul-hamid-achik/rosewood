@@ -304,6 +304,8 @@ extension ProjectViewModel {
     }
 
     func snapshotFiles(at fileURLs: [URL]) -> [ProjectReplaceFileSnapshot] {
+        // Flush live edits so the undo snapshot captures the user's latest typed text.
+        commitActiveEditBuffer()
         let uniqueFileURLs = Array(Set(fileURLs)).sorted { lhs, rhs in
             normalizedPath(for: lhs).localizedStandardCompare(normalizedPath(for: rhs)) == .orderedAscending
         }
@@ -400,6 +402,8 @@ extension ProjectViewModel {
     func syncOpenTabs(with fileURLs: [URL]) {
         let normalizedPaths = Set(fileURLs.map(normalizedPath(for:)))
         guard !normalizedPaths.isEmpty else { return }
+        // A replace/undo overwrites tab content from disk; drop the live buffer so it can't shadow it.
+        commitAndClearActiveEditBuffer()
 
         for index in openTabs.indices {
             guard let filePath = openTabs[index].filePath,
