@@ -44,7 +44,7 @@ enum LineEndingStyle: String, Codable, Equatable, Sendable, CaseIterable {
     }
 }
 
-struct FileDocumentMetadata: Equatable, Codable, Sendable {
+struct FileDocumentMetadata: Equatable, Hashable, Codable, Sendable {
     var encodingRawValue: UInt
     var encodingLabel: String
     var lineEnding: LineEndingStyle

@@ -636,7 +636,8 @@ final class FileService {
     }
 
     func delete(at url: URL) throws {
-        try FileManager.default.removeItem(at: url)
+        // Move to Trash rather than unlinking so deletions stay recoverable.
+        try FileManager.default.trashItem(at: url, resultingItemURL: nil)
     }
 
     func rename(from oldURL: URL, to newName: String) throws -> URL {

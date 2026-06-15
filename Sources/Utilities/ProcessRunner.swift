@@ -127,8 +127,16 @@ private final class PipeReader: @unchecked Sendable {
         fileHandle = pipe.fileHandleForReading
 
         DispatchQueue.global(qos: .userInitiated).async { [accumulator, semaphore, fileHandle] in
-            let data = fileHandle.readDataToEndOfFile()
-            accumulator.append(data)
+            // Read in chunks with `read(upToCount:)` rather than `readDataToEndOfFile()`:
+            // the latter raises an uncaught NSFileHandleOperationException (crashing the
+            // process) when the read races with `closeFile()` or is interrupted. The Swift
+            // API surfaces those as catchable errors instead.
+            while true {
+                guard let chunk = try? fileHandle.read(upToCount: 65_536), !chunk.isEmpty else {
+                    break
+                }
+                accumulator.append(chunk)
+            }
             semaphore.signal()
         }
     }

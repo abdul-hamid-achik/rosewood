@@ -30,6 +30,10 @@ actor LSPClient {
     private var pendingRequests: [Int: CheckedContinuation<Data, Error>] = [:]
     private var messageLoopTask: Task<Void, Never>?
 
+    /// Upper bound on how long any single request waits for a response. Guards against a
+    /// server that accepts a request but never answers (e.g. wedged during `initialize`).
+    private let requestTimeoutNanoseconds: UInt64 = 15_000_000_000
+
     private(set) var state: State = .starting
     private(set) var serverCapabilities: ServerCapabilities?
 
@@ -317,6 +321,32 @@ actor LSPClient {
             for await data in transport.messages {
                 await self.handleMessage(data)
             }
+            // The transport closed (server exited/crashed or normal shutdown). Fail any
+            // in-flight requests instead of leaking their continuations forever.
+            await self.handleTransportClosed()
+        }
+    }
+
+    /// Idempotently tears down after the transport closes: marks the client failed (unless it
+    /// was an intentional shutdown) and resumes every pending request with `.serverCrashed`.
+    private func handleTransportClosed() {
+        let wasIntentionalShutdown: Bool
+        switch state {
+        case .shutdown:
+            wasIntentionalShutdown = true
+        default:
+            wasIntentionalShutdown = false
+        }
+
+        if !wasIntentionalShutdown {
+            state = .failed("Language server connection closed")
+            onStateChange?(state)
+        }
+
+        let pending = pendingRequests
+        pendingRequests.removeAll()
+        for (_, continuation) in pending {
+            continuation.resume(throwing: LSPClientError.serverCrashed)
         }
     }
 
@@ -386,11 +416,23 @@ actor LSPClient {
             pendingRequests[id] = continuation
             do {
                 try transport.send(data)
+                // Arm a timeout so a never-answered request can't hang forever.
+                Task { [weak self] in
+                    try? await Task.sleep(nanoseconds: self?.requestTimeoutNanoseconds ?? 0)
+                    await self?.timeoutRequest(id)
+                }
             } catch {
                 pendingRequests.removeValue(forKey: id)
                 continuation.resume(throwing: error)
             }
         }
+    }
+
+    /// Fails a request that is still pending when its timeout elapses. A no-op if the response
+    /// already arrived (the continuation was removed), so it never double-resumes.
+    private func timeoutRequest(_ id: Int) {
+        guard let continuation = pendingRequests.removeValue(forKey: id) else { return }
+        continuation.resume(throwing: LSPClientError.requestFailed(code: -1, message: "Request timed out"))
     }
 
     private func sendNotification<P: Encodable>(_ method: String, params: P?) {

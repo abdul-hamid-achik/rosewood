@@ -141,7 +141,8 @@ final class GitService: GitServiceProtocol {
         await mutateRepository(projectRoot: projectRoot) { [self] repositoryRoot in
             if changedFile.kind == .untracked {
                 let targetURL = repositoryRoot.appendingPathComponent(changedFile.path)
-                try FileManager.default.removeItem(at: targetURL)
+                // Discarding an untracked file moves it to the Trash so it stays recoverable.
+                try FileManager.default.trashItem(at: targetURL, resultingItemURL: nil)
             } else {
                 _ = try self.runGit(arguments: ["restore", "--", changedFile.path], in: repositoryRoot)
             }
