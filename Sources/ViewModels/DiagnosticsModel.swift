@@ -49,6 +49,22 @@ final class DiagnosticsModel: ObservableObject {
         self.normalize = normalize
         self.displayPathProvider = displayPathProvider
         self.lineProvider = lineProvider
+
+        // Own the LSP diagnostics-change handler so a push (frequent while typing/compiling)
+        // re-renders ONLY this model's observers, not every view observing ProjectViewModel.
+        lspService.setDiagnosticsChangeHandler { [weak self] in
+            self?.handleDiagnosticsChanged()
+        }
+    }
+
+    /// Invoked when LSPService reports new diagnostics. The active document/cursor context was
+    /// already pushed by the view model on tab/caret changes, so we just refresh the cache and
+    /// selection and republish. `objectWillChange.send()` is explicit because the diagnostic LIST
+    /// can change (a new problem appears) without the active selection id changing.
+    private func handleDiagnosticsChanged() {
+        invalidateWorkspaceDiagnosticsCache()
+        synchronizeActiveDiagnosticSelection()
+        objectWillChange.send()
     }
 
     // MARK: - Current-file diagnostics

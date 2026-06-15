@@ -720,9 +720,9 @@ final class ProjectViewModel: ObservableObject {
                 self?.handleDebugSessionEvent(event)
             }
         }
-        self.lspService.setDiagnosticsChangeHandler { [weak self] in
-            self?.handleDiagnosticsChanged()
-        }
+        // DiagnosticsModel now owns the LSP diagnostics-change handler. Touch the lazy child so it
+        // is created at startup (registering that handler) and seed its initial editor context.
+        pushDiagnosticsContext()
 
         if ProcessInfo.processInfo.environment["ROSEWOOD_UI_TEST_RESET_SESSION"] == "1" {
             sessionStore.removeObject(forKey: sessionKey)
@@ -4558,13 +4558,9 @@ final class ProjectViewModel: ObservableObject {
         }
     }
 
-    private func handleDiagnosticsChanged() {
-        invalidateWorkspaceDiagnosticsCache()
-        // Push current editor context, then re-derive the active selection (guarded writes inside).
-        pushDiagnosticsContext()
-        objectWillChange.send()
-    }
-
+    // The LSP diagnostics-change handler now lives on `diagnosticsModel`, which republishes on
+    // itself instead of the app-wide view model. This delegating shim stays because non-LSP edits
+    // (open/reload/save) still invalidate the workspace cache through the view model.
     private func invalidateWorkspaceDiagnosticsCache() {
         diagnosticsModel.invalidateWorkspaceDiagnosticsCache()
     }

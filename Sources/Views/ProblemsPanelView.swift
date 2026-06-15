@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ProblemsPanelView: View {
     @EnvironmentObject var projectViewModel: ProjectViewModel
+    @EnvironmentObject private var diagnosticsModel: DiagnosticsModel
     @EnvironmentObject private var configService: ConfigurationService
 
     private var themeColors: ThemeColors {
@@ -9,19 +10,19 @@ struct ProblemsPanelView: View {
     }
 
     private var diagnostics: [LSPDiagnostic] {
-        projectViewModel.orderedCurrentTabDiagnostics
+        diagnosticsModel.orderedCurrentTabDiagnostics
     }
 
     private var workspaceDiagnostics: [WorkspaceDiagnosticItem] {
-        projectViewModel.orderedWorkspaceDiagnostics
+        diagnosticsModel.orderedWorkspaceDiagnostics
     }
 
     private var showsWorkspaceScope: Bool {
-        projectViewModel.hasWorkspaceDiagnostics
+        diagnosticsModel.hasWorkspaceDiagnostics
     }
 
     private var hasVisibleProblems: Bool {
-        switch projectViewModel.diagnosticsPanelScope {
+        switch diagnosticsModel.diagnosticsPanelScope {
         case .currentFile:
             return !diagnostics.isEmpty
         case .workspace:
@@ -31,11 +32,11 @@ struct ProblemsPanelView: View {
 
     private var summaryText: String {
         let counts: (errors: Int, warnings: Int)
-        switch projectViewModel.diagnosticsPanelScope {
+        switch diagnosticsModel.diagnosticsPanelScope {
         case .currentFile:
-            counts = projectViewModel.currentTabDiagnosticCount
+            counts = diagnosticsModel.currentTabDiagnosticCount
         case .workspace:
-            counts = projectViewModel.workspaceDiagnosticCount
+            counts = diagnosticsModel.workspaceDiagnosticCount
         }
         let parts = [
             counts.errors == 1 ? "1 error" : "\(counts.errors) errors",
@@ -45,7 +46,7 @@ struct ProblemsPanelView: View {
     }
 
     private var visibleProblemCount: Int {
-        switch projectViewModel.diagnosticsPanelScope {
+        switch diagnosticsModel.diagnosticsPanelScope {
         case .currentFile:
             diagnostics.count
         case .workspace:
@@ -54,8 +55,8 @@ struct ProblemsPanelView: View {
     }
 
     private var scopeSummaryText: String? {
-        guard projectViewModel.diagnosticsPanelScope == .workspace else { return nil }
-        let fileCount = projectViewModel.workspaceDiagnosticFileCount
+        guard diagnosticsModel.diagnosticsPanelScope == .workspace else { return nil }
+        let fileCount = diagnosticsModel.workspaceDiagnosticFileCount
         return "\(fileCount) file\(fileCount == 1 ? "" : "s")"
     }
 
@@ -70,7 +71,7 @@ struct ProblemsPanelView: View {
             } else {
                 ScrollViewReader { proxy in
                     ScrollView {
-                        if projectViewModel.diagnosticsPanelScope == .currentFile {
+                        if diagnosticsModel.diagnosticsPanelScope == .currentFile {
                             LazyVStack(alignment: .leading, spacing: 8) {
                                 ForEach(Array(diagnostics.enumerated()), id: \.element.id) { index, diagnostic in
                                     diagnosticRow(diagnostic, index: index)
@@ -91,7 +92,7 @@ struct ProblemsPanelView: View {
                     .onAppear {
                         scrollToActiveDiagnostic(using: proxy)
                     }
-                    .onChange(of: projectViewModel.activeProblemScrollID) { _, _ in
+                    .onChange(of: diagnosticsModel.activeProblemScrollID) { _, _ in
                         scrollToActiveDiagnostic(using: proxy)
                     }
                 }
@@ -116,7 +117,7 @@ struct ProblemsPanelView: View {
                             .accessibilityIdentifier("problems-panel-scope-summary")
                     }
 
-                    if let currentProblemPositionText = projectViewModel.currentProblemPositionText {
+                    if let currentProblemPositionText = diagnosticsModel.currentProblemPositionText {
                         RosewoodHeaderChip(text: currentProblemPositionText, tint: themeColors.accent)
                             .accessibilityLabel(currentProblemPositionText)
                             .accessibilityValue(currentProblemPositionText)
@@ -136,7 +137,7 @@ struct ProblemsPanelView: View {
                 if showsWorkspaceScope {
                     scopeButton(
                         title: "File",
-                        isSelected: projectViewModel.diagnosticsPanelScope == .currentFile,
+                        isSelected: diagnosticsModel.diagnosticsPanelScope == .currentFile,
                         accessibilityIdentifier: "problems-scope-current-file"
                     ) {
                         projectViewModel.setDiagnosticsPanelScope(.currentFile)
@@ -144,19 +145,19 @@ struct ProblemsPanelView: View {
 
                     scopeButton(
                         title: "Workspace",
-                        isSelected: projectViewModel.diagnosticsPanelScope == .workspace,
+                        isSelected: diagnosticsModel.diagnosticsPanelScope == .workspace,
                         accessibilityIdentifier: "problems-scope-workspace"
                     ) {
                         projectViewModel.setDiagnosticsPanelScope(.workspace)
                     }
                 }
 
-                RosewoodPanelIconButton(systemImage: "chevron.up", tint: themeColors.mutedText, isEnabled: projectViewModel.canNavigateProblems) {
+                RosewoodPanelIconButton(systemImage: "chevron.up", tint: themeColors.mutedText, isEnabled: diagnosticsModel.canNavigateProblems) {
                     projectViewModel.openPreviousProblem()
                 }
                 .accessibilityIdentifier("problems-panel-previous")
 
-                RosewoodPanelIconButton(systemImage: "chevron.down", tint: themeColors.mutedText, isEnabled: projectViewModel.canNavigateProblems) {
+                RosewoodPanelIconButton(systemImage: "chevron.down", tint: themeColors.mutedText, isEnabled: diagnosticsModel.canNavigateProblems) {
                     projectViewModel.openNextProblem()
                 }
                 .accessibilityIdentifier("problems-panel-next")
@@ -175,7 +176,7 @@ struct ProblemsPanelView: View {
     private var emptyStateView: some View {
         RosewoodEmptyState(
             systemImage: "checkmark.circle",
-            title: projectViewModel.diagnosticsPanelScope == .workspace
+            title: diagnosticsModel.diagnosticsPanelScope == .workspace
                 ? "No problems in the workspace."
                 : "No problems in the current file.",
             tint: themeColors.success
@@ -183,7 +184,7 @@ struct ProblemsPanelView: View {
     }
 
     private func diagnosticRow(_ diagnostic: LSPDiagnostic, index: Int) -> some View {
-        let isActive = projectViewModel.isActiveDiagnostic(diagnostic)
+        let isActive = diagnosticsModel.isActiveDiagnostic(diagnostic)
 
         return Button {
             projectViewModel.openDiagnostic(diagnostic)
@@ -241,7 +242,7 @@ struct ProblemsPanelView: View {
     }
 
     private func workspaceDiagnosticRow(_ diagnostic: WorkspaceDiagnosticItem, index: Int) -> some View {
-        let isActive = projectViewModel.activeWorkspaceDiagnostic?.id == diagnostic.id
+        let isActive = diagnosticsModel.activeWorkspaceDiagnostic?.id == diagnostic.id
 
         return Button {
             projectViewModel.openWorkspaceDiagnostic(diagnostic)
@@ -322,7 +323,7 @@ struct ProblemsPanelView: View {
     }
 
     private func scrollToActiveDiagnostic(using proxy: ScrollViewProxy) {
-        guard let activeProblemScrollID = projectViewModel.activeProblemScrollID else { return }
+        guard let activeProblemScrollID = diagnosticsModel.activeProblemScrollID else { return }
         withAnimation(.rosewoodStandard) {
             proxy.scrollTo(activeProblemScrollID, anchor: .center)
         }

@@ -7,6 +7,7 @@ struct EditorView: View {
     @EnvironmentObject private var configService: ConfigurationService
     @EnvironmentObject private var commandDispatcher: AppCommandDispatcher
     @EnvironmentObject private var lspService: LSPService
+    @EnvironmentObject private var diagnosticsModel: DiagnosticsModel
     let tab: EditorTab
 
     private var themeColors: ThemeColors {
@@ -80,7 +81,7 @@ struct EditorView: View {
             showLineNumbers: configService.settings.editor.showLineNumbers,
             showMinimap: effectiveShowMinimap,
             wordWrap: configService.settings.editor.wordWrap,
-            diagnostics: projectViewModel.currentTabDiagnostics,
+            diagnostics: diagnosticsModel.currentTabDiagnostics,
             breakpointLines: projectViewModel.currentTabBreakpointLines,
             executionLine: projectViewModel.currentExecutionLine,
             fileURL: projectViewModel.selectedTab?.filePath ?? tab.filePath,

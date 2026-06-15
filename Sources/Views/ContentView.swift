@@ -420,6 +420,7 @@ struct ContentView: View {
 struct ActivitySidebarView: View {
     @EnvironmentObject var projectViewModel: ProjectViewModel
     @EnvironmentObject private var dockerModel: DockerModel
+    @EnvironmentObject private var diagnosticsModel: DiagnosticsModel
     @EnvironmentObject private var configService: ConfigurationService
 
     private var themeColors: ThemeColors {
@@ -451,7 +452,7 @@ struct ActivitySidebarView: View {
                 mode: .debug,
                 systemImage: "ladybug",
                 label: "Run & Debug",
-                badge: projectViewModel.workspaceDiagnosticCount.errors > 0 ? "!" : nil
+                badge: diagnosticsModel.workspaceDiagnosticCount.errors > 0 ? "!" : nil
             )
 
             activityButton(

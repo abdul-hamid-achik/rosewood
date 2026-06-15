@@ -4,6 +4,7 @@ struct StatusBarView: View {
     @EnvironmentObject var projectViewModel: ProjectViewModel
     @EnvironmentObject private var configService: ConfigurationService
     @EnvironmentObject private var lspService: LSPService
+    @EnvironmentObject private var diagnosticsModel: DiagnosticsModel
 
     private var themeColors: ThemeColors {
         configService.currentThemeColors
@@ -99,8 +100,8 @@ struct StatusBarView: View {
 
     @ViewBuilder
     private var diagnosticsToggle: some View {
-        let diagCount = projectViewModel.currentTabDiagnosticCount
-        let workspaceDiagCount = projectViewModel.workspaceDiagnosticCount
+        let diagCount = diagnosticsModel.currentTabDiagnosticCount
+        let workspaceDiagCount = diagnosticsModel.workspaceDiagnosticCount
         let hasCurrentProblems = diagCount.errors > 0 || diagCount.warnings > 0
         let hasWorkspaceProblems = workspaceDiagCount.errors > 0 || workspaceDiagCount.warnings > 0
 
@@ -129,7 +130,7 @@ struct StatusBarView: View {
                         .foregroundColor(themeColors.warning)
                     }
 
-                    if hasWorkspaceProblems && projectViewModel.workspaceDiagnosticFileCount > 1 {
+                    if hasWorkspaceProblems && diagnosticsModel.workspaceDiagnosticFileCount > 1 {
                         Text("WS \(workspaceDiagCount.errors + workspaceDiagCount.warnings)")
                             .font(.system(size: 10, weight: .semibold))
                             .foregroundColor(themeColors.accent)
@@ -266,10 +267,10 @@ struct StatusBarView: View {
                 }
 
                 if projectViewModel.isStatusBarDetailsReady,
-                    (projectViewModel.currentTabDiagnosticCount.errors > 0
-                    || projectViewModel.currentTabDiagnosticCount.warnings > 0
-                    || projectViewModel.workspaceDiagnosticCount.errors > 0
-                    || projectViewModel.workspaceDiagnosticCount.warnings > 0) {
+                    (diagnosticsModel.currentTabDiagnosticCount.errors > 0
+                    || diagnosticsModel.currentTabDiagnosticCount.warnings > 0
+                    || diagnosticsModel.workspaceDiagnosticCount.errors > 0
+                    || diagnosticsModel.workspaceDiagnosticCount.warnings > 0) {
                     statusDivider
 
                     diagnosticsToggle
@@ -299,16 +300,16 @@ struct StatusBarView: View {
                 if projectViewModel.debugSessionState != .idle {
                     statusText(projectViewModel.debugSessionState.statusText, color: themeColors.accent)
 
-                    if projectViewModel.workspaceDiagnosticCount.errors > 0
-                        || projectViewModel.workspaceDiagnosticCount.warnings > 0
+                    if diagnosticsModel.workspaceDiagnosticCount.errors > 0
+                        || diagnosticsModel.workspaceDiagnosticCount.warnings > 0
                         || (shouldShowGitMetadata && projectViewModel.gitRepositoryStatus.branchName != nil)
                         || (shouldShowGitMetadata && projectViewModel.selectedGitChangeReviewLabel != nil) {
                         statusDivider
                     }
                 }
 
-                if projectViewModel.workspaceDiagnosticCount.errors > 0
-                    || projectViewModel.workspaceDiagnosticCount.warnings > 0 {
+                if diagnosticsModel.workspaceDiagnosticCount.errors > 0
+                    || diagnosticsModel.workspaceDiagnosticCount.warnings > 0 {
                     diagnosticsToggle
 
                     if shouldShowGitMetadata,
