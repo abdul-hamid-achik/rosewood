@@ -298,6 +298,9 @@ final class ProjectViewModel: ObservableObject {
     @Published private(set) var isStatusBarDetailsReady: Bool = false
     @Published var bottomPanel: BottomPanelKind?
     @Published private(set) var isLoadingFileTree: Bool = false
+    /// Set when the project root itself can't be read (missing/permission-denied), so the
+    /// explorer shows a real error state instead of a misleading "empty folder".
+    @Published private(set) var fileTreeLoadError: String?
     @Published var isLoadingFile: Bool = false
     @Published var loadingFileProgress: Double?
     @Published var isSearchingProject: Bool = false
@@ -2559,6 +2562,7 @@ final class ProjectViewModel: ObservableObject {
         workspaceFilesLoadToken = UUID()
         let token = fileTreeLoadToken
         let workspaceToken = workspaceFilesLoadToken
+        fileTreeLoadError = nil
         invalidateWorkspaceSymbolCache()
 
         guard let rootDirectory else {
@@ -2629,6 +2633,7 @@ final class ProjectViewModel: ObservableObject {
                     return
                 }
                 self.fileTree = tree
+                self.fileTreeLoadError = nil
                 self.isLoadingFileTree = false
             } catch is CancellationError {
                 guard self.fileTreeLoadToken == token else { return }
@@ -2636,6 +2641,7 @@ final class ProjectViewModel: ObservableObject {
             } catch {
                 guard self.fileTreeLoadToken == token else { return }
                 self.fileTree = []
+                self.fileTreeLoadError = error.localizedDescription
                 self.isLoadingFileTree = false
             }
         }

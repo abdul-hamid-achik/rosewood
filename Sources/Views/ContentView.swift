@@ -160,6 +160,8 @@ struct ContentView: View {
                 DebugSidebarView()
             } else if projectViewModel.sidebarMode == .docker {
                 DockerSidebarView()
+            } else if let error = projectViewModel.fileTreeLoadError {
+                fileTreeErrorView(error)
             } else if projectViewModel.isLoadingFileTree && projectViewModel.fileTree.isEmpty {
                 fileTreeLoadingView
             } else if projectViewModel.fileTree.isEmpty {
@@ -317,6 +319,25 @@ struct ContentView: View {
             subtitle: "There are no files here yet.",
             tint: themeColors.mutedText
         )
+    }
+
+    private func fileTreeErrorView(_ message: String) -> some View {
+        VStack(spacing: RosewoodUI.spacing4) {
+            RosewoodEmptyState(
+                systemImage: "exclamationmark.triangle",
+                title: "Couldn’t Read Folder",
+                subtitle: message,
+                tint: themeColors.danger,
+                fillsHeight: false
+            )
+            Button("Try Again") {
+                projectViewModel.reloadFileTree()
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+            .tint(themeColors.accentStrong)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var editorArea: some View {

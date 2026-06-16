@@ -506,6 +506,11 @@ final class FileService {
     ) async throws -> [FileItem] {
         try Task.checkCancellation()
         return try await Task.detached(priority: .utility) { [self] in
+            // Probe the ROOT explicitly: a missing or permission-denied root must surface as a
+            // thrown error so the explorer can show a real "couldn't read folder" state instead
+            // of a misleading empty tree. Unreadable SUBdirectories deeper in the walk stay
+            // tolerated — loadDirectory uses try? and returns [] for those by design.
+            _ = try FileManager.default.contentsOfDirectory(atPath: url.path)
             let tree = loadDirectory(
                 at: url,
                 expandedPaths: expandedPaths,

@@ -570,6 +570,26 @@ struct FileServiceFileOperationTests {
     }
 }
 
+struct FileServiceRootReadabilityTests {
+    @Test
+    func loadDirectoryAsyncThrowsForUnreadableRoot() async {
+        // A missing root must propagate as an error so the explorer can surface it,
+        // rather than being swallowed into an empty tree.
+        let missing = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        await #expect(throws: (any Error).self) {
+            _ = try await FileService.shared.loadDirectoryAsync(at: missing)
+        }
+    }
+
+    @Test
+    func loadDirectoryStillToleratesUnreadablePathsSynchronously() {
+        // The synchronous walk stays tolerant (returns [] for a missing path) so unreadable
+        // SUBdirectories deeper in the tree don't blow away the whole tree.
+        let missing = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        #expect(FileService.shared.loadDirectory(at: missing).isEmpty)
+    }
+}
+
 struct FileServiceCRLFSearchTests {
     @Test
     func scanningSearchReportsCorrectLineNumbersForCRLFFiles() throws {
