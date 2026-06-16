@@ -6,6 +6,16 @@ tasks:
     cmds:
       - xcodegen generate
 
+  lint:
+    desc: Run SwiftLint
+    cmds:
+      - swiftlint lint --quiet
+
+  lint-fix:
+    desc: Autocorrect SwiftLint violations in place
+    cmds:
+      - swiftlint --fix --quiet
+
   open:
     desc: Open the project in Xcode
     cmds:

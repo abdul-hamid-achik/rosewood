@@ -1,0 +1,50 @@
+# SwiftLint configuration for Rosewood.
+# Goal: enforce real correctness/style on new code while not red-flagging the
+# pre-existing large files that the ProjectViewModel decomposition is tracking.
+
+included:
+  - Sources
+  - Tests
+
+excluded:
+  - .derived
+  - .build
+  - Rosewood.xcodeproj
+
+# Size/complexity rules fight the (known, being-decomposed) monolith rather than
+# catching new-code smells, and a couple are opt-in stylistic rules we don't want.
+disabled_rules:
+  - file_length
+  - type_body_length
+  - function_body_length
+  - cyclomatic_complexity
+  - large_tuple
+  - function_parameter_count
+  - non_optional_string_data_conversion
+  - optional_data_string_conversion
+  # SwiftUI Text supports `+` but not `+=`, so this fires as an unfixable false positive.
+  - shorthand_operator
+
+line_length:
+  warning: 200
+  error: 400
+  ignores_urls: true
+  ignores_comments: true
+  ignores_interpolated_strings: true
+
+identifier_name:
+  min_length:
+    warning: 1
+    error: 1
+  max_length:
+    warning: 80
+    error: 120
+  # Leading-underscore backing storage is an intentional convention here.
+  excluded:
+    - _messages
+
+force_try:
+  severity: warning
+
+nesting:
+  type_level: 2
