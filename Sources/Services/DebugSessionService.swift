@@ -47,6 +47,11 @@ protocol DebugSessionServiceProtocol: AnyObject {
     ) async throws -> DebugSessionStartResult
     func updateBreakpoints(_ breakpoints: [Breakpoint], projectRoot: URL?) async
     func stop() async
+    func resume() async
+    func stepOver() async
+    func stepInto() async
+    func stepOut() async
+    func pause() async
 }
 
 final class DebugSessionService: DebugSessionServiceProtocol {
@@ -145,6 +150,43 @@ final class DebugSessionService: DebugSessionServiceProtocol {
         eventHandler?(.state(.idle))
     }
 
+    // Execution control. The DAPClient transitions to .running (emitting .running, which maps to
+    // .state(.running)) so we don't optimistically emit it here; failures surface as a console warning.
+    func resume() async {
+        guard let activeClient else { return }
+        do { try await activeClient.resume() } catch {
+            eventHandler?(.output(.warning, "Could not continue: \(error.localizedDescription)"))
+        }
+    }
+
+    func stepOver() async {
+        guard let activeClient else { return }
+        do { try await activeClient.stepOver() } catch {
+            eventHandler?(.output(.warning, "Could not step over: \(error.localizedDescription)"))
+        }
+    }
+
+    func stepInto() async {
+        guard let activeClient else { return }
+        do { try await activeClient.stepInto() } catch {
+            eventHandler?(.output(.warning, "Could not step into: \(error.localizedDescription)"))
+        }
+    }
+
+    func stepOut() async {
+        guard let activeClient else { return }
+        do { try await activeClient.stepOut() } catch {
+            eventHandler?(.output(.warning, "Could not step out: \(error.localizedDescription)"))
+        }
+    }
+
+    func pause() async {
+        guard let activeClient else { return }
+        do { try await activeClient.pause() } catch {
+            eventHandler?(.output(.warning, "Could not pause: \(error.localizedDescription)"))
+        }
+    }
+
     private func handleClientEvent(_ event: DAPClientEvent) {
         switch event {
         case .output(let output):
@@ -235,6 +277,11 @@ final class MockDebugSessionService: DebugSessionServiceProtocol {
     private(set) var startCalls: [(configuration: DebugConfiguration, projectRoot: URL?, breakpoints: [Breakpoint])] = []
     private(set) var updateBreakpointCalls: [[Breakpoint]] = []
     private(set) var stopCallCount: Int = 0
+    private(set) var resumeCallCount: Int = 0
+    private(set) var stepOverCallCount: Int = 0
+    private(set) var stepIntoCallCount: Int = 0
+    private(set) var stepOutCallCount: Int = 0
+    private(set) var pauseCallCount: Int = 0
 
     func setEventHandler(_ handler: @escaping @Sendable (DebugSessionEvent) -> Void) {
         eventHandler = handler
@@ -261,4 +308,10 @@ final class MockDebugSessionService: DebugSessionServiceProtocol {
     func stop() async {
         stopCallCount += 1
     }
+
+    func resume() async { resumeCallCount += 1 }
+    func stepOver() async { stepOverCallCount += 1 }
+    func stepInto() async { stepIntoCallCount += 1 }
+    func stepOut() async { stepOutCallCount += 1 }
+    func pause() async { pauseCallCount += 1 }
 }

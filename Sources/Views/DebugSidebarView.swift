@@ -66,6 +66,29 @@ struct DebugSidebarView: View {
             .tint(primaryDebugActionTint)
             .disabled(!canPerformPrimaryDebugAction)
 
+            if debugModel.debugSessionState == .paused {
+                HStack(spacing: RosewoodUI.spacing3) {
+                    sessionInlineAction(title: "Continue", systemImage: "play.fill", tint: themeColors.success) {
+                        projectViewModel.continueDebugging()
+                    }
+                    sessionInlineAction(title: "Step Over", systemImage: "arrow.turn.up.right", tint: themeColors.accent) {
+                        projectViewModel.stepOverDebugging()
+                    }
+                    sessionInlineAction(title: "Step Into", systemImage: "arrow.down.to.line", tint: themeColors.accent) {
+                        projectViewModel.stepIntoDebugging()
+                    }
+                    sessionInlineAction(title: "Step Out", systemImage: "arrow.up.to.line", tint: themeColors.accent) {
+                        projectViewModel.stepOutDebugging()
+                    }
+                }
+            } else if debugModel.debugSessionState == .running {
+                HStack(spacing: RosewoodUI.spacing3) {
+                    sessionInlineAction(title: "Pause", systemImage: "pause.fill", tint: themeColors.warning) {
+                        projectViewModel.pauseDebugging()
+                    }
+                }
+            }
+
             HStack(spacing: 8) {
                 sessionInlineAction(
                     title: projectViewModel.isDebugPanelVisible ? "Hide Console" : "Show Console",

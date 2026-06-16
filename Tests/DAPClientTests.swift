@@ -193,6 +193,112 @@ struct DAPClientTests {
         let state = await client.state
         #expect(state == .paused)
     }
+
+    @Test
+    func resumeSendsContinueWithStoppedThread() async throws {
+        let transport = MockDAPClientTransport()
+        let recorder = DAPClientEventRecorder()
+        let client = try await startPausedDAPClient(threadId: 7, transport: transport, recorder: recorder)
+
+        let task = Task { try await client.resume() }
+        let req = try await waitForSentCommand("continue", transport: transport)
+        #expect((req.json["arguments"] as? [String: Any])?["threadId"] as? Int == 7)
+        transport.receiveResponse(requestID: req.requestID, body: nil)
+        try await task.value
+    }
+
+    @Test
+    func stepOverSendsNextWithStoppedThread() async throws {
+        let transport = MockDAPClientTransport()
+        let recorder = DAPClientEventRecorder()
+        let client = try await startPausedDAPClient(threadId: 7, transport: transport, recorder: recorder)
+
+        let task = Task { try await client.stepOver() }
+        let req = try await waitForSentCommand("next", transport: transport)
+        #expect((req.json["arguments"] as? [String: Any])?["threadId"] as? Int == 7)
+        transport.receiveResponse(requestID: req.requestID, body: nil)
+        try await task.value
+    }
+
+    @Test
+    func stepIntoSendsStepInWithStoppedThread() async throws {
+        let transport = MockDAPClientTransport()
+        let recorder = DAPClientEventRecorder()
+        let client = try await startPausedDAPClient(threadId: 7, transport: transport, recorder: recorder)
+
+        let task = Task { try await client.stepInto() }
+        let req = try await waitForSentCommand("stepIn", transport: transport)
+        #expect((req.json["arguments"] as? [String: Any])?["threadId"] as? Int == 7)
+        transport.receiveResponse(requestID: req.requestID, body: nil)
+        try await task.value
+    }
+
+    @Test
+    func stepOutSendsStepOutWithStoppedThread() async throws {
+        let transport = MockDAPClientTransport()
+        let recorder = DAPClientEventRecorder()
+        let client = try await startPausedDAPClient(threadId: 7, transport: transport, recorder: recorder)
+
+        let task = Task { try await client.stepOut() }
+        let req = try await waitForSentCommand("stepOut", transport: transport)
+        #expect((req.json["arguments"] as? [String: Any])?["threadId"] as? Int == 7)
+        transport.receiveResponse(requestID: req.requestID, body: nil)
+        try await task.value
+    }
+
+    @Test
+    func pauseSendsPauseWithThread() async throws {
+        let transport = MockDAPClientTransport()
+        let recorder = DAPClientEventRecorder()
+        let client = try await startPausedDAPClient(threadId: 7, transport: transport, recorder: recorder)
+
+        let task = Task { try await client.pause() }
+        let req = try await waitForSentCommand("pause", transport: transport)
+        #expect((req.json["arguments"] as? [String: Any])?["threadId"] as? Int == 7)
+        transport.receiveResponse(requestID: req.requestID, body: nil)
+        try await task.value
+    }
+
+    @Test
+    func staleStoppedIsDroppedAfterContinued() async throws {
+        // Race guard: a deferred "stopped" handler whose stackTrace resolves AFTER a "continued"
+        // event must not re-pause the UI. The generation token should drop the stale emit.
+        let transport = MockDAPClientTransport()
+        let recorder = DAPClientEventRecorder()
+        let client = DAPClient(transport: transport)
+        await client.setOnEvent { recorder.record($0) }
+        try await performDAPHandshake(client: client, transport: transport)
+
+        // stop#1 arrives; capture its stackTrace request but DON'T answer it yet.
+        transport.receiveEvent(name: "stopped", body: ["reason": "breakpoint", "threadId": 7])
+        let staleStack = try await waitForSentCommand("stackTrace", transport: transport)
+
+        // A "continued" supersedes the pending stop (bumps the stop generation).
+        transport.receiveEvent(name: "continued", body: ["threadId": 7])
+        var sawRunning = false
+        for _ in 0..<300 {
+            if await client.state == .running { sawRunning = true; break }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        #expect(sawRunning)
+
+        // Now answer the stale stackTrace out of order: the handler must drop its emit.
+        transport.receiveResponse(
+            requestID: staleStack.requestID,
+            body: [
+                "stackFrames": [[
+                    "id": 1, "name": "main", "line": 99, "column": 1,
+                    "source": ["name": "Stale.swift", "path": "/tmp/Stale.swift"]
+                ]],
+                "totalFrames": 1
+            ]
+        )
+        try await Task.sleep(nanoseconds: 200_000_000)
+
+        #expect(recorder.lastStoppedEvent == nil)
+        let state = await client.state
+        #expect(state == .running)
+    }
 }
 
 private struct SentDAPRequest {
@@ -220,6 +326,60 @@ private final class DAPClientEventRecorder: @unchecked Sendable {
         events.append(event)
         lock.unlock()
     }
+}
+
+private func performDAPHandshake(client: DAPClient, transport: MockDAPClientTransport) async throws {
+    let configuration = DebugConfiguration(
+        name: "Debug App",
+        adapter: "lldb",
+        program: "App",
+        cwd: ".",
+        args: [],
+        preLaunchTask: nil,
+        stopOnEntry: false
+    )
+    let startTask = Task {
+        try await client.startSession(
+            projectRoot: FileManager.default.temporaryDirectory,
+            configuration: configuration,
+            breakpoints: []
+        )
+    }
+    let initializeRequest = try await waitForSentCommand("initialize", transport: transport)
+    transport.receiveResponse(requestID: initializeRequest.requestID, body: ["supportsConfigurationDoneRequest": true])
+    let launchRequest = try await waitForSentCommand("launch", transport: transport)
+    transport.receiveResponse(requestID: launchRequest.requestID, body: nil)
+    transport.receiveEvent(name: "initialized")
+    let configurationDoneRequest = try await waitForSentCommand("configurationDone", transport: transport)
+    transport.receiveResponse(requestID: configurationDoneRequest.requestID, body: nil)
+    try await startTask.value
+}
+
+/// Drives a client through the handshake and a breakpoint stop on `threadId`, leaving it paused
+/// (so execution-control methods target that thread).
+private func startPausedDAPClient(
+    threadId: Int,
+    transport: MockDAPClientTransport,
+    recorder: DAPClientEventRecorder
+) async throws -> DAPClient {
+    let client = DAPClient(transport: transport)
+    await client.setOnEvent { recorder.record($0) }
+    try await performDAPHandshake(client: client, transport: transport)
+
+    transport.receiveEvent(name: "stopped", body: ["reason": "breakpoint", "threadId": threadId])
+    let stackTraceRequest = try await waitForSentCommand("stackTrace", transport: transport)
+    transport.receiveResponse(
+        requestID: stackTraceRequest.requestID,
+        body: [
+            "stackFrames": [[
+                "id": 1, "name": "main", "line": 10, "column": 1,
+                "source": ["name": "Frame.swift", "path": "/tmp/Frame.swift"]
+            ]],
+            "totalFrames": 1
+        ]
+    )
+    try await waitUntil { recorder.lastStoppedEvent != nil }
+    return client
 }
 
 private func waitForSentCommand(

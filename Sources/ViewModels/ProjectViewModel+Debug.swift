@@ -120,6 +120,26 @@ extension ProjectViewModel {
         }
     }
 
+    func continueDebugging() {
+        Task { @MainActor [weak self] in await self?.debugSessionService.resume() }
+    }
+
+    func stepOverDebugging() {
+        Task { @MainActor [weak self] in await self?.debugSessionService.stepOver() }
+    }
+
+    func stepIntoDebugging() {
+        Task { @MainActor [weak self] in await self?.debugSessionService.stepInto() }
+    }
+
+    func stepOutDebugging() {
+        Task { @MainActor [weak self] in await self?.debugSessionService.stepOut() }
+    }
+
+    func pauseDebugging() {
+        Task { @MainActor [weak self] in await self?.debugSessionService.pause() }
+    }
+
     func toggleBreakpoint(line: Int) {
         guard let rootDirectory, let fileURL = selectedTab?.filePath else { return }
         breakpoints = breakpointStore.toggleBreakpoint(fileURL: fileURL, line: line, projectRoot: rootDirectory)

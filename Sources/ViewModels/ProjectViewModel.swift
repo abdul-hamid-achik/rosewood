@@ -609,6 +609,15 @@ final class ProjectViewModel: ObservableObject {
     var canStopDebugging: Bool {
         canAccessDebugControls && debugSessionState != .idle
     }
+    var canResumeDebugging: Bool {
+        canAccessDebugControls && debugSessionState == .paused
+    }
+    var canStepDebugging: Bool {
+        canAccessDebugControls && debugSessionState == .paused
+    }
+    var canPauseDebugging: Bool {
+        canAccessDebugControls && debugSessionState == .running
+    }
 
     var hasProjectConfigFile: Bool {
         configService.hasProjectConfig()

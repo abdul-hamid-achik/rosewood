@@ -97,6 +97,12 @@ actor DAPClient {
     private var initializedContinuation: CheckedContinuation<Void, Error>?
     private var didReceiveInitializedEvent = false
     private var configuredBreakpointFiles: Set<String> = []
+    // Thread the program last stopped on, used to target continue/step requests.
+    private var pausedThreadId: Int?
+    // Monotonic token bumped on every stop and on every event that supersedes a stop
+    // (continued/terminated/disconnect). A deferred stopped handler re-checks it before emitting,
+    // so a late, stale "stopped" can't re-pause the UI after the program already resumed.
+    private var stopGeneration: Int = 0
 
     private(set) var state: State = .starting
     private(set) var capabilities: DAPCapabilities?
@@ -218,6 +224,8 @@ actor DAPClient {
     }
 
     func disconnect() async {
+        stopGeneration += 1
+        pausedThreadId = nil
         state = .terminated
         _ = try? await sendRequest(
             "disconnect",
@@ -285,14 +293,19 @@ actor DAPClient {
                 onEvent?(.output(eventBody.output))
             }
         case "continued":
-            state = .running
-            onEvent?(.running)
+            enterRunningState()
         case "stopped":
+            // Bump the generation BEFORE spawning the deferred handler so any later event
+            // processed while it awaits invalidates it (the stale-stopped guard).
+            stopGeneration += 1
+            let generation = stopGeneration
             state = .paused
             Task { [weak self] in
-                await self?.handleStoppedEvent(body)
+                await self?.handleStoppedEvent(body, generation: generation)
             }
         case "terminated", "exited":
+            stopGeneration += 1
+            pausedThreadId = nil
             state = .terminated
             onEvent?(.terminated)
         default:
@@ -300,14 +313,20 @@ actor DAPClient {
         }
     }
 
-    private func handleStoppedEvent(_ body: Any?) async {
+    private func handleStoppedEvent(_ body: Any?, generation: Int) async {
         guard let bodyData = try? JSONValueCodec.data(from: body),
               let eventBody = try? JSONDecoder().decode(DAPStoppedEventBody.self, from: bodyData) else {
+            // Drop if a later event (continued/terminated/another stop) already superseded this one.
+            guard generation == stopGeneration else { return }
             onEvent?(.stopped(filePath: nil, line: nil, reason: "stopped"))
             return
         }
 
         let topFrame = await fetchTopFrame(threadId: eventBody.threadId)
+        // Re-check after the await: a continued/terminated/newer-stop during fetchTopFrame
+        // bumps stopGeneration, so this stale emit is dropped rather than re-pausing the UI.
+        guard generation == stopGeneration else { return }
+        pausedThreadId = eventBody.threadId
         onEvent?(
             .stopped(
                 filePath: topFrame?.source?.path,
@@ -315,6 +334,60 @@ actor DAPClient {
                 reason: eventBody.description ?? eventBody.text ?? eventBody.reason
             )
         )
+    }
+
+    /// Transition to running exactly once, bumping the stop generation (so any in-flight stopped
+    /// handler is invalidated) and clearing the paused thread. De-duped so an optimistic transition
+    /// in a control method and a real "continued" event don't both emit .running.
+    private func enterRunningState() {
+        guard state != .running else { return }
+        stopGeneration += 1
+        pausedThreadId = nil
+        state = .running
+        onEvent?(.running)
+    }
+
+    /// The thread to target for execution control: the last stopped thread, or the first thread
+    /// reported by the adapter. Returns nil when no thread can be resolved (caller no-ops).
+    private func resolveThreadId() async -> Int? {
+        if let pausedThreadId {
+            return pausedThreadId
+        }
+        guard let threadsData = try? await sendRequest("threads", params: Optional<String>.none),
+              let threads = try? JSONDecoder().decode(DAPThreadsResponseBody.self, from: threadsData).threads,
+              let first = threads.first else {
+            return nil
+        }
+        return first.id
+    }
+
+    func resume() async throws {
+        guard let threadId = await resolveThreadId() else { return }
+        _ = try await sendRequest("continue", params: DAPContinueArguments(threadId: threadId))
+        enterRunningState()
+    }
+
+    func stepOver() async throws {
+        guard let threadId = await resolveThreadId() else { return }
+        _ = try await sendRequest("next", params: DAPNextArguments(threadId: threadId))
+        enterRunningState()
+    }
+
+    func stepInto() async throws {
+        guard let threadId = await resolveThreadId() else { return }
+        _ = try await sendRequest("stepIn", params: DAPStepInArguments(threadId: threadId))
+        enterRunningState()
+    }
+
+    func stepOut() async throws {
+        guard let threadId = await resolveThreadId() else { return }
+        _ = try await sendRequest("stepOut", params: DAPStepOutArguments(threadId: threadId))
+        enterRunningState()
+    }
+
+    func pause() async throws {
+        guard let threadId = await resolveThreadId() else { return }
+        _ = try await sendRequest("pause", params: DAPPauseArguments(threadId: threadId))
     }
 
     private func fetchTopFrame(threadId: Int?) async -> DAPStackFrame? {

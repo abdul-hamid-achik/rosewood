@@ -84,6 +84,28 @@ struct DAPStackTraceArguments: Codable, Sendable {
     let levels: Int?
 }
 
+// Execution-control request arguments. Each takes the thread to act on; optional DAP fields
+// (singleThread, granularity) are omitted and default to whole-process, statement granularity.
+struct DAPContinueArguments: Codable, Sendable {
+    let threadId: Int
+}
+
+struct DAPNextArguments: Codable, Sendable {
+    let threadId: Int
+}
+
+struct DAPStepInArguments: Codable, Sendable {
+    let threadId: Int
+}
+
+struct DAPStepOutArguments: Codable, Sendable {
+    let threadId: Int
+}
+
+struct DAPPauseArguments: Codable, Sendable {
+    let threadId: Int
+}
+
 struct DAPStackTraceResponseBody: Codable, Sendable {
     let stackFrames: [DAPStackFrame]
     let totalFrames: Int?
