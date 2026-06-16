@@ -26,3 +26,9 @@ tasks:
     silent: true
     cmds:
       - task --list
+
+  doctor:
+    desc: Check which build-time and optional runtime tools are installed
+    silent: true
+    cmds:
+      - ./scripts/check-deps.sh

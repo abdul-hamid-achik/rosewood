@@ -14,6 +14,9 @@ enable language tooling, debugging, search, and Docker.
 brew install xcodegen go-task
 ```
 
+Run **`task doctor`** at any time to check which build-time and optional runtime tools are
+installed and get install hints for the rest.
+
 ## Build & run
 
 The project file is generated, so always run `xcodegen` (or `task gen`) after cloning or after

@@ -5,6 +5,9 @@ tools**. Optional tools are discovered on your `PATH` (or via `xcrun`) at runtim
 missing, the related feature is simply unavailable or falls back, and the rest of the editor keeps
 working.
 
+> **Quick check:** run `task doctor` (or `./scripts/check-deps.sh`) to see which tools are
+> installed and get the install command for any that are missing.
+
 ## Build-time
 
 | Tool | Why | Install |
