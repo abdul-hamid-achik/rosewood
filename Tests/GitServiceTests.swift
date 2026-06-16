@@ -206,6 +206,152 @@ struct GitServiceTests {
         #expect(restoredText == "let tracked = 1\n")
         #expect(refreshedStatus.changedFiles.contains { $0.path == "Tracked.swift" } == false)
     }
+    @Test
+    func statusHasNoUpstreamWithoutRemote() async throws {
+        let repo = try makeRepository()
+        defer { try? FileManager.default.removeItem(at: repo) }
+        let status = await GitService().repositoryStatus(for: repo)
+        #expect(status.hasRemote == false)
+        #expect(status.upstreamBranch == nil)
+        #expect(status.aheadCount == 0)
+        #expect(status.behindCount == 0)
+    }
+
+    @Test
+    func pushSetsUpstreamAndDeliversCommit() async throws {
+        let repo = try makeRepository()
+        let remote = try makeBareRemote()
+        defer { try? FileManager.default.removeItem(at: repo); try? FileManager.default.removeItem(at: remote) }
+        try runGit(["remote", "add", "origin", remote.path], in: repo)
+
+        let service = GitService()
+        let result = await service.push(projectRoot: repo)
+        #expect(result.isSuccess)
+        // The commit reached the remote, and tracking is now set.
+        #expect(try runGitCapture(["rev-parse", "HEAD"], in: repo) == runGitCapture(["rev-parse", "main"], in: remote))
+        let status = await service.repositoryStatus(for: repo)
+        #expect(status.upstreamBranch == "origin/main")
+        #expect(status.hasRemote)
+        #expect(status.aheadCount == 0)
+        #expect(status.behindCount == 0)
+    }
+
+    @Test
+    func statusReportsAheadAfterLocalCommit() async throws {
+        let repo = try makeRepository()
+        let remote = try makeBareRemote()
+        defer { try? FileManager.default.removeItem(at: repo); try? FileManager.default.removeItem(at: remote) }
+        try runGit(["remote", "add", "origin", remote.path], in: repo)
+        let service = GitService()
+        _ = await service.push(projectRoot: repo)
+
+        try "let tracked = 2\n".write(to: repo.appendingPathComponent("Tracked.swift"), atomically: true, encoding: .utf8)
+        try runGit(["commit", "-am", "local change"], in: repo)
+
+        let status = await service.repositoryStatus(for: repo)
+        #expect(status.aheadCount == 1)
+        #expect(status.behindCount == 0)
+    }
+
+    @Test
+    func fetchThenPullFastForwardsFromAdvancedRemote() async throws {
+        let repo = try makeRepository()
+        let remote = try makeBareRemote()
+        defer { try? FileManager.default.removeItem(at: repo); try? FileManager.default.removeItem(at: remote) }
+        try runGit(["remote", "add", "origin", remote.path], in: repo)
+        let service = GitService()
+        _ = await service.push(projectRoot: repo)
+
+        // Advance the remote from a separate clone.
+        let clone = try makeClone(of: remote)
+        defer { try? FileManager.default.removeItem(at: clone) }
+        try "advanced\n".write(to: clone.appendingPathComponent("NewFile.txt"), atomically: true, encoding: .utf8)
+        try runGit(["add", "NewFile.txt"], in: clone)
+        try runGit(["commit", "-m", "remote advance"], in: clone)
+        try runGit(["push"], in: clone)
+
+        #expect(await service.fetch(projectRoot: repo).isSuccess)
+        let afterFetch = await service.repositoryStatus(for: repo)
+        #expect(afterFetch.behindCount == 1)
+        #expect(afterFetch.aheadCount == 0)
+
+        #expect(await service.pull(projectRoot: repo).isSuccess)
+        let afterPull = await service.repositoryStatus(for: repo)
+        #expect(afterPull.behindCount == 0)
+    }
+
+    @Test
+    func pullFailsOnDivergence() async throws {
+        let repo = try makeRepository()
+        let remote = try makeBareRemote()
+        defer { try? FileManager.default.removeItem(at: repo); try? FileManager.default.removeItem(at: remote) }
+        try runGit(["remote", "add", "origin", remote.path], in: repo)
+        let service = GitService()
+        _ = await service.push(projectRoot: repo)
+
+        let clone = try makeClone(of: remote)
+        defer { try? FileManager.default.removeItem(at: clone) }
+        try "remote\n".write(to: clone.appendingPathComponent("R.txt"), atomically: true, encoding: .utf8)
+        try runGit(["add", "R.txt"], in: clone)
+        try runGit(["commit", "-m", "remote"], in: clone)
+        try runGit(["push"], in: clone)
+
+        // Local diverges from the advanced remote.
+        try "local\n".write(to: repo.appendingPathComponent("L.txt"), atomically: true, encoding: .utf8)
+        try runGit(["add", "L.txt"], in: repo)
+        try runGit(["commit", "-m", "local"], in: repo)
+        _ = await service.fetch(projectRoot: repo)
+
+        // --ff-only must refuse to merge a diverged history.
+        #expect(await service.pull(projectRoot: repo).isSuccess == false)
+    }
+
+    @Test
+    func pushFailsWithoutRemote() async throws {
+        let repo = try makeRepository()
+        defer { try? FileManager.default.removeItem(at: repo) }
+        #expect(await GitService().push(projectRoot: repo).isSuccess == false)
+    }
+
+    @Test
+    func fetchFailsWithoutRemote() async throws {
+        let repo = try makeRepository()
+        defer { try? FileManager.default.removeItem(at: repo) }
+        #expect(await GitService().fetch(projectRoot: repo).isSuccess == false)
+    }
+}
+
+private func makeBareRemote() throws -> URL {
+    let url = FileManager.default.temporaryDirectory
+        .appendingPathComponent("rosewood-git-remote-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+    try runGit(["init", "--bare", "--initial-branch=main"], in: url)
+    return url
+}
+
+private func makeClone(of remote: URL) throws -> URL {
+    let url = FileManager.default.temporaryDirectory
+        .appendingPathComponent("rosewood-git-clone-\(UUID().uuidString)", isDirectory: true)
+    try runGit(["clone", remote.path, url.path], in: FileManager.default.temporaryDirectory)
+    // Identity is mandatory — the clone must not depend on ambient global git config (CI has none).
+    try runGit(["config", "user.name", "Rosewood Clone"], in: url)
+    try runGit(["config", "user.email", "clone@example.com"], in: url)
+    return url
+}
+
+@discardableResult
+private func runGitCapture(_ arguments: [String], in workingDirectory: URL) throws -> String {
+    let process = Process()
+    let stdoutPipe = Pipe()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+    process.arguments = ["git"] + arguments
+    process.currentDirectoryURL = workingDirectory
+    process.standardOutput = stdoutPipe
+    process.standardError = Pipe()
+    try process.run()
+    process.waitUntilExit()
+    return (String(data: stdoutPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? "")
+        .trimmingCharacters(in: .whitespacesAndNewlines)
 }
 
 private func makeRepository() throws -> URL {

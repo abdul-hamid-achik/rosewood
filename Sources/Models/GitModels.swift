@@ -145,6 +145,34 @@ struct GitRepositoryStatus: Equatable {
     let branchName: String?
     let changedFiles: [GitChangedFile]
     let ignoredPaths: Set<String>
+    /// Tracking branch (e.g. "origin/main"), nil when the current branch has no upstream.
+    let upstreamBranch: String?
+    /// Commits HEAD has that the upstream lacks (to push).
+    let aheadCount: Int
+    /// Commits the upstream has that HEAD lacks (to pull).
+    let behindCount: Int
+    /// Whether any remote is configured at all.
+    let hasRemote: Bool
+
+    init(
+        repositoryRoot: URL?,
+        branchName: String?,
+        changedFiles: [GitChangedFile],
+        ignoredPaths: Set<String>,
+        upstreamBranch: String? = nil,
+        aheadCount: Int = 0,
+        behindCount: Int = 0,
+        hasRemote: Bool = false
+    ) {
+        self.repositoryRoot = repositoryRoot
+        self.branchName = branchName
+        self.changedFiles = changedFiles
+        self.ignoredPaths = ignoredPaths
+        self.upstreamBranch = upstreamBranch
+        self.aheadCount = aheadCount
+        self.behindCount = behindCount
+        self.hasRemote = hasRemote
+    }
 
     static let empty = GitRepositoryStatus(
         repositoryRoot: nil,
@@ -156,6 +184,11 @@ struct GitRepositoryStatus: Equatable {
     var isRepository: Bool {
         repositoryRoot != nil
     }
+
+    var hasUpstream: Bool { upstreamBranch != nil }
+    var isAhead: Bool { aheadCount > 0 }
+    var isBehind: Bool { behindCount > 0 }
+    var isDiverged: Bool { aheadCount > 0 && behindCount > 0 }
 
     var stagedCount: Int {
         changedFiles.filter {

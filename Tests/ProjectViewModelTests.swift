@@ -6136,6 +6136,12 @@ private final class MockGitService: GitServiceProtocol {
     var stageResult: GitOperationResult = .success
     var commitResult: GitOperationResult = .success
     private(set) var commitMessages: [String] = []
+    var fetchResult: GitOperationResult = .success
+    var pullResult: GitOperationResult = .success
+    var pushResult: GitOperationResult = .success
+    private(set) var fetchCallCount: Int = 0
+    private(set) var pullCallCount: Int = 0
+    private(set) var pushCallCount: Int = 0
     var unstageResult: GitOperationResult = .success
     var discardResult: GitOperationResult = .success
 
@@ -6213,6 +6219,27 @@ private final class MockGitService: GitServiceProtocol {
         return withLock {
             commitMessages.append(message)
             return commitResult
+        }
+    }
+
+    func fetch(projectRoot: URL?) async -> GitOperationResult {
+        return withLock {
+            fetchCallCount += 1
+            return fetchResult
+        }
+    }
+
+    func pull(projectRoot: URL?) async -> GitOperationResult {
+        return withLock {
+            pullCallCount += 1
+            return pullResult
+        }
+    }
+
+    func push(projectRoot: URL?) async -> GitOperationResult {
+        return withLock {
+            pushCallCount += 1
+            return pushResult
         }
     }
 }

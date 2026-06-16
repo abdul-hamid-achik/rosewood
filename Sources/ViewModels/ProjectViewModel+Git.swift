@@ -63,6 +63,37 @@ extension ProjectViewModel {
             && !gitModel.commitMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    /// Sync gates, read purely off gitRepositoryStatus (refreshGitState recomputes ahead/behind).
+    var canFetch: Bool {
+        isGitToolAvailable && gitRepositoryStatus.isRepository && gitRepositoryStatus.hasRemote
+    }
+    var canPull: Bool {
+        isGitToolAvailable && gitRepositoryStatus.isRepository && gitRepositoryStatus.hasUpstream
+    }
+    var canPush: Bool {
+        isGitToolAvailable && gitRepositoryStatus.isRepository
+            && (gitRepositoryStatus.hasUpstream || gitRepositoryStatus.hasRemote)
+            && gitRepositoryStatus.aheadCount > 0
+    }
+
+    func gitFetch() {
+        runGitMutation(task: { [gitService, rootDirectory] in
+            await gitService.fetch(projectRoot: rootDirectory)
+        })
+    }
+
+    func gitPull() {
+        runGitMutation(task: { [gitService, rootDirectory] in
+            await gitService.pull(projectRoot: rootDirectory)
+        })
+    }
+
+    func gitPush() {
+        runGitMutation(task: { [gitService, rootDirectory] in
+            await gitService.push(projectRoot: rootDirectory)
+        })
+    }
+
     /// Commit the currently staged changes with the draft message, then clear it and refresh.
     func commitStagedChanges() {
         let message = gitModel.commitMessage.trimmingCharacters(in: .whitespacesAndNewlines)

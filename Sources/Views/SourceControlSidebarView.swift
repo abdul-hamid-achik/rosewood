@@ -24,6 +24,18 @@ struct SourceControlSidebarView: View {
         .accessibilityIdentifier("source-control-sidebar")
     }
 
+    private func syncButton(systemImage: String, help: String, isEnabled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(isEnabled ? themeColors.accent : themeColors.mutedText.opacity(0.4))
+        }
+        .buttonStyle(.borderless)
+        .help(help)
+        .disabled(!isEnabled)
+        .accessibilityIdentifier("git-\(help.lowercased())")
+    }
+
     private var headerView: some View {
         RosewoodSidebarCard(spacing: RosewoodUI.spacing3) {
             HStack(spacing: RosewoodUI.spacing3) {
@@ -35,6 +47,25 @@ struct SourceControlSidebarView: View {
                     .accessibilityIdentifier("git-branch-label")
 
                 Spacer()
+
+                if projectViewModel.gitRepositoryStatus.hasUpstream,
+                   projectViewModel.gitRepositoryStatus.isAhead || projectViewModel.gitRepositoryStatus.isBehind {
+                    RosewoodHeaderChip(
+                        text: "↑\(projectViewModel.gitRepositoryStatus.aheadCount) ↓\(projectViewModel.gitRepositoryStatus.behindCount)",
+                        tint: themeColors.accent
+                    )
+                    .accessibilityIdentifier("git-ahead-behind")
+                }
+
+                syncButton(systemImage: "arrow.down.circle", help: "Fetch", isEnabled: projectViewModel.canFetch) {
+                    projectViewModel.gitFetch()
+                }
+                syncButton(systemImage: "arrow.down", help: "Pull", isEnabled: projectViewModel.canPull) {
+                    projectViewModel.gitPull()
+                }
+                syncButton(systemImage: "arrow.up", help: "Push", isEnabled: projectViewModel.canPush) {
+                    projectViewModel.gitPush()
+                }
 
                 Button {
                     projectViewModel.refreshGitState()
