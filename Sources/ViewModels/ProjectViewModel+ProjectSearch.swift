@@ -25,7 +25,7 @@ extension ProjectViewModel {
             _ = try NSRegularExpression(pattern: pattern, options: regexOptions)
             return nil
         } catch {
-            return "Invalid regular expression"
+            return "Invalid regular expression — check the pattern, or turn off the Regex toggle to search literally."
         }
     }
 

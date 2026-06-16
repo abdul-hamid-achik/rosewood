@@ -827,6 +827,14 @@ struct SearchSidebarView: View {
                                 }
 
                                 HStack(spacing: 8) {
+                                    if projectViewModel.isReplacingInProject {
+                                        ProgressView()
+                                            .controlSize(.small)
+                                        Text("Applying…")
+                                            .font(RosewoodType.caption)
+                                            .foregroundColor(themeColors.mutedText)
+                                    }
+
                                     Button("Cancel") {
                                         projectViewModel.cancelProjectReplacePreview()
                                     }
