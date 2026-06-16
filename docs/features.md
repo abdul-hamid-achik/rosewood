@@ -30,7 +30,7 @@ external tool — see [Dependencies](dependencies.md).
 Autocomplete, diagnostics (inline + Problems panel), hover info, go-to-definition, and
 find-references activate per language when the matching server is installed. The status bar shows
 the active language-server state. If a server crashes, use **Restart Language Server** from the
-command palette. Install servers per [Dependencies → Language tooling](dependencies.md#language-tooling--language-servers-lsp).
+command palette. Install servers per [Dependencies → Language tooling](dependencies.md#language-tooling-language-servers-lsp).
 
 ## Debugging (DAP) *(needs lldb-dap)*
 

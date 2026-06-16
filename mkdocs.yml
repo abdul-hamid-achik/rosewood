@@ -1,0 +1,49 @@
+site_name: Rosewood
+site_description: A lightweight, native macOS code editor built with Swift and SwiftUI/AppKit.
+repo_url: https://github.com/abdul-hamid-achik/rosewood
+repo_name: abdul-hamid-achik/rosewood
+docs_dir: docs
+
+theme:
+  name: material
+  icon:
+    logo: material/file-tree
+  features:
+    - navigation.sections
+    - navigation.top
+    - navigation.instant
+    - content.code.copy
+    - content.code.annotate
+    - toc.follow
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+
+nav:
+  - Home: README.md
+  - Getting Started: getting-started.md
+  - Dependencies: dependencies.md
+  - Configuration: configuration.md
+  - Features & Usage: features.md
+
+markdown_extensions:
+  - admonition
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - pymdownx.inlinehilite
+  - pymdownx.tabbed:
+      alternate_style: true

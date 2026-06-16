@@ -6,6 +6,18 @@ A lightweight, native macOS code editor built with Swift and SwiftUI/AppKit.
 ![Swift](https://img.shields.io/badge/Swift-5.9-orange)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
+## Documentation
+
+Full docs live in [`docs/`](docs/README.md) and build into a site with MkDocs Material:
+
+- [Getting Started](docs/getting-started.md) — build, run, install
+- [Dependencies](docs/dependencies.md) — the optional tools that unlock LSP, debugging, search, and Docker
+- [Configuration](docs/configuration.md) — `config.toml` / `.rosewood.toml` and debug configs
+- [Features & Usage](docs/features.md) — feature tour + keyboard shortcuts
+
+Preview locally with `pip install mkdocs-material && mkdocs serve`. The `Docs` GitHub Action
+publishes the site to GitHub Pages on every push to `main` (enable Pages → branch `gh-pages`).
+
 ## Features
 
 - **Multi-tab editing** with dirty state indicators and keyboard shortcuts

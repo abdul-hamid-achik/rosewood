@@ -55,8 +55,8 @@ Notes:
 - `cwd` is resolved relative to the project root; omit it to use the root.
 - `preLaunchTask` runs before the session starts (e.g. a build), and its result is reported in the
   debug console.
-- See [Dependencies → Debugging](dependencies.md#debugging--lldb-dap) for the adapter requirement,
-  and [Features → Debugging](features.md#debugging-dap) for how to drive a session.
+- See [Dependencies → Debugging](dependencies.md#debugging-lldb-dap) for the adapter requirement,
+  and [Features → Debugging](features.md#debugging-dap-needs-lldb-dap) for how to drive a session.
 
 ## Reloading
 
