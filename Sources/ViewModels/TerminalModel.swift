@@ -28,9 +28,9 @@ final class TerminalModel: ObservableObject {
         currentTerminalSessionId = terminalService.currentSessionId
     }
 
-    func createTerminalSession(type: TerminalSessionType? = nil) {
+    func createTerminalSession(type: TerminalSessionType? = nil, workingDirectory: URL? = nil) {
         let sessionType = type ?? .local(shell: configService.settings.docker.terminalShell)
-        _ = terminalService.createSession(type: sessionType)
+        _ = terminalService.createSession(type: sessionType, workingDirectory: workingDirectory)
         syncTerminalSessions()
     }
 

@@ -4,6 +4,7 @@ struct TerminalPanelView: View {
     @EnvironmentObject var projectViewModel: ProjectViewModel
     @EnvironmentObject var terminalModel: TerminalModel
     @EnvironmentObject private var configService: ConfigurationService
+    @ObservedObject private var terminalController = TerminalProcessController.shared
 
     private var themeColors: ThemeColors {
         configService.currentThemeColors
@@ -104,48 +105,50 @@ struct TerminalPanelView: View {
         return session.displayName
     }
 
+    @ViewBuilder
     private var terminalContent: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: RosewoodUI.spacing3) {
-                Text("Terminal emulation requires SwiftTerm library.")
-                    .font(RosewoodType.subheadline)
-                    .foregroundColor(themeColors.mutedText)
-                    .padding(RosewoodUI.spacing5)
+        if let currentId = terminalModel.currentTerminalSessionId,
+           let session = terminalModel.terminalSessions.first(where: { $0.id == currentId }) {
+            ZStack {
+                SwiftTermTerminalView(
+                    session: session,
+                    themeColors: themeColors,
+                    font: configService.currentTerminalFont
+                )
+                .id(session.id)
 
-                if let currentId = terminalModel.currentTerminalSessionId,
-                   let session = terminalModel.terminalSessions.first(where: { $0.id == currentId }) {
-                    sessionInfo(session)
+                if let exitCode = terminalController.exitedSessions[session.id] {
+                    exitedOverlay(session: session, exitCode: exitCode)
                 }
             }
-            .padding(RosewoodUI.spacing5)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
-    private func sessionInfo(_ session: TerminalSession) -> some View {
-        VStack(alignment: .leading, spacing: RosewoodUI.spacing3) {
-            HStack {
-                Text("Session Type:")
-                    .font(RosewoodType.captionStrong)
-                    .foregroundColor(themeColors.mutedText)
-                Text(session.type.displayName)
-                    .font(RosewoodType.caption)
-                    .foregroundColor(themeColors.foreground)
-            }
+    private func exitedOverlay(session: TerminalSession, exitCode: Int32?) -> some View {
+        VStack(spacing: RosewoodUI.spacing4) {
+            Text(exitCode.map { "Process exited (code \($0))" } ?? "Process exited")
+                .font(RosewoodType.subheadlineStrong)
+                .foregroundColor(themeColors.foreground)
 
-            HStack {
-                Text("Created:")
-                    .font(RosewoodType.captionStrong)
-                    .foregroundColor(themeColors.mutedText)
-                Text(session.createdAt.formatted(date: .abbreviated, time: .shortened))
-                    .font(RosewoodType.caption)
-                    .foregroundColor(themeColors.foreground)
+            HStack(spacing: RosewoodUI.spacing3) {
+                Button("Restart") {
+                    terminalController.restart(session.id)
+                }
+                .buttonStyle(.borderedProminent)
+
+                Button("Close") {
+                    terminalModel.closeTerminalSession(session.id)
+                }
+                .buttonStyle(.bordered)
             }
+            .controlSize(.small)
         }
-        .padding(RosewoodUI.spacing5)
+        .padding(RosewoodUI.spacing6)
         .background(themeColors.elevatedBackground)
-        .clipShape(RoundedRectangle(cornerRadius: RosewoodUI.radiusSmall))
+        .clipShape(RoundedRectangle(cornerRadius: RosewoodUI.radiusMedium))
         .overlay(
-            RoundedRectangle(cornerRadius: RosewoodUI.radiusSmall)
+            RoundedRectangle(cornerRadius: RosewoodUI.radiusMedium)
                 .stroke(themeColors.border.opacity(RosewoodUI.borderOpacitySubtle), lineWidth: 1)
         )
     }

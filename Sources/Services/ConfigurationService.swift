@@ -11,6 +11,12 @@ final class ConfigurationService: ObservableObject {
     @Published private(set) var currentThemeDefinition: ThemeDefinition = .nord
     @Published private(set) var currentEditorFont: NSFont = NSFont.monospacedSystemFont(ofSize: AppSettings.default.editor.fontSize, weight: .regular)
 
+    /// The terminal's font, resolved from `docker.terminalFont`/`terminalFontSize` (distinct from the
+    /// editor font). Recomputed on read; views observing `settings` re-render and re-resolve it.
+    var currentTerminalFont: NSFont {
+        resolveFont(named: settings.docker.terminalFont, size: CGFloat(settings.docker.terminalFontSize))
+    }
+
     let userConfigURL: URL
     let legacyUserConfigURL: URL?
 

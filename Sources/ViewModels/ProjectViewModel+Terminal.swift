@@ -10,7 +10,7 @@ extension ProjectViewModel {
             bottomPanel = nil
         } else {
             if terminalModel.terminalSessions.isEmpty {
-                terminalModel.createTerminalSession()
+                terminalModel.createTerminalSession(workingDirectory: rootDirectory)
             }
             bottomPanel = .terminal
         }
@@ -19,17 +19,26 @@ extension ProjectViewModel {
     // MARK: - Quick Terminal Actions
 
     func openLocalTerminal() {
-        terminalModel.createTerminalSession(type: .local(shell: configService.settings.docker.terminalShell))
+        terminalModel.createTerminalSession(
+            type: .local(shell: configService.settings.docker.terminalShell),
+            workingDirectory: rootDirectory
+        )
         bottomPanel = .terminal
     }
 
     func openDockerTerminal(in container: DockerContainer) {
-        terminalModel.createTerminalSession(type: .dockerExec(containerId: container.id))
+        terminalModel.createTerminalSession(
+            type: .dockerExec(containerId: container.id),
+            workingDirectory: rootDirectory
+        )
         bottomPanel = .terminal
     }
 
     func openComposeTerminal(projectPath: URL, service: String) {
-        terminalModel.createTerminalSession(type: .dockerComposeExec(projectPath: projectPath, service: service))
+        terminalModel.createTerminalSession(
+            type: .dockerComposeExec(projectPath: projectPath, service: service),
+            workingDirectory: projectPath
+        )
         bottomPanel = .terminal
     }
 }

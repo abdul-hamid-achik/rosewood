@@ -145,6 +145,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItem
         return .terminateNow
     }
 
+    func applicationWillTerminate(_ notification: Notification) {
+        // Kill any live terminal shells on quit (PTY masters also close on process death as a
+        // backstop). Runs only after applicationShouldTerminate allowed .terminateNow.
+        TerminalProcessController.shared.terminateAll()
+    }
+
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         if let context = windowContexts[ObjectIdentifier(sender)] {
             return context.projectViewModel.canCloseWindow()

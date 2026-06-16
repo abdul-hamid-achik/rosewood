@@ -28,6 +28,9 @@ packages:
   DockerSwift:
     url: https://github.com/m-barthelemy/DockerSwift.git
     exactVersion: 1.41.0-beta11
+  SwiftTerm:
+    url: https://github.com/migueldeicaza/SwiftTerm
+    exactVersion: 1.13.0
 
 targets:
   Rosewood:
@@ -50,6 +53,7 @@ targets:
       - package: Highlightr
       - package: TOMLKit
       - package: DockerSwift
+      - package: SwiftTerm
     entitlements:
       path: Resources/Rosewood.entitlements
       properties:

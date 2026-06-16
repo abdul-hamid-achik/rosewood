@@ -40,16 +40,20 @@ struct TerminalSession: Identifiable, Equatable {
     let id: UUID
     let type: TerminalSessionType
     let createdAt: Date
+    /// The working directory captured at creation time, so a later project-folder switch does not
+    /// change an already-spawned terminal's cwd. Nil falls back to the home directory at launch.
+    let workingDirectory: URL?
 
     var title: String
     var isActive: Bool = true
     var processId: Int32?
 
-    init(type: TerminalSessionType, title: String? = nil) {
+    init(type: TerminalSessionType, title: String? = nil, workingDirectory: URL? = nil) {
         self.id = UUID()
         self.type = type
         self.title = title ?? type.defaultTitle
         self.createdAt = Date()
+        self.workingDirectory = workingDirectory
     }
 
     var displayName: String {
@@ -62,5 +66,6 @@ struct TerminalSession: Identifiable, Equatable {
             && lhs.isActive == rhs.isActive
             && lhs.processId == rhs.processId
             && lhs.type == rhs.type
+            && lhs.workingDirectory == rhs.workingDirectory
     }
 }

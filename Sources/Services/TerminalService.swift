@@ -11,8 +11,8 @@ final class TerminalService: ObservableObject {
 
     // MARK: - Session Management
 
-    func createSession(type: TerminalSessionType) -> TerminalSession {
-        let session = TerminalSession(type: type)
+    func createSession(type: TerminalSessionType, workingDirectory: URL? = nil) -> TerminalSession {
+        let session = TerminalSession(type: type, workingDirectory: workingDirectory)
         sessions.append(session)
         setCurrentSession(id: session.id)
         return session
@@ -25,6 +25,9 @@ final class TerminalService: ObservableObject {
 
     func closeSession(_ id: UUID) {
         guard let index = sessions.firstIndex(where: { $0.id == id }) else { return }
+        // Kill the PTY/process exactly when the session closes (a no-op if none was spawned),
+        // BEFORE dropping the metadata.
+        TerminalProcessController.shared.terminate(id)
         sessions.remove(at: index)
 
         if currentSessionId == id {
