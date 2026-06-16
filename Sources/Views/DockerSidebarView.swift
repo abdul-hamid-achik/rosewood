@@ -103,6 +103,28 @@ struct DockerSidebarView: View {
 
     @ViewBuilder
     private var tabContent: some View {
+        switch dockerModel.dockerConnectionState {
+        case .notInstalled:
+            dockerUnavailableState(
+                icon: "exclamationmark.triangle.fill",
+                title: "Docker Isn’t Installed",
+                message: "Install Docker Desktop to manage containers, images, and volumes."
+            )
+        case .disconnected(let error):
+            dockerUnavailableState(
+                icon: "bolt.horizontal.circle",
+                title: "Docker Disconnected",
+                message: error.isEmpty
+                    ? "Couldn’t reach the Docker daemon. Make sure Docker is running, then refresh."
+                    : error
+            )
+        default:
+            selectedTabSection
+        }
+    }
+
+    @ViewBuilder
+    private var selectedTabSection: some View {
         switch dockerModel.selectedDockerTab {
         case .containers:
             containersSection
@@ -112,6 +134,20 @@ struct DockerSidebarView: View {
             composeSection
         case .volumes:
             volumesSection
+        }
+    }
+
+    private func dockerUnavailableState(icon: String, title: String, message: String) -> some View {
+        RosewoodSidebarCard {
+            VStack(spacing: RosewoodUI.spacing4) {
+                RosewoodEmptyState(systemImage: icon, title: title, subtitle: message, tint: themeColors.warning, fillsHeight: false)
+                Button("Refresh") {
+                    dockerModel.refreshDockerState()
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .tint(themeColors.accent)
+            }
         }
     }
 

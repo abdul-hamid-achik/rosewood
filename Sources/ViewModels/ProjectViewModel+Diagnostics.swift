@@ -60,13 +60,23 @@ extension ProjectViewModel {
         }
     }
 
+    /// Open the references panel in a loading state the instant the request starts, so the user
+    /// gets immediate feedback rather than waiting on the language server with no indication.
+    func beginFindReferences() {
+        referencesModel.referenceResults = []
+        referencesModel.isSearching = true
+        bottomPanel = .references
+    }
+
     func showReferences(_ locations: [LSPLocation]) {
         referencesModel.referenceResults = locations.compactMap(makeReferenceResult(for:)).sorted(by: compareReferenceResults)
+        referencesModel.isSearching = false
         bottomPanel = .references
     }
 
     func closeReferencesPanel() {
         referencesModel.referenceResults = []
+        referencesModel.isSearching = false
         if isReferencesPanelVisible {
             bottomPanel = nil
         }

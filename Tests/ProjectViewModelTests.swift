@@ -4014,6 +4014,36 @@ struct ProjectViewModelTests {
     }
 
     @Test
+    func findReferencesOpensPanelInLoadingStateThenClears() throws {
+        let configURL = tempConfigURL()
+        defer { try? FileManager.default.removeItem(at: configURL) }
+
+        let viewModel = makeViewModel(
+            sessionStore: makeDefaults(),
+            sessionKey: "references-loading-test",
+            configService: ConfigurationService(userConfigURL: configURL),
+            fileWatcher: FileWatcherService(),
+            ui: TestProjectUI()
+        )
+
+        // Request starts: the panel opens immediately in a loading state (no waiting on the LSP).
+        viewModel.beginFindReferences()
+        #expect(viewModel.referencesModel.isSearching == true)
+        #expect(viewModel.referencesModel.referenceResults.isEmpty)
+        #expect(viewModel.isReferencesPanelVisible == true)
+
+        // Results (here zero) arrive: loading clears so the empty state can show.
+        viewModel.showReferences([])
+        #expect(viewModel.referencesModel.isSearching == false)
+
+        // Closing resets everything.
+        viewModel.closeReferencesPanel()
+        #expect(viewModel.referencesModel.isSearching == false)
+        #expect(viewModel.referencesModel.referenceResults.isEmpty)
+        #expect(viewModel.isReferencesPanelVisible == false)
+    }
+
+    @Test
     func openFolderOnlyPromptsToCreateProjectConfigOncePerProject() async throws {
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

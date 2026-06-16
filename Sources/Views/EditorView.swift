@@ -122,6 +122,11 @@ struct EditorView: View {
                     projectViewModel.showReferences(locations)
                 }
             },
+            onBeginReferences: {
+                DispatchQueue.main.async {
+                    projectViewModel.beginFindReferences()
+                }
+            },
             onRevealInFinder: { url in
                 NSWorkspace.shared.activateFileViewerSelecting([url])
             }
@@ -167,6 +172,7 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
     let onToggleBreakpoint: (Int) -> Void
     let onNavigateToDefinition: ((URL, Int) -> Void)?
     let onShowReferences: (([LSPLocation]) -> Void)?
+    let onBeginReferences: (() -> Void)?
     let onRevealInFinder: ((URL) -> Void)?
 
     func makeCoordinator() -> Coordinator {
@@ -1043,6 +1049,9 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
             let requestID = referenceRequestTracker.nextRequestID()
 
             referencesTask?.cancel()
+
+            // Open the panel in a loading state immediately — the request below can take seconds.
+            parent.onBeginReferences?()
 
             referencesTask = Task { @MainActor in
                 let locations = await lspService.references(uri: uri, language: language, position: position)

@@ -19,7 +19,9 @@ struct ReferencesPanelView: View {
 
             ThemedDivider()
 
-            if referencesModel.referenceResults.isEmpty {
+            if referencesModel.isSearching && referencesModel.referenceResults.isEmpty {
+                loadingView
+            } else if referencesModel.referenceResults.isEmpty {
                 emptyStateView
             } else {
                 ScrollView {
@@ -99,6 +101,19 @@ struct ReferencesPanelView: View {
         .padding(.horizontal, RosewoodUI.spacing5)
         .padding(.vertical, RosewoodUI.spacing3)
         .accessibilityElement(children: .contain)
+    }
+
+    private var loadingView: some View {
+        VStack(spacing: RosewoodUI.spacing4) {
+            Spacer()
+            ProgressView()
+                .controlSize(.small)
+            Text("Searching for references…")
+                .font(RosewoodType.subheadline)
+                .foregroundColor(themeColors.subduedText)
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var emptyStateView: some View {

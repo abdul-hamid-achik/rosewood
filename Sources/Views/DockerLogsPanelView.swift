@@ -20,7 +20,13 @@ struct DockerLogsPanelView: View {
             
             ThemedDivider()
             
-            if logLines.isEmpty && !isStreaming {
+            if dockerModel.selectedContainer == nil {
+                RosewoodEmptyState(
+                    systemImage: "shippingbox",
+                    title: "No container selected",
+                    subtitle: "Choose a container in the Docker sidebar to view its logs."
+                )
+            } else if logLines.isEmpty && !isStreaming {
                 emptyStateView
             } else {
                 logContentView
