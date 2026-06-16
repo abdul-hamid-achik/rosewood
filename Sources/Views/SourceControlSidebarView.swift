@@ -110,15 +110,48 @@ struct SourceControlSidebarView: View {
                 message: "There are no local Git changes right now."
             )
         } else {
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: RosewoodUI.spacing6) {
-                    ForEach(projectViewModel.gitChangeSections) { section in
-                        SourceControlSectionView(section: section)
+            VStack(spacing: 0) {
+                commitBox
+                ThemedDivider()
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: RosewoodUI.spacing6) {
+                        ForEach(projectViewModel.gitChangeSections) { section in
+                            SourceControlSectionView(section: section)
+                        }
                     }
+                    .padding(RosewoodUI.spacing3)
                 }
-                .padding(RosewoodUI.spacing3)
             }
         }
+    }
+
+    private var commitBox: some View {
+        VStack(alignment: .leading, spacing: RosewoodUI.spacing3) {
+            TextField("Message (commits staged changes)", text: $gitModel.commitMessage, axis: .vertical)
+                .textFieldStyle(.plain)
+                .font(RosewoodType.body)
+                .foregroundColor(themeColors.foreground)
+                .lineLimit(1...4)
+                .padding(RosewoodUI.spacing3)
+                .background(themeColors.background)
+                .clipShape(RoundedRectangle(cornerRadius: RosewoodUI.radiusSmall))
+                .overlay(
+                    RoundedRectangle(cornerRadius: RosewoodUI.radiusSmall)
+                        .stroke(themeColors.border.opacity(RosewoodUI.borderOpacitySubtle), lineWidth: 1)
+                )
+
+            Button {
+                projectViewModel.commitStagedChanges()
+            } label: {
+                Label("Commit", systemImage: "checkmark.circle")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+            .tint(themeColors.accent)
+            .disabled(!projectViewModel.canCommitStagedChanges)
+        }
+        .padding(RosewoodUI.spacing4)
     }
 }
 

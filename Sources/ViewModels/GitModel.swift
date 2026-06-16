@@ -25,6 +25,8 @@ final class GitModel: ObservableObject {
     /// True when the selected change's diff couldn't be loaded (vs. a legitimate empty diff),
     /// so the diff panel can show a real error state instead of "No diff available".
     @Published var gitDiffLoadFailed: Bool = false
+    /// Draft commit message bound to the Source Control commit box; cleared after a successful commit.
+    @Published var commitMessage: String = ""
     @Published var isRefreshingGitStatus: Bool = false
     @Published var isLoadingGitDiff: Bool = false
     @Published var isGitToolAvailable: Bool = true

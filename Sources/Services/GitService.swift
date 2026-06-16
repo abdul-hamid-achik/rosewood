@@ -17,6 +17,7 @@ protocol GitServiceProtocol: AnyObject {
     func stage(changedFile: GitChangedFile, projectRoot: URL?) async -> GitOperationResult
     func unstage(changedFile: GitChangedFile, projectRoot: URL?) async -> GitOperationResult
     func discard(changedFile: GitChangedFile, projectRoot: URL?) async -> GitOperationResult
+    func commit(message: String, projectRoot: URL?) async -> GitOperationResult
 }
 
 final class GitService: GitServiceProtocol {
@@ -155,6 +156,18 @@ final class GitService: GitServiceProtocol {
             } else {
                 _ = try self.runGit(arguments: ["restore", "--", changedFile.path], in: repositoryRoot)
             }
+            return .success
+        }
+    }
+
+    func commit(message: String, projectRoot: URL?) async -> GitOperationResult {
+        let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return .failure("Enter a commit message.")
+        }
+        return await mutateRepository(projectRoot: projectRoot) { [self] repositoryRoot in
+            // Commits the currently staged changes; git exits non-zero (→ .failure) if nothing is staged.
+            _ = try self.runGit(arguments: ["commit", "-m", trimmed], in: repositoryRoot)
             return .success
         }
     }

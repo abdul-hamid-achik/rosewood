@@ -6134,6 +6134,8 @@ private final class MockGitService: GitServiceProtocol {
     var diffFailurePaths: Set<String> = []
     var blameResults: [String: GitBlameInfo] = [:]
     var stageResult: GitOperationResult = .success
+    var commitResult: GitOperationResult = .success
+    private(set) var commitMessages: [String] = []
     var unstageResult: GitOperationResult = .success
     var discardResult: GitOperationResult = .success
 
@@ -6204,6 +6206,13 @@ private final class MockGitService: GitServiceProtocol {
         return withLock {
             discardCalls.append(changedFile.path)
             return discardResult
+        }
+    }
+
+    func commit(message: String, projectRoot: URL?) async -> GitOperationResult {
+        return withLock {
+            commitMessages.append(message)
+            return commitResult
         }
     }
 }

@@ -55,6 +55,26 @@ extension ProjectViewModel {
         )
     }
 
+    /// Whether a commit can be made right now: a repo with staged changes and a non-empty message.
+    var canCommitStagedChanges: Bool {
+        isGitToolAvailable
+            && gitRepositoryStatus.isRepository
+            && gitRepositoryStatus.changedFiles.contains { $0.hasStagedChanges }
+            && !gitModel.commitMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// Commit the currently staged changes with the draft message, then clear it and refresh.
+    func commitStagedChanges() {
+        let message = gitModel.commitMessage.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !message.isEmpty else { return }
+        runGitMutation(
+            task: { [gitService, rootDirectory] in
+                await gitService.commit(message: message, projectRoot: rootDirectory)
+            },
+            onSuccess: { [weak self] in self?.gitModel.commitMessage = "" }
+        )
+    }
+
     func unstageSelectedGitChange() {
         guard let changedFile = selectedGitChangedFile else { return }
         unstageGitChange(changedFile)

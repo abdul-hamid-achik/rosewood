@@ -52,6 +52,45 @@ struct GitServiceTests {
     }
 
     @Test
+    func commitCreatesACommitFromStagedChanges() async throws {
+        let repositoryURL = try makeRepository()
+        defer { try? FileManager.default.removeItem(at: repositoryURL) }
+        let service = GitService()
+
+        // Modify a tracked file and stage it.
+        try "let tracked = 99\n".write(to: repositoryURL.appendingPathComponent("Tracked.swift"), atomically: true, encoding: .utf8)
+        let status = await service.repositoryStatus(for: repositoryURL)
+        let changed = try #require(status.changedFiles.first { $0.path == "Tracked.swift" })
+        _ = await service.stage(changedFile: changed, projectRoot: repositoryURL)
+
+        let result = await service.commit(message: "Update tracked", projectRoot: repositoryURL)
+        #expect(result.isSuccess)
+
+        // After committing, the file is no longer a pending change.
+        let after = await service.repositoryStatus(for: repositoryURL)
+        #expect(after.changedFiles.contains { $0.path == "Tracked.swift" } == false)
+    }
+
+    @Test
+    func commitFailsWhenNothingStaged() async throws {
+        let repositoryURL = try makeRepository()
+        defer { try? FileManager.default.removeItem(at: repositoryURL) }
+        let service = GitService()
+
+        // makeRepository leaves a clean tree (only an ignored file), so there is nothing to commit.
+        let result = await service.commit(message: "Empty", projectRoot: repositoryURL)
+        #expect(result.isSuccess == false)
+    }
+
+    @Test
+    func commitRejectsEmptyMessage() async throws {
+        let repositoryURL = try makeRepository()
+        defer { try? FileManager.default.removeItem(at: repositoryURL) }
+        let result = await GitService().commit(message: "   ", projectRoot: repositoryURL)
+        #expect(result.isSuccess == false)
+    }
+
+    @Test
     func diffReturnsFailedOutsideAGitRepository() async throws {
         // A directory that is not inside any git repository can't resolve a repo root,
         // so the diff must report .failed rather than collapsing to a "no diff" outcome.
