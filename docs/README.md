@@ -14,6 +14,7 @@ GitHub Pages) once a site and domain are added.
 | [Dependencies](dependencies.md) | Build-time and optional runtime tools (git, ripgrep, language servers, lldb-dap, Docker) and how to install them |
 | [Configuration](configuration.md) | User settings (`config.toml`) and per-project settings + debug configs (`.rosewood.toml`) |
 | [Features & Usage](features.md) | Editing, search, LSP, debugging, Git, Docker, and the full keyboard-shortcut reference |
+| [Troubleshooting](troubleshooting.md) | Why a feature isn't working (usually a missing tool), known limitations, and build issues |
 
 ## At a glance
 

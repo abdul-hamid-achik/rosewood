@@ -35,6 +35,7 @@ nav:
   - Dependencies: dependencies.md
   - Configuration: configuration.md
   - Features & Usage: features.md
+  - Troubleshooting: troubleshooting.md
 
 markdown_extensions:
   - admonition
