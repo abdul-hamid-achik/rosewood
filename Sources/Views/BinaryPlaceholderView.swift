@@ -12,7 +12,7 @@ struct BinaryPlaceholderView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 8) {
+            HStack(spacing: RosewoodUI.spacing3) {
                 Text(tab.fileName)
                     .font(RosewoodType.subheadlineStrong)
                     .foregroundColor(themeColors.foreground)
@@ -27,7 +27,7 @@ struct BinaryPlaceholderView: View {
 
             ThemedDivider()
 
-            VStack(spacing: 16) {
+            VStack(spacing: RosewoodUI.spacing6) {
                 Spacer()
                 Image(systemName: "externaldrive")
                     .font(.system(size: 42))
@@ -38,7 +38,7 @@ struct BinaryPlaceholderView: View {
                 Text("Open it in the default app or reveal it in Finder.")
                     .font(RosewoodType.subheadline)
                     .foregroundColor(themeColors.mutedText)
-                HStack(spacing: 12) {
+                HStack(spacing: RosewoodUI.spacing5) {
                     Button("Open Externally") {
                         if let filePath = tab.filePath {
                             NSWorkspace.shared.open(filePath)

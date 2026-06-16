@@ -72,9 +72,9 @@ struct GitDiffPanelView: View {
     }
 
     private var headerView: some View {
-        VStack(spacing: 6) {
-            HStack(spacing: 10) {
-                HStack(alignment: .top, spacing: 10) {
+        VStack(spacing: RosewoodUI.spacing2) {
+            HStack(spacing: RosewoodUI.spacing4) {
+                HStack(alignment: .top, spacing: RosewoodUI.spacing4) {
                     Image(systemName: diffIconName)
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundColor(themeColors.accent)
@@ -83,7 +83,7 @@ struct GitDiffPanelView: View {
 
                     VStack(alignment: .leading, spacing: 3) {
                         Text(diffTitle)
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(RosewoodType.subheadlineStrong)
                             .foregroundColor(themeColors.foreground)
                             .lineLimit(1)
                             .accessibilityIdentifier("git-diff-panel-title")
@@ -127,12 +127,12 @@ struct GitDiffPanelView: View {
     @ViewBuilder
     private var bodyView: some View {
         if projectViewModel.isLoadingGitDiff {
-            VStack(spacing: 10) {
+            VStack(spacing: RosewoodUI.spacing4) {
                 Spacer()
                 ProgressView()
                     .controlSize(.small)
                 Text("Loading diff...")
-                    .font(.system(size: 12))
+                    .font(RosewoodType.subheadline)
                     .foregroundColor(themeColors.subduedText)
                 Spacer()
             }
@@ -186,7 +186,7 @@ struct GitDiffPanelView: View {
                 .menuStyle(.borderlessButton)
             } else {
                 Text(diff.hunks.isEmpty ? "No hunks" : "1 hunk")
-                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .font(RosewoodType.monoCaptionStrong)
                     .foregroundColor(themeColors.mutedText)
                     .frame(minWidth: 64, alignment: .center)
             }
@@ -237,7 +237,7 @@ struct GitDiffPanelView: View {
                     ScrollView([.horizontal, .vertical]) {
                         LazyVStack(alignment: .leading, spacing: layoutStyle == .workspace ? 10 : 12) {
                             ForEach(Array(diff.hunks.enumerated()), id: \.element.id) { index, hunk in
-                                VStack(alignment: .leading, spacing: 8) {
+                                VStack(alignment: .leading, spacing: RosewoodUI.spacing3) {
                                     hunkHeader(index: index, totalHunks: diff.hunks.count, hunk: hunk)
                                         .accessibilityIdentifier("git-diff-hunk-\(index)")
 
@@ -276,7 +276,7 @@ struct GitDiffPanelView: View {
                             }
                         }
                         .padding(.horizontal, layoutStyle == .workspace ? 14 : 12)
-                        .padding(.top, layoutStyle == .workspace ? 10 : 12)
+                        .padding(.top, layoutStyle == .workspace ? RosewoodUI.spacing4 : RosewoodUI.spacing5)
                         .padding(.bottom, layoutStyle == .workspace ? 14 : 12)
                         .frame(
                             minWidth: columnWidth * 2 + 1,
@@ -306,7 +306,7 @@ struct GitDiffPanelView: View {
     private func patchView(text: String, message: String? = nil) -> some View {
         VStack(spacing: 0) {
             if let message {
-                HStack(spacing: 8) {
+                HStack(spacing: RosewoodUI.spacing3) {
                     Image(systemName: "info.circle")
                         .foregroundColor(themeColors.accent)
                     Text(message)
@@ -328,7 +328,7 @@ struct GitDiffPanelView: View {
                     .foregroundColor(themeColors.foreground)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                    .padding(12)
+                    .padding(RosewoodUI.spacing5)
             }
             .accessibilityIdentifier("git-diff-patch-view")
         }

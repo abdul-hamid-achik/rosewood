@@ -26,7 +26,7 @@ struct ImageViewerView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 8) {
+            HStack(spacing: RosewoodUI.spacing3) {
                 Text(tab.fileName)
                     .font(RosewoodType.subheadlineStrong)
                     .foregroundColor(themeColors.foreground)
@@ -62,7 +62,7 @@ struct ImageViewerView: View {
                     ImageCanvasView(image: nsImage, zoomScale: zoomScale, themeColors: themeColors)
                         .background(themeColors.background)
                 } else {
-                    VStack(spacing: 12) {
+                    VStack(spacing: RosewoodUI.spacing5) {
                         Image(systemName: "photo")
                             .font(.system(size: 32))
                             .foregroundColor(themeColors.mutedText)

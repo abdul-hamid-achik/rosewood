@@ -122,7 +122,7 @@ struct TerminalPanelView: View {
     }
 
     private func sessionInfo(_ session: TerminalSession) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: RosewoodUI.spacing3) {
             HStack {
                 Text("Session Type:")
                     .font(RosewoodType.captionStrong)
@@ -151,7 +151,7 @@ struct TerminalPanelView: View {
     }
 
     private var emptyStateView: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: RosewoodUI.spacing5) {
             Image(systemName: "terminal")
                 .font(.system(size: 28))
                 .foregroundColor(themeColors.mutedText)

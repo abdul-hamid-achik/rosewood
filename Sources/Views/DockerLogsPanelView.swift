@@ -54,7 +54,7 @@ struct DockerLogsPanelView: View {
                     Text(container.status.displayText)
                         .font(RosewoodType.micro)
                         .foregroundColor(statusColor(for: container.status))
-                        .padding(.horizontal, 6)
+                        .padding(.horizontal, RosewoodUI.spacing2)
                         .padding(.vertical, 2)
                         .background(statusColor(for: container.status).opacity(0.12))
                         .clipShape(Capsule())
@@ -106,14 +106,14 @@ struct DockerLogsPanelView: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 2) {
                     ForEach(logLines) { line in
-                        HStack(alignment: .top, spacing: 8) {
+                        HStack(alignment: .top, spacing: RosewoodUI.spacing3) {
                             Circle()
                                 .fill(streamColor(for: line.stream))
                                 .frame(width: 6, height: 6)
                                 .padding(.top, 4)
                             
                             Text(line.text)
-                                .font(.system(size: 11, design: .monospaced))
+                                .font(RosewoodType.monoCaption)
                                 .foregroundColor(themeColors.foreground)
                                 .textSelection(.enabled)
                         }
@@ -131,7 +131,7 @@ struct DockerLogsPanelView: View {
                         .id("streaming-indicator")
                     }
                 }
-                .padding(8)
+                .padding(RosewoodUI.spacing3)
             }
             .onChange(of: logLines.count) {
                 if autoScroll, let lastId = logLines.last?.id {
@@ -144,7 +144,7 @@ struct DockerLogsPanelView: View {
     }
     
     private var emptyStateView: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: RosewoodUI.spacing5) {
             if isStreaming {
                 ProgressView()
                     .scaleEffect(0.8)

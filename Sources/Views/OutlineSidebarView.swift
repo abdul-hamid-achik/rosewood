@@ -41,8 +41,8 @@ struct OutlineSidebarView: View {
                             }
                         }
                     }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 6)
+                    .padding(.horizontal, RosewoodUI.spacing3)
+                    .padding(.vertical, RosewoodUI.spacing2)
                 }
             }
         }
@@ -57,7 +57,7 @@ struct OutlineSidebarView: View {
     }
 
     private var headerView: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: RosewoodUI.spacing3) {
             Label("Outline", systemImage: "list.bullet.indent")
                 .font(RosewoodType.captionStrong)
                 .foregroundColor(themeColors.subduedText)
@@ -104,7 +104,7 @@ private struct OutlineSymbolRow: View {
         } label: {
             HStack(spacing: RosewoodUI.spacing3) {
                 Image(systemName: symbol.iconName)
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(RosewoodType.captionStrong)
                     .foregroundColor(isActive ? themeColors.accent : themeColors.mutedText)
                     .frame(width: 14)
 

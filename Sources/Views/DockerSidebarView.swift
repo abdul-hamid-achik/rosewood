@@ -22,7 +22,7 @@ struct DockerSidebarView: View {
 
     private var connectionSection: some View {
         RosewoodSidebarCard {
-            HStack(alignment: .center, spacing: 10) {
+            HStack(alignment: .center, spacing: RosewoodUI.spacing4) {
                 ZStack {
                     Circle()
                         .fill(connectionColor.opacity(0.14))
@@ -35,7 +35,7 @@ struct DockerSidebarView: View {
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Docker")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(RosewoodType.bodyStrong)
                         .foregroundColor(themeColors.foreground)
 
                     Text(connectionStatusText)
@@ -198,7 +198,7 @@ struct DockerSidebarView: View {
     }
 
     private func emptyState(icon: String, message: String) -> some View {
-        VStack(spacing: 8) {
+        VStack(spacing: RosewoodUI.spacing3) {
             Image(systemName: icon)
                 .font(.system(size: 24))
                 .foregroundColor(themeColors.mutedText)
@@ -208,7 +208,7 @@ struct DockerSidebarView: View {
                 .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 16)
+        .padding(.vertical, RosewoodUI.spacing6)
     }
 
     private var connectionIcon: String {
@@ -437,7 +437,7 @@ struct ComposeProjectRowView: View {
                 .frame(width: 16)
 
             VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 8) {
+                HStack(spacing: RosewoodUI.spacing3) {
                     Text(project.name)
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundColor(themeColors.foreground)

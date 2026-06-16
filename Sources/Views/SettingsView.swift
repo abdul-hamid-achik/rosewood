@@ -124,7 +124,7 @@ struct SettingsView: View {
     }
 
     private var editorSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: RosewoodUI.spacing5) {
             Text("Editor")
                 .font(RosewoodType.bodyStrong)
                 .foregroundColor(themeColors.subduedText)
@@ -194,12 +194,12 @@ struct SettingsView: View {
     }
 
     private var autoSaveSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: RosewoodUI.spacing5) {
             Text("Auto-Save")
                 .font(RosewoodType.bodyStrong)
                 .foregroundColor(themeColors.subduedText)
 
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: RosewoodUI.spacing5) {
                 Toggle("Enable Auto-Save", isOn: $autoSaveEnabled)
                     .font(RosewoodType.body)
                     .foregroundColor(themeColors.foreground)
@@ -254,12 +254,12 @@ struct SettingsView: View {
     }
 
     private var dockerSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: RosewoodUI.spacing5) {
             Text("Docker")
                 .font(RosewoodType.bodyStrong)
                 .foregroundColor(themeColors.subduedText)
 
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: RosewoodUI.spacing5) {
                 Toggle("Enable Docker Integration", isOn: $dockerEnabled)
                     .font(RosewoodType.body)
                     .foregroundColor(themeColors.foreground)
@@ -324,7 +324,7 @@ struct SettingsView: View {
                 .font(RosewoodType.bodyStrong)
                 .foregroundColor(themeColors.subduedText)
 
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: RosewoodUI.spacing5) {
                 settingsStepperRow("Large file mode", value: $largeFileThresholdKB, range: 100...2000, suffix: "KB")
                 settingsStepperRow("Reduce features above", value: $textSizeWarningKB, range: 100...20000, suffix: "KB")
                 settingsStepperRow("Text size limit", value: $textSizeLimitKB, range: 500...20000, suffix: "KB")

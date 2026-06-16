@@ -112,7 +112,7 @@ struct StatusBarView: View {
             Button {
                 projectViewModel.toggleDiagnosticsPanel()
             } label: {
-                HStack(spacing: 8) {
+                HStack(spacing: RosewoodUI.spacing3) {
                     if diagCount.errors > 0 {
                         HStack(spacing: 2) {
                             Image(systemName: "xmark.circle.fill")
@@ -128,22 +128,22 @@ struct StatusBarView: View {
                             Image(systemName: "exclamationmark.triangle.fill")
                                 .font(.system(size: 10))
                             Text("\(diagCount.warnings)")
-                                .font(.system(size: 11))
+                                .font(RosewoodType.caption)
                         }
                         .foregroundColor(themeColors.warning)
                     }
 
                     if hasWorkspaceProblems && diagnosticsModel.workspaceDiagnosticFileCount > 1 {
                         Text("WS \(workspaceDiagCount.errors + workspaceDiagCount.warnings)")
-                            .font(.system(size: 10, weight: .semibold))
+                            .font(RosewoodType.micro)
                             .foregroundColor(themeColors.accent)
                     }
                 }
                 .frame(minWidth: 44, minHeight: 18)
-                .padding(.horizontal, 6)
+                .padding(.horizontal, RosewoodUI.spacing2)
                 .padding(.vertical, 2)
                 .background(
-                    RoundedRectangle(cornerRadius: 6)
+                    RoundedRectangle(cornerRadius: RosewoodUI.radiusXSmall)
                         .fill(projectViewModel.isDiagnosticsPanelVisible ? themeColors.hoverBackground.opacity(0.5) : Color.clear)
                 )
             }

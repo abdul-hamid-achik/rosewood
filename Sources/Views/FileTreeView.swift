@@ -40,7 +40,7 @@ struct FileTreeView: View {
                         )
                     }
                 }
-                .padding(.vertical, 6)
+                .padding(.vertical, RosewoodUI.spacing2)
             }
             .background(themeColors.panelBackground)
             .accessibilityIdentifier("explorer-file-tree")

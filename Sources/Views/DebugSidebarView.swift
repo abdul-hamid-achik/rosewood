@@ -25,7 +25,7 @@ struct DebugSidebarView: View {
         RosewoodSidebarCard {
             sectionTitle("Session")
 
-            HStack(alignment: .center, spacing: 10) {
+            HStack(alignment: .center, spacing: RosewoodUI.spacing4) {
                 ZStack {
                     Circle()
                         .fill(sessionAccentColor.opacity(0.14))
@@ -38,7 +38,7 @@ struct DebugSidebarView: View {
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(debugSessionSummary)
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(RosewoodType.bodyStrong)
                         .foregroundColor(themeColors.foreground)
 
                     if let sessionSecondaryText {
@@ -95,12 +95,12 @@ struct DebugSidebarView: View {
             }
 
             if let latestConsoleEntry = debugModel.debugConsoleEntries.last {
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: RosewoodUI.spacing2) {
                     HStack(spacing: 8) {
                         headerChip(latestConsoleEntry.kind.rawValue.uppercased(), tint: color(for: latestConsoleEntry.kind))
 
                         Text(latestConsoleEntry.timestamp.formatted(date: .omitted, time: .shortened))
-                            .font(.system(size: 10, design: .monospaced))
+                            .font(RosewoodType.monoMicro)
                             .foregroundColor(themeColors.mutedText)
                     }
 
@@ -137,11 +137,11 @@ struct DebugSidebarView: View {
 
             if projectViewModel.rootDirectory == nil {
                 Text("Open a folder to configure debugging.")
-                    .font(.system(size: 12))
+                    .font(RosewoodType.subheadline)
                     .foregroundColor(themeColors.subduedText)
             } else if let error = debugModel.debugConfigurationError {
                 Text(error)
-                    .font(.system(size: 12))
+                    .font(RosewoodType.subheadline)
                     .foregroundColor(themeColors.danger)
             } else if debugModel.debugConfigurations.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
@@ -164,8 +164,8 @@ struct DebugSidebarView: View {
                 .pickerStyle(.menu)
 
                 if let configuration = projectViewModel.selectedDebugConfiguration {
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack(spacing: 6) {
+                    VStack(alignment: .leading, spacing: RosewoodUI.spacing3) {
+                        HStack(spacing: RosewoodUI.spacing2) {
                             headerChip(configuration.adapter.uppercased(), tint: themeColors.accent)
                             if let preLaunchTask = configuration.preLaunchTask, !preLaunchTask.isEmpty {
                                 headerChip("preLaunchTask", tint: themeColors.warning)
@@ -191,7 +191,7 @@ struct DebugSidebarView: View {
                     .foregroundColor(themeColors.subduedText)
             } else {
                 ForEach(projectViewModel.breakpoints) { breakpoint in
-                    HStack(alignment: .top, spacing: 8) {
+                    HStack(alignment: .top, spacing: RosewoodUI.spacing3) {
                         Circle()
                             .fill(themeColors.danger)
                             .frame(width: 8, height: 8)
@@ -414,7 +414,7 @@ struct DebugSidebarView: View {
     private func debugMetadata(label: String, value: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(label)
-                .font(.system(size: 10, weight: .semibold))
+                .font(RosewoodType.micro)
                 .foregroundColor(themeColors.mutedText)
             Text(value)
                 .font(.system(size: 11, design: .monospaced))

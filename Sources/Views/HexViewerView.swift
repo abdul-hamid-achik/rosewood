@@ -17,7 +17,7 @@ struct HexViewerView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 8) {
+            HStack(spacing: RosewoodUI.spacing3) {
                 Text(tab.fileName)
                     .font(RosewoodType.subheadlineStrong)
                     .foregroundColor(themeColors.foreground)
@@ -63,7 +63,7 @@ struct HexViewerView: View {
             .font(.system(size: 10, weight: .semibold, design: .monospaced))
             .foregroundColor(themeColors.mutedText)
             .padding(.horizontal, RosewoodUI.spacing5)
-            .padding(.vertical, 6)
+            .padding(.vertical, RosewoodUI.spacing2)
             .background(themeColors.panelBackground)
 
             ThemedDivider()

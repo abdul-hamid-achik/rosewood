@@ -78,15 +78,15 @@ struct ProblemsPanelView: View {
                                         .id(diagnostic.id)
                                 }
                             }
-                            .padding(12)
+                            .padding(RosewoodUI.spacing5)
                         } else {
-                            LazyVStack(alignment: .leading, spacing: 8) {
+                            LazyVStack(alignment: .leading, spacing: RosewoodUI.spacing3) {
                                 ForEach(Array(workspaceDiagnostics.enumerated()), id: \.element.id) { index, diagnostic in
                                     workspaceDiagnosticRow(diagnostic, index: index)
                                         .id(diagnostic.id)
                                 }
                             }
-                            .padding(12)
+                            .padding(RosewoodUI.spacing5)
                         }
                     }
                     .onAppear {
@@ -104,7 +104,7 @@ struct ProblemsPanelView: View {
     }
 
     private var headerView: some View {
-        HStack(alignment: .top, spacing: 12) {
+        HStack(alignment: .top, spacing: RosewoodUI.spacing5) {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 8) {
                     Text("Problems")
@@ -279,7 +279,7 @@ struct ProblemsPanelView: View {
 
                 if !diagnostic.lineText.isEmpty {
                     Text(diagnostic.lineText)
-                        .font(.system(size: 11, design: .monospaced))
+                        .font(RosewoodType.monoCaption)
                         .foregroundColor(themeColors.mutedText)
                         .lineLimit(1)
                 }
@@ -309,9 +309,9 @@ struct ProblemsPanelView: View {
     ) -> some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 10, weight: .semibold))
+                .font(RosewoodType.micro)
                 .foregroundColor(isSelected ? themeColors.background : themeColors.subduedText)
-                .padding(.horizontal, 8)
+                .padding(.horizontal, RosewoodUI.spacing3)
                 .padding(.vertical, 4)
                 .background(
                     Capsule()

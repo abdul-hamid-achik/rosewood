@@ -19,12 +19,12 @@ struct DebugPanelView: View {
                 emptyStateView
             } else {
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 8) {
+                    LazyVStack(alignment: .leading, spacing: RosewoodUI.spacing3) {
                         ForEach(debugModel.debugConsoleEntries) { entry in
                             VStack(alignment: .leading, spacing: 4) {
-                                HStack(spacing: 8) {
+                                HStack(spacing: RosewoodUI.spacing3) {
                                     Text(entry.timestamp.formatted(date: .omitted, time: .standard))
-                                        .font(.system(size: 10, design: .monospaced))
+                                        .font(RosewoodType.monoMicro)
                                         .foregroundColor(themeColors.mutedText)
 
                                     Text(entry.kind.rawValue.uppercased())
@@ -38,12 +38,12 @@ struct DebugPanelView: View {
                                     .textSelection(.enabled)
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(10)
+                            .padding(RosewoodUI.spacing4)
                             .background(themeColors.elevatedBackground)
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                            .clipShape(RoundedRectangle(cornerRadius: RosewoodUI.radiusSmall))
                         }
                     }
-                    .padding(12)
+                    .padding(RosewoodUI.spacing5)
                 }
             }
         }

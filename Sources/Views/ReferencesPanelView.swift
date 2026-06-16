@@ -23,21 +23,21 @@ struct ReferencesPanelView: View {
                 emptyStateView
             } else {
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 8) {
+                    LazyVStack(alignment: .leading, spacing: RosewoodUI.spacing3) {
                         ForEach(Array(referencesModel.referenceResults.enumerated()), id: \.element.id) { index, result in
                             Button {
                                 projectViewModel.openReferenceResult(result)
                             } label: {
-                                VStack(alignment: .leading, spacing: 6) {
-                                    HStack(spacing: 8) {
+                                VStack(alignment: .leading, spacing: RosewoodUI.spacing2) {
+                                    HStack(spacing: RosewoodUI.spacing3) {
                                         Text(result.fileURL.lastPathComponent)
-                                            .font(.system(size: 12, weight: .semibold))
+                                            .font(RosewoodType.subheadlineStrong)
                                             .foregroundColor(themeColors.foreground)
 
                                         let parentPath = (result.path as NSString).deletingLastPathComponent
                                         if parentPath != "." {
                                             Text(parentPath)
-                                                .font(.system(size: 11))
+                                                .font(RosewoodType.caption)
                                                 .foregroundColor(themeColors.mutedText)
                                                 .lineLimit(1)
                                         }
@@ -45,19 +45,19 @@ struct ReferencesPanelView: View {
                                         Spacer()
 
                                         Text("Ln \(result.line), Col \(result.column)")
-                                            .font(.system(size: 10, design: .monospaced))
+                                            .font(RosewoodType.monoMicro)
                                             .foregroundColor(themeColors.mutedText)
                                     }
 
                                     Text(result.lineText.isEmpty ? "No preview available" : result.lineText)
-                                        .font(.system(size: 12))
+                                        .font(RosewoodType.subheadline)
                                         .foregroundColor(themeColors.subduedText)
                                         .multilineTextAlignment(.leading)
                                 }
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(10)
+                                .padding(RosewoodUI.spacing4)
                                 .background(themeColors.elevatedBackground)
-                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                                .clipShape(RoundedRectangle(cornerRadius: RosewoodUI.radiusSmall))
                             }
                             .contentShape(Rectangle())
                             .buttonStyle(.plain)
@@ -67,7 +67,7 @@ struct ReferencesPanelView: View {
                             .accessibilityIdentifier("reference-row-\(index)")
                         }
                     }
-                    .padding(12)
+                    .padding(RosewoodUI.spacing5)
                 }
             }
         }

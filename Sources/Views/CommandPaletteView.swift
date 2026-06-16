@@ -159,7 +159,7 @@ struct CommandPaletteView: View {
         VStack(alignment: .leading, spacing: RosewoodUI.spacing3) {
             HStack(spacing: RosewoodUI.spacing3) {
                 Image(systemName: titleIcon)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(RosewoodType.bodyStrong)
                     .foregroundColor(themeColors.accent)
 
                 TextField(placeholder, text: queryBinding)

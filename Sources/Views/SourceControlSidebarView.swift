@@ -250,7 +250,7 @@ private struct SourceControlChangeRowView: View {
 
     @ViewBuilder
     private var inlineActions: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: RosewoodUI.spacing2) {
             quickActionButton(
                 title: "Open In Editor",
                 systemImage: "doc.text",

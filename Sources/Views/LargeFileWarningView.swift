@@ -11,7 +11,7 @@ struct LargeFileWarningView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 8) {
+            HStack(spacing: RosewoodUI.spacing3) {
                 Image(systemName: "bolt.horizontal.circle")
                     .foregroundColor(themeColors.warning)
 
