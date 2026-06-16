@@ -271,7 +271,7 @@ struct ContentView: View {
     }
 
     private var emptyStateView: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: RosewoodUI.spacing5) {
             Spacer()
             Image(systemName: "folder.badge.plus")
                 .font(.system(size: 40, weight: .regular))
@@ -347,7 +347,7 @@ struct ContentView: View {
                     projectViewModel.jumpToLineInSelectedTab(line)
                 }
                 .padding(.horizontal, RosewoodUI.spacing5)
-                .padding(.vertical, 6)
+                .padding(.vertical, RosewoodUI.spacing2)
                 .background(themeColors.panelBackground)
             }
 
@@ -633,7 +633,7 @@ struct SearchSidebarView: View {
 
                 DisclosureGroup(isExpanded: $showsFilterControls) {
                     HStack(spacing: 8) {
-                        HStack(spacing: 6) {
+                        HStack(spacing: RosewoodUI.spacing2) {
                             Image(systemName: "line.3.horizontal.decrease.circle")
                                 .foregroundColor(themeColors.mutedText)
 
@@ -644,13 +644,13 @@ struct SearchSidebarView: View {
                         }
                         .rosewoodInputSurface(themeColors)
 
-                        HStack(spacing: 6) {
+                        HStack(spacing: RosewoodUI.spacing2) {
                             Image(systemName: "line.3.horizontal.decrease.circle.fill")
                                 .foregroundColor(themeColors.mutedText)
 
                             TextField("Exclude glob", text: $projectViewModel.projectSearchExcludeGlob)
                                 .textFieldStyle(.plain)
-                                .font(.system(size: 12))
+                                .font(RosewoodType.subheadline)
                                 .accessibilityIdentifier("project-search-exclude-glob")
                         }
                         .rosewoodInputSurface(themeColors)
@@ -759,7 +759,7 @@ struct SearchSidebarView: View {
                                                 .font(.system(size: 11, weight: .medium))
                                                 .foregroundColor(themeColors.foreground)
                                             Text(file.displayPath)
-                                                .font(.system(size: 11))
+                                                .font(RosewoodType.caption)
                                                 .foregroundColor(themeColors.mutedText)
                                                 .lineLimit(1)
                                             Spacer()
@@ -824,7 +824,7 @@ struct SearchSidebarView: View {
                                 projectViewModel.collapseAllProjectSearchGroups()
                             }
                             .buttonStyle(.borderless)
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(RosewoodType.captionStrong)
                             .foregroundColor(themeColors.accent)
                             .accessibilityIdentifier("project-search-collapse-all")
                         }
@@ -834,7 +834,7 @@ struct SearchSidebarView: View {
                                 projectViewModel.expandAllProjectSearchGroups()
                             }
                             .buttonStyle(.borderless)
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(RosewoodType.captionStrong)
                             .foregroundColor(themeColors.accent)
                             .accessibilityIdentifier("project-search-expand-all")
                         }
@@ -929,7 +929,7 @@ struct SearchSidebarView: View {
     private var searchResultsSurface: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 10) {
+                LazyVStack(alignment: .leading, spacing: RosewoodUI.spacing4) {
                     ForEach(Array(projectViewModel.groupedProjectSearchResults.enumerated()), id: \.element.id) { sectionIndex, group in
                         VStack(alignment: .leading, spacing: 0) {
                             searchGroupHeader(group, sectionIndex: sectionIndex)
@@ -982,7 +982,7 @@ struct SearchSidebarView: View {
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(group.fileName)
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(RosewoodType.subheadlineStrong)
                         .foregroundColor(themeColors.foreground)
 
                     Text(group.displayPath)
@@ -1000,7 +1000,7 @@ struct SearchSidebarView: View {
                         projectViewModel.toggleProjectSearchGroupSelection(group)
                     }
                     .buttonStyle(.borderless)
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(RosewoodType.micro)
                     .foregroundColor(themeColors.accent)
                     .accessibilityIdentifier("project-search-select-file-\(sectionIndex)")
 
@@ -1008,7 +1008,7 @@ struct SearchSidebarView: View {
                         projectViewModel.replaceProjectSearchFileGroup(group)
                     }
                     .buttonStyle(.borderless)
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(RosewoodType.micro)
                     .foregroundColor(themeColors.warning)
                     .disabled(!projectViewModel.canReplaceProjectSearchResults || projectViewModel.isProjectSearchGroupCollapsed(group))
                     .accessibilityIdentifier("project-search-replace-file-\(sectionIndex)")
@@ -1238,13 +1238,14 @@ struct NewItemSheet: View {
                 Spacer()
 
                 Button("Create") {
-                    if !name.isEmpty {
-                        onCreate(name)
+                    let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if FileService.isValidFileName(trimmed) {
+                        onCreate(trimmed)
                         dismiss()
                     }
                 }
                 .keyboardShortcut(.defaultAction)
-                .disabled(name.isEmpty)
+                .disabled(!FileService.isValidFileName(name))
                 .buttonStyle(.borderedProminent)
                 .tint(themeColors.accent)
             }
@@ -1315,13 +1316,14 @@ struct RenameSheet: View {
                 Spacer()
 
                 Button("Rename") {
-                    if !newName.isEmpty {
-                        onRename(newName)
+                    let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if FileService.isValidFileName(trimmed) {
+                        onRename(trimmed)
                         dismiss()
                     }
                 }
                 .keyboardShortcut(.defaultAction)
-                .disabled(newName.isEmpty)
+                .disabled(!FileService.isValidFileName(newName))
                 .buttonStyle(.borderedProminent)
                 .tint(themeColors.accent)
             }

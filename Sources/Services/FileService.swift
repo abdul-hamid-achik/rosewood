@@ -620,8 +620,33 @@ final class FileService {
         return try readDocument(at: url).content
     }
 
+    /// Validates a user-entered file/folder name as a SINGLE safe path component. Rejects
+    /// empty/whitespace-only names, path separators, "."/".." (which would escape the target
+    /// directory), and characters that are illegal or misleading in macOS file names.
+    static func isValidFileName(_ name: String) -> Bool {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed != ".", trimmed != ".." else { return false }
+        return !trimmed.contains { $0 == "/" || $0 == ":" || $0 == "\0" || $0.isNewline }
+    }
+
+    /// Returns the trimmed name when valid, otherwise throws so callers surface a clear error
+    /// instead of silently writing outside the directory or creating a spuriously-named item.
+    static func validatedFileName(_ name: String) throws -> String {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard isValidFileName(trimmed) else {
+            throw CocoaError(.fileWriteInvalidFileName)
+        }
+        return trimmed
+    }
+
     func createFile(named name: String, in directory: URL) throws -> URL {
-        let fileURL = directory.appendingPathComponent(name)
+        let fileName = try Self.validatedFileName(name)
+        let fileURL = directory.appendingPathComponent(fileName)
+        // createFile(atPath:) returns true AND truncates an existing file to 0 bytes, so the
+        // `didCreate` guard alone would silently destroy data. Reject collisions up front.
+        guard !FileManager.default.fileExists(atPath: fileURL.path) else {
+            throw CocoaError(.fileWriteFileExists)
+        }
         let didCreate = FileManager.default.createFile(atPath: fileURL.path, contents: Data())
         guard didCreate else {
             throw CocoaError(.fileWriteUnknown)
@@ -630,7 +655,8 @@ final class FileService {
     }
 
     func createDirectory(named name: String, in directory: URL) throws -> URL {
-        let dirURL = directory.appendingPathComponent(name)
+        let dirName = try Self.validatedFileName(name)
+        let dirURL = directory.appendingPathComponent(dirName)
         try FileManager.default.createDirectory(at: dirURL, withIntermediateDirectories: false)
         return dirURL
     }
@@ -641,7 +667,8 @@ final class FileService {
     }
 
     func rename(from oldURL: URL, to newName: String) throws -> URL {
-        let newURL = oldURL.deletingLastPathComponent().appendingPathComponent(newName)
+        let validName = try Self.validatedFileName(newName)
+        let newURL = oldURL.deletingLastPathComponent().appendingPathComponent(validName)
         try FileManager.default.moveItem(at: oldURL, to: newURL)
         return newURL
     }
@@ -721,7 +748,12 @@ final class FileService {
                 continue
             }
 
-            let lines = content.components(separatedBy: .newlines)
+            // Split on grapheme-cluster newlines (Character.isNewline) so a CRLF "\r\n" counts
+            // as ONE line break — matching rangeForLineNumber (used by replace) and the editor's
+            // .byLines jump. `components(separatedBy: .newlines)` is unicode-scalar based and
+            // double-counts every "\r\n", so CRLF files got wrong line numbers → mis-jumps and
+            // silently-dropped replaces.
+            let lines = content.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline).map(String.init)
             for (index, line) in lines.enumerated() {
                 let lineMatches = matcher.ranges(in: line)
                 guard !lineMatches.isEmpty else { continue }

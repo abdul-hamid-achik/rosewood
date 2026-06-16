@@ -2551,6 +2551,10 @@ final class ProjectViewModel: ObservableObject {
     func reloadFileTree() {
         reloadFileTreeTask?.cancel()
         reloadWorkspaceFilesTask?.cancel()
+        // Abandon any in-flight per-folder child loads: their token guard will now fail, so a
+        // slow loadChildrenAsync that completes after this authoritative reload can't overwrite
+        // the fresh subtree with a stale (pre-change) snapshot.
+        childrenLoadTokens.removeAll()
         fileTreeLoadToken = UUID()
         workspaceFilesLoadToken = UUID()
         let token = fileTreeLoadToken

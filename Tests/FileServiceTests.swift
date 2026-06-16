@@ -507,3 +507,88 @@ struct FileServiceTests {
         """)
     }
 }
+
+struct FileServiceFileOperationTests {
+    private func makeTempDir() -> URL {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    @Test
+    func createFileRejectsCollisionWithoutTruncatingExistingFile() throws {
+        let dir = makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let existing = dir.appendingPathComponent("notes.txt")
+        try "precious data".write(to: existing, atomically: true, encoding: .utf8)
+
+        // "New File" with an existing name must NOT clobber the file (it used to truncate to 0 bytes).
+        #expect(throws: (any Error).self) {
+            _ = try FileService.shared.createFile(named: "notes.txt", in: dir)
+        }
+        #expect(try String(contentsOf: existing, encoding: .utf8) == "precious data")
+    }
+
+    @Test
+    func createFileSucceedsForNewNameAndTrimsWhitespace() throws {
+        let dir = makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let url = try FileService.shared.createFile(named: "  fresh.swift  ", in: dir)
+        #expect(url.lastPathComponent == "fresh.swift")
+        #expect(FileManager.default.fileExists(atPath: url.path))
+    }
+
+    @Test
+    func isValidFileNameRejectsUnsafeNames() {
+        #expect(FileService.isValidFileName("README.md"))
+        #expect(FileService.isValidFileName("My File.txt"))
+        #expect(!FileService.isValidFileName(""))
+        #expect(!FileService.isValidFileName("   "))
+        #expect(!FileService.isValidFileName("."))
+        #expect(!FileService.isValidFileName(".."))
+        #expect(!FileService.isValidFileName("../escape.txt"))
+        #expect(!FileService.isValidFileName("sub/file.txt"))
+        #expect(!FileService.isValidFileName("a:b"))
+    }
+
+    @Test
+    func createAndRenameRejectPathTraversalNames() throws {
+        let dir = makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        // None of these may escape the directory or silently become a move.
+        #expect(throws: (any Error).self) { _ = try FileService.shared.createFile(named: "../escape.txt", in: dir) }
+        #expect(throws: (any Error).self) { _ = try FileService.shared.createDirectory(named: "../escapeDir", in: dir) }
+        #expect(throws: (any Error).self) { _ = try FileService.shared.createFile(named: "   ", in: dir) }
+
+        let file = try FileService.shared.createFile(named: "keep.txt", in: dir)
+        #expect(throws: (any Error).self) { _ = try FileService.shared.rename(from: file, to: "sub/moved.txt") }
+        // The original is untouched after a rejected rename.
+        #expect(FileManager.default.fileExists(atPath: file.path))
+    }
+}
+
+struct FileServiceCRLFSearchTests {
+    @Test
+    func scanningSearchReportsCorrectLineNumbersForCRLFFiles() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        // Windows-style CRLF file; the search term sits on logical line 3.
+        let crlf = "first line\r\nsecond line\r\nTARGET here\r\nfourth line\r\n"
+        try crlf.write(to: root.appendingPathComponent("windows.txt"), atomically: true, encoding: .utf8)
+
+        // Force the scanning fallback (no ripgrep) so we exercise the line-splitting path.
+        let service = FileService()
+        service.preferRipgrepProjectSearch = false
+
+        let results = service.searchProject(at: root, query: "TARGET")
+        #expect(results.count == 1)
+        // Was reported as ~5 before the fix because "\r\n" was double-counted.
+        #expect(results.first?.lineNumber == 3)
+        #expect(results.first?.lineText == "TARGET here")
+    }
+}
