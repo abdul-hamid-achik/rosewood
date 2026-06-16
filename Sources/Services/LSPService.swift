@@ -368,6 +368,9 @@ final class MockLSPService: LSPServiceProtocol, ObservableObject {
     private(set) var projectRootCalls: [URL?] = []
     private(set) var referenceResultsByURI: [String: [LSPLocation]] = [:]
     private(set) var referencesCalls: [(uri: String, language: String, position: LSPPosition)] = []
+    var semanticTokensByURI: [String: SemanticTokens] = [:]
+    var semanticTokensLegendByLanguage: [String: SemanticTokensLegend] = [:]
+    private(set) var semanticTokensCalls: [(uri: String, language: String)] = []
 
     func setProjectRoot(_ url: URL?) {
         projectRootCalls.append(url)
@@ -412,8 +415,13 @@ final class MockLSPService: LSPServiceProtocol, ObservableObject {
         referencesCalls.append((uri, language, position))
         return referenceResultsByURI[uri] ?? []
     }
-    func semanticTokens(uri: String, language: String) async -> SemanticTokens? { nil }
-    func semanticTokensLegend(for language: String) -> SemanticTokensLegend? { nil }
+    func semanticTokens(uri: String, language: String) async -> SemanticTokens? {
+        semanticTokensCalls.append((uri, language))
+        return semanticTokensByURI[uri]
+    }
+    func semanticTokensLegend(for language: String) -> SemanticTokensLegend? {
+        semanticTokensLegendByLanguage[language]
+    }
 
     func serverAvailable(for language: String) -> Bool {
         if case .ready = serverStatus[language] { return true }

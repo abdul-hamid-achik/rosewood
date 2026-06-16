@@ -244,6 +244,13 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
         nsView.lineNumberView.onToggleBreakpoint = onToggleBreakpoint
         nsView.lineNumberView.needsDisplay = true
         context.coordinator.applyExternalState(text: text, language: language)
+
+        // Re-fetch when the language server transitions to ready (the file may have opened before
+        // the server finished launching). Edge-triggered off coordinator state so it fires once.
+        if isLanguageServerAvailable, !context.coordinator.observedServerAvailable {
+            context.coordinator.requestSemanticTokens()
+        }
+        context.coordinator.observedServerAvailable = isLanguageServerAvailable
     }
 
     final class Coordinator: NSObject, NSTextViewDelegate, EditorTextViewMenuDelegate, NSUserInterfaceValidations {
@@ -264,6 +271,15 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
         private var mouseMonitor: Any?
         private var commandCancellables: Set<AnyCancellable> = []
         private var deferredHighlightTask: Task<Void, Never>?
+        private var semanticTokensTask: Task<Void, Never>?
+        // Tracked as coordinator state (not a per-call local) so the server false->true edge is
+        // observed reliably across SwiftUI update coalescing. Read/written by updateNSView.
+        var observedServerAvailable = false
+        // Edit fetches wait longer than the model's documentChanged debounce (300ms–1s, driven by
+        // ProjectViewModel) so the server has likely received the edit; open/server-ready fetches
+        // can be snappier. Stale results are still dropped by the text-equality guard.
+        private static let semanticTokensEditDebounceNanoseconds: UInt64 = 600_000_000
+        private static let semanticTokensOpenDebounceNanoseconds: UInt64 = 150_000_000
         private let dwellDelayNanoseconds: UInt64 = 250_000_000
         private var dwellTimer: Task<Void, Never>?
         private var lastHoverPoint: NSPoint?
@@ -285,6 +301,7 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
             hoverTask?.cancel()
             referencesTask?.cancel()
             deferredHighlightTask?.cancel()
+            semanticTokensTask?.cancel()
         }
 
         func attach(to containerView: EditorContainerView) {
@@ -387,6 +404,9 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
 
             refreshEditorDecorations(in: textView)
             updateCursorPosition(in: textView)
+            // Document open / external sync / theme / fold toggle: this path runs only when the
+            // display text actually (re)rendered, so it is the right place to (re)fetch tokens.
+            requestSemanticTokens()
         }
 
         private func applyPopupTheme() {
@@ -429,6 +449,9 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
             parent.text = updatedText
             refreshEditorDecorations(in: textView)
             updateCursorPosition(in: textView)
+            // Sole edit-path semantic trigger (the deferred-highlight tail deliberately does NOT
+            // also fire one). The longer debounce coalesces keystrokes and lets the server catch up.
+            requestSemanticTokens(debounceNanoseconds: Self.semanticTokensEditDebounceNanoseconds)
 
             // Completion: (re)trigger on . or :, narrow the list while typing identifier
             // characters, and dismiss on anything else.
@@ -1131,6 +1154,49 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
             requestCompletion(in: textView)
         }
 
+        // MARK: - Semantic Tokens
+
+        /// Fetch LSP semantic tokens for the current document and hand them to the container, which
+        /// caches the decode and re-applies it after every Highlightr pass. The version bump happens
+        /// synchronously (before the await) so a newer request supersedes this one; the result is
+        /// additionally dropped if the display text has changed by the time it resolves.
+        func requestSemanticTokens(debounceNanoseconds: UInt64 = Coordinator.semanticTokensOpenDebounceNanoseconds) {
+            guard let uri = parent.documentURI,
+                  let lspService = parent.lspService,
+                  let containerView,
+                  parent.isLanguageServerAvailable,
+                  parent.language != "plaintext" else { return }
+            let language = parent.language
+            let version = containerView.beginSemanticTokensRequest()
+            let textForTokens = containerView.currentDisplayText
+
+            semanticTokensTask?.cancel()
+            semanticTokensTask = Task { @MainActor [weak self] in
+                do {
+                    try await Task.sleep(nanoseconds: debounceNanoseconds)
+                } catch {
+                    return
+                }
+                guard let self,
+                      !Task.isCancelled,
+                      let containerView = self.containerView,
+                      version == containerView.currentSemanticTokensVersion else { return }
+
+                let tokens = await lspService.semanticTokens(uri: uri, language: language)
+                guard !Task.isCancelled,
+                      version == containerView.currentSemanticTokensVersion,
+                      let tokens,
+                      let legend = lspService.semanticTokensLegend(for: language) else { return }
+
+                containerView.applySemanticTokens(
+                    tokens,
+                    legend: legend,
+                    version: version,
+                    textForTokens: textForTokens
+                )
+            }
+        }
+
         func requestCompletion(in textView: NSTextView) {
             guard let uri = parent.documentURI, let lspService = parent.lspService else { return }
             let language = parent.language
@@ -1416,7 +1482,7 @@ final class EditorContainerView: NSView {
     var showLineNumbers: Bool
     var wordWrap: Bool
     var tabSize: Int
-    private var currentDisplayText = ""
+    private(set) var currentDisplayText = ""
     private var currentDisplayVersion = 0
     private let minimapWidthConstraint: NSLayoutConstraint
     private var lastMinimapCacheKey: MinimapCacheKey?
@@ -1427,9 +1493,10 @@ final class EditorContainerView: NSView {
     private let previewHighlightContextCharacters = 4_000
     private let highlightBufferCharacters = 2_000
     private var currentDocumentIdentity: String?
-    private var currentSemanticTokensVersion: Int = 0
-    private var semanticTokensRequestTask: Task<Void, Never>?
-    private let semanticTokensDebounceNanoseconds: UInt64 = 150_000_000
+    private(set) var currentSemanticTokensVersion = 0
+    private var semanticTokens: [DecodedSemanticToken] = []
+    private var semanticTokensText: String?
+    private let semanticTokensCharacterLimit = 200_000
 
     init(themeColors: ThemeColors, font: NSFont, showMinimap: Bool, showLineNumbers: Bool, wordWrap: Bool, tabSize: Int = 4) {
         self.editorFont = font
@@ -1680,6 +1747,9 @@ final class EditorContainerView: NSView {
             currentDocumentIdentity = documentIdentity
             hasCompletedInitialHighlight = false
             hasCompletedFullDocumentHighlight = false
+            // The NSTextView is reused across tabs; drop the previous document's tokens so they
+            // can never be repainted onto the new document at a highlight-pass tail.
+            invalidateSemanticTokens()
             highlightTask?.cancel()
             fullHighlightTask?.cancel()
             // A single NSTextView is reused across tabs. Clear the undo stack on document
@@ -1894,30 +1964,68 @@ final class EditorContainerView: NSView {
         if isFullDocumentHighlight {
             hasCompletedFullDocumentHighlight = true
         }
+        // Semantic tokens REFINE the syntax pass and use the same layoutManager temporary
+        // .foregroundColor that this method just (re)wrote, so they must land last. Re-applying
+        // the cached decode at every highlight tail keeps them alive across preview/full-doc/theme
+        // re-highlights without a network round-trip.
+        applyDecodedSemanticTokens()
     }
 
+    /// Bump the semantic-token version at REQUEST time (on the MainActor, before the Coordinator
+    /// awaits the server) so any in-flight older fetch is rejected when it finally resolves.
+    func beginSemanticTokensRequest() -> Int {
+        currentSemanticTokensVersion += 1
+        return currentSemanticTokensVersion
+    }
+
+    /// Accept a freshly-fetched token set: decode ONCE, cache the decoded ranges, then paint.
+    /// `textForTokens` is the display text that was current when the request was issued — the
+    /// server may have computed tokens for a version the user has since edited past, so we drop
+    /// the result unless that text is still on screen.
     func applySemanticTokens(
         _ tokens: SemanticTokens,
         legend: SemanticTokensLegend,
-        themeColors: ThemeColors,
-        version: Int
+        version: Int,
+        textForTokens: String
     ) {
         guard version == currentSemanticTokensVersion else { return }
-        guard !Task.isCancelled else { return }
+        guard textForTokens == currentDisplayText else { return }
 
         let decoder = SemanticTokenDecoder(legend: legend)
-        let decodedTokens = decoder.decode(tokens.data, text: currentDisplayText)
+        semanticTokens = decoder.decode(tokens.data, text: currentDisplayText)
+        semanticTokensText = currentDisplayText
+        applyDecodedSemanticTokens()
+    }
 
-        if let layoutManager = textView.layoutManager {
-            for token in decodedTokens {
-                let color = SemanticTokenDecoder.tokenTypeColor(token.tokenType, themeColors: themeColors)
-                guard token.range.location >= 0,
-                      NSMaxRange(token.range) <= (textView.string as NSString).length else { continue }
-                layoutManager.addTemporaryAttribute(.foregroundColor, value: color, forCharacterRange: token.range)
-            }
+    /// Paint the cached decoded tokens as temporary foreground colors. Idempotent, so it is safe to
+    /// call at the tail of every highlight pass. Colors resolve from `lastAppliedThemeColors` (the
+    /// theme the syntax pass just used — the stored `themeColors` is not kept current), so a theme
+    /// change repaints correctly via the re-highlight that follows it.
+    func applyDecodedSemanticTokens() {
+        guard !semanticTokens.isEmpty,
+              let semanticTokensText,
+              semanticTokensText == currentDisplayText else { return }
+        // LSP offsets are SOURCE offsets; while folds are active currentDisplayText is the FOLD
+        // display text, so applying them would miscolor. Skip until unfolded (re-fetched then).
+        guard lineNumberView.foldedLines.isEmpty else { return }
+        // Bound the per-pass main-thread paint loop; very large buffers skip semantic coloring.
+        guard (currentDisplayText as NSString).length <= semanticTokensCharacterLimit else { return }
+        guard let layoutManager = textView.layoutManager else { return }
+
+        let nsLength = (textView.string as NSString).length
+        for token in semanticTokens {
+            guard token.range.location >= 0,
+                  NSMaxRange(token.range) <= nsLength else { continue }
+            let color = SemanticTokenDecoder.tokenTypeColor(token.tokenType, themeColors: lastAppliedThemeColors)
+            layoutManager.addTemporaryAttribute(.foregroundColor, value: color, forCharacterRange: token.range)
         }
-
         textView.needsDisplay = true
+    }
+
+    /// Clear cached tokens (called on document-identity change, since the NSTextView is reused).
+    func invalidateSemanticTokens() {
+        semanticTokens = []
+        semanticTokensText = nil
     }
 
     private func highlightScope(for text: String) -> HighlightRequestScope {

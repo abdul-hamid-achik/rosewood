@@ -123,6 +123,7 @@
 		D14AA8B781DEA1C2E9ADE206 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F04254991DEF7AF54C480BF8 /* Assets.xcassets */; };
 		D3834D2A093A8C72CA338851 /* FileDocumentMetadata.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17BF0666103D21CB8A4E8843 /* FileDocumentMetadata.swift */; };
 		D46B27CC374CB78F1DF087B9 /* EditorTextView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E73822DD260043A47559D124 /* EditorTextView.swift */; };
+		D57D6FE5E524742A3AF9069B /* SemanticTokensTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C011DD604CCFB381026365EA /* SemanticTokensTests.swift */; };
 		D64F7B24D26CBD7AD0356934 /* RosewoodApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8474C926A543B4B2C342521D /* RosewoodApp.swift */; };
 		D98348D63AC1E5F2FA5DFF3B /* ImageViewerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FCF6E3B3F366096BD8D03DC /* ImageViewerView.swift */; };
 		DE1021E7F6B0E4E318BA699C /* EditorSupportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E02FD8EDAEF7187FA4699C70 /* EditorSupportTests.swift */; };
@@ -269,6 +270,7 @@
 		B8C3C5BC3586B4EE563DE1EA /* AppSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettings.swift; sourceTree = "<group>"; };
 		BE59BAFA59ADCE94A4A55ACF /* Rosewood.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Rosewood.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		BEF7C942E735DEBCD2A5BFD7 /* CompletionPopupController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompletionPopupController.swift; sourceTree = "<group>"; };
+		C011DD604CCFB381026365EA /* SemanticTokensTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SemanticTokensTests.swift; sourceTree = "<group>"; };
 		C03E37445832BA5ECDF32F6E /* CommandPaletteView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandPaletteView.swift; sourceTree = "<group>"; };
 		C13B8E092507E3C5394A265A /* ProjectViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectViewModel.swift; sourceTree = "<group>"; };
 		C28B64F31E1AD6F08FE90687 /* RosewoodUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RosewoodUITests.swift; sourceTree = "<group>"; };
@@ -537,6 +539,7 @@
 				6FF822CE9A7456B3020790E5 /* ProcessRunnerTests.swift */,
 				B25072856E4F991EB7945C59 /* ProjectViewModelTests.swift */,
 				0D4CED4111F985472CD0BD14 /* SemanticTokenDecoderTests.swift */,
+				C011DD604CCFB381026365EA /* SemanticTokensTests.swift */,
 				6F1BB1AF8037DFEEC1B4E515 /* SessionStateTests.swift */,
 				5E48046EAC1AFC34A149E2D8 /* TextMetricsTests.swift */,
 				8E7AC6B2D496D1C7E869DF96 /* WorkspaceSymbolIndexerTests.swift */,
@@ -833,6 +836,7 @@
 				127362C6B844AFC7EBA38E0B /* ProcessRunnerTests.swift in Sources */,
 				8008F88E4596F53955AB90E3 /* ProjectViewModelTests.swift in Sources */,
 				021DF07F4B1659C129939D94 /* SemanticTokenDecoderTests.swift in Sources */,
+				D57D6FE5E524742A3AF9069B /* SemanticTokensTests.swift in Sources */,
 				1EE229C88C2D31571E7BEE1F /* SessionStateTests.swift in Sources */,
 				17DFC4E1289EF3E5D643F386 /* TextMetricsTests.swift in Sources */,
 				8BF9DDB32544124024E8B08A /* WorkspaceSymbolIndexerTests.swift in Sources */,
