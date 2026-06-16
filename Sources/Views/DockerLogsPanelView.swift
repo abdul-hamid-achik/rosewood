@@ -4,22 +4,22 @@ struct DockerLogsPanelView: View {
     @EnvironmentObject var projectViewModel: ProjectViewModel
     @EnvironmentObject var dockerModel: DockerModel
     @EnvironmentObject private var configService: ConfigurationService
-    
+
     @State private var logLines: [LogLine] = []
     @State private var isStreaming: Bool = false
     @State private var autoScroll: Bool = true
     @State private var streamingTask: Task<Void, Never>?
-    
+
     private var themeColors: ThemeColors {
         configService.currentThemeColors
     }
-    
+
     var body: some View {
         VStack(spacing: 0) {
             headerView
-            
+
             ThemedDivider()
-            
+
             if dockerModel.selectedContainer == nil {
                 RosewoodEmptyState(
                     systemImage: "shippingbox",
@@ -43,7 +43,7 @@ struct DockerLogsPanelView: View {
             startStreamingLogs()
         }
     }
-    
+
     private var headerView: some View {
         HStack {
             if let container = dockerModel.selectedContainer {
@@ -51,12 +51,12 @@ struct DockerLogsPanelView: View {
                     Circle()
                         .fill(statusColor(for: container.status))
                         .frame(width: 8, height: 8)
-                    
+
                     Text(container.displayName)
                         .font(RosewoodType.subheadlineStrong)
                         .foregroundColor(themeColors.foreground)
                         .lineLimit(1)
-                    
+
                     Text(container.status.displayText)
                         .font(RosewoodType.micro)
                         .foregroundColor(statusColor(for: container.status))
@@ -70,9 +70,9 @@ struct DockerLogsPanelView: View {
                     .font(RosewoodType.subheadlineStrong)
                     .foregroundColor(themeColors.subduedText)
             }
-            
+
             Spacer()
-            
+
             Button {
                 clearLogs()
             } label: {
@@ -82,7 +82,7 @@ struct DockerLogsPanelView: View {
             }
             .buttonStyle(.borderless)
             .help("Clear Logs")
-            
+
             Button {
                 autoScroll.toggle()
             } label: {
@@ -92,7 +92,7 @@ struct DockerLogsPanelView: View {
             }
             .buttonStyle(.borderless)
             .help(autoScroll ? "Disable Auto-scroll" : "Enable Auto-scroll")
-            
+
             Button {
                 projectViewModel.bottomPanel = nil
                 dockerModel.selectedContainer = nil
@@ -106,7 +106,7 @@ struct DockerLogsPanelView: View {
         .padding(.horizontal, RosewoodUI.spacing5)
         .padding(.vertical, RosewoodUI.spacing3)
     }
-    
+
     private var logContentView: some View {
         ScrollViewReader { proxy in
             ScrollView {
@@ -117,7 +117,7 @@ struct DockerLogsPanelView: View {
                                 .fill(streamColor(for: line.stream))
                                 .frame(width: 6, height: 6)
                                 .padding(.top, 4)
-                            
+
                             Text(line.text)
                                 .font(RosewoodType.monoCaption)
                                 .foregroundColor(themeColors.foreground)
@@ -125,7 +125,7 @@ struct DockerLogsPanelView: View {
                         }
                         .id(line.id)
                     }
-                    
+
                     if isStreaming {
                         HStack(spacing: 8) {
                             ProgressView()
@@ -148,7 +148,7 @@ struct DockerLogsPanelView: View {
             }
         }
     }
-    
+
     private var emptyStateView: some View {
         VStack(spacing: RosewoodUI.spacing5) {
             if isStreaming {
@@ -169,7 +169,7 @@ struct DockerLogsPanelView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
-    
+
     private func startStreamingLogs() {
         guard let container = dockerModel.selectedContainer else { return }
 
@@ -203,11 +203,11 @@ struct DockerLogsPanelView: View {
         streamingTask = nil
         isStreaming = false
     }
-    
+
     private func clearLogs() {
         logLines = []
     }
-    
+
     private func statusColor(for status: DockerContainerStatus) -> Color {
         switch status {
         case .running:
@@ -222,7 +222,7 @@ struct DockerLogsPanelView: View {
             return themeColors.danger
         }
     }
-    
+
     private func streamColor(for stream: LogStream) -> Color {
         switch stream {
         case .stdout:

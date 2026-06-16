@@ -3,14 +3,14 @@ import Foundation
 @MainActor
 final class TerminalService: ObservableObject {
     static let shared = TerminalService()
-    
+
     @Published private(set) var sessions: [TerminalSession] = []
     @Published private(set) var currentSessionId: UUID?
 
     private init() {}
-    
+
     // MARK: - Session Management
-    
+
     func createSession(type: TerminalSessionType) -> TerminalSession {
         let session = TerminalSession(type: type)
         sessions.append(session)
@@ -33,7 +33,7 @@ final class TerminalService: ObservableObject {
             updateSessionActivity()
         }
     }
-    
+
     func currentSession() -> TerminalSession? {
         guard let id = currentSessionId else { return nil }
         return sessions.first { $0.id == id }

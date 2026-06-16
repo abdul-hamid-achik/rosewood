@@ -21,7 +21,7 @@ struct NotificationBannerView: View {
 struct NotificationBanner: View {
     let item: NotificationItem
     @EnvironmentObject private var configService: ConfigurationService
-    
+
     private var themeColors: ThemeColors {
         configService.currentThemeColors
     }

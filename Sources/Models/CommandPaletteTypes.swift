@@ -21,7 +21,7 @@ struct CommandPaletteAction: Identifiable {
 struct CommandPaletteSection: Identifiable {
     let title: String
     let actions: [CommandPaletteAction]
-    
+
     var id: String { title }
 }
 

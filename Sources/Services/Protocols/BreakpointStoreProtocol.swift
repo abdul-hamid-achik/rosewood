@@ -2,7 +2,7 @@ import Foundation
 
 protocol BreakpointStoreProtocol: AnyObject {
     var breakpoints: [Breakpoint] { get }
-    
+
     func addBreakpoint(_ breakpoint: Breakpoint)
     func removeBreakpoint(_ breakpoint: Breakpoint)
     func removeBreakpoint(at file: String, line: Int)

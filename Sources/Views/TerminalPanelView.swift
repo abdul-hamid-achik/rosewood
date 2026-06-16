@@ -34,7 +34,7 @@ struct TerminalPanelView: View {
 
             if !terminalModel.terminalSessions.isEmpty {
                 sessionPicker
-                
+
                 Button {
                     terminalModel.createTerminalSession()
                 } label: {
@@ -73,9 +73,9 @@ struct TerminalPanelView: View {
                     }
                 }
             }
-            
+
             Divider()
-            
+
             if let currentId = terminalModel.currentTerminalSessionId {
                 Button(role: .destructive) {
                     terminalModel.closeTerminalSession(currentId)
@@ -131,7 +131,7 @@ struct TerminalPanelView: View {
                     .font(RosewoodType.caption)
                     .foregroundColor(themeColors.foreground)
             }
-            
+
             HStack {
                 Text("Created:")
                     .font(RosewoodType.captionStrong)

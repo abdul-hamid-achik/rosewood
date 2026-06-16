@@ -276,7 +276,7 @@ struct TerminalSessionTests {
     func terminalSessionEquality() {
         let session1 = TerminalSession(type: .local(shell: "/bin/sh"))
         let session2 = TerminalSession(type: .local(shell: "/bin/sh"))
-        
+
         #expect(session1 != session2)
         #expect(session1 == session1)
     }
@@ -287,7 +287,7 @@ struct AppSettingsDockerTests {
     @Test
     func dockerDefaultSettings() {
         let settings = AppSettings.Docker()
-        
+
         #expect(settings.socketPath == "")
         #expect(settings.enableDockerIntegration == true)
         #expect(settings.autoDetectComposeFiles == true)
@@ -303,7 +303,7 @@ struct AppSettingsDockerTests {
     @Test
     func dockerComposeFilePatternsDefaults() {
         let settings = AppSettings.Docker()
-        
+
         #expect(settings.composeFilePatterns.contains("docker-compose.yml"))
         #expect(settings.composeFilePatterns.contains("docker-compose.yaml"))
         #expect(settings.composeFilePatterns.contains("compose.yml"))
@@ -314,14 +314,14 @@ struct AppSettingsDockerTests {
     func dockerResolvedSocketPathCustom() {
         var settings = AppSettings.Docker()
         settings.socketPath = "/custom/path/docker.sock"
-        
+
         #expect(settings.resolvedSocketPath == "/custom/path/docker.sock")
     }
 
     @Test
     func dockerResolvedSocketPathDefault() {
         let settings = AppSettings.Docker()
-        
+
         // Should default to /var/run/docker.sock when no custom path
         // or home docker path if it exists
         #expect(settings.resolvedSocketPath.contains("docker.sock"))
@@ -332,14 +332,14 @@ struct AppSettingsDockerTests {
         let settings = AppSettings.Docker()
         let encoder = TOMLEncoder()
         let tomlString = try encoder.encode(settings)
-        
+
         #expect(tomlString.contains("socket_path"))
         #expect(tomlString.contains("enable_docker_integration"))
         #expect(tomlString.contains("terminal_shell"))
-        
+
         let decoder = TOMLDecoder()
         let decoded = try decoder.decode(AppSettings.Docker.self, from: tomlString)
-        
+
         #expect(decoded.socketPath == settings.socketPath)
         #expect(decoded.enableDockerIntegration == settings.enableDockerIntegration)
         #expect(decoded.terminalShell == settings.terminalShell)

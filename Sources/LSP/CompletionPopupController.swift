@@ -226,7 +226,7 @@ private final class CompletionDataSource: NSObject, NSTableViewDataSource, NSTab
                 textField.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
                 detailField.leadingAnchor.constraint(greaterThanOrEqualTo: textField.trailingAnchor, constant: 8),
                 detailField.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -8),
-                detailField.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+                detailField.centerYAnchor.constraint(equalTo: cell.centerYAnchor)
             ])
         }
 

@@ -2,7 +2,7 @@ import Foundation
 
 protocol FileServiceProtocol: AnyObject {
     var currentRootDirectory: URL? { get set }
-    
+
     func readFile(at url: URL) throws -> String
     func readFileAsData(at url: URL) throws -> Data
     func readDocument(at url: URL) throws -> (content: String, metadata: FileDocumentMetadata)

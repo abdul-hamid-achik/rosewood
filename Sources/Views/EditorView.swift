@@ -194,18 +194,18 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
 
     func updateNSView(_ nsView: EditorContainerView, context: Context) {
         context.coordinator.parent = self
-        
+
         // Track if we need to update anything
         let fontChanged = nsView.textView.font != editorFont
         let themeChanged = nsView.themeColors != themeColors
         let minimapChanged = nsView.minimapView.isHidden == showMinimap
         let wordWrapChanged = nsView.textView.isHorizontallyResizable == wordWrap
-        
+
         // Apply incremental changes
         if fontChanged {
             nsView.textView.font = editorFont
         }
-        
+
         if themeChanged {
             nsView.applyTheme(
                 themeColors,
@@ -215,16 +215,16 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
                 wordWrap: wordWrap
             )
         }
-        
+
         if minimapChanged {
             nsView.minimapView.isHidden = !showMinimap
         }
-        
+
         if wordWrapChanged {
             nsView.textView.isHorizontallyResizable = !wordWrap
             nsView.textView.textContainer?.widthTracksTextView = wordWrap
         }
-        
+
         // Always update these (cheap operations)
         nsView.onViewportChange = onViewportChange
         nsView.lineNumberView.breakpointLines = breakpointLines
@@ -571,7 +571,7 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
 
         private var lineOffsetTable: [Int] = [0]
         private var lineTableNeedsUpdate = true
-        
+
         private func updateLineOffsetTable(for text: String) {
             lineOffsetTable = [0]
             var offset = 0
@@ -582,16 +582,16 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
             }
             lineTableNeedsUpdate = false
         }
-        
+
         private func lineAndColumn(for offset: Int, in text: String) -> (line: Int, column: Int) {
             if lineTableNeedsUpdate {
                 updateLineOffsetTable(for: text)
             }
-            
+
             // Binary search
             var low = 0
             var high = lineOffsetTable.count - 1
-            
+
             while low < high {
                 let mid = (low + high) / 2
                 if lineOffsetTable[mid] <= offset {
@@ -600,18 +600,18 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
                     high = mid
                 }
             }
-            
+
             let line = low
             let lineStart = line > 0 ? lineOffsetTable[line - 1] : 0
             let column = offset - lineStart + 1
-            
+
             return (line, column)
         }
 
         private func updateCursorPosition(in textView: NSTextView) {
             let text = textView.string
             let location = min(textView.selectedRange().location, (text as NSString).length)
-            
+
             let (line, column) = lineAndColumn(for: location, in: text)
             parent.onCursorChange(line, column)
         }
@@ -1679,7 +1679,7 @@ final class EditorContainerView: NSView {
 
         updateMinimap()
     }
-    
+
     private func applyBaseTextAttributes(themeColors: ThemeColors) {
         guard let textStorage = textView.textStorage else { return }
         let fullRange = NSRange(location: 0, length: textStorage.length)

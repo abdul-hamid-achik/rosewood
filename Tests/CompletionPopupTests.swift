@@ -124,7 +124,7 @@ struct CompletionPopupTests {
         let items = [
             makeItem(label: "stringValue", kind: .property),
             makeItem(label: "string"),
-            makeItem(label: "intValue", kind: .property),
+            makeItem(label: "intValue", kind: .property)
         ]
         popup.show(items: items, at: NSRect(x: 100, y: 100, width: 10, height: 14), in: window)
         popup.updateFilter("str")
@@ -137,7 +137,7 @@ struct CompletionPopupTests {
         let window = NSWindow()
         let items = [
             makeItem(label: "StringValue", kind: .property),
-            makeItem(label: "intValue", kind: .property),
+            makeItem(label: "intValue", kind: .property)
         ]
         popup.show(items: items, at: NSRect(x: 100, y: 100, width: 10, height: 14), in: window)
         popup.updateFilter("string")

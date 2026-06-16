@@ -4,11 +4,11 @@ import Combine
 @MainActor
 class NotificationManager: ObservableObject {
     static let shared = NotificationManager()
-    
+
     @Published var notifications: [NotificationItem] = []
-    
+
     private init() {}
-    
+
     func show(_ item: NotificationItem) {
         // Mutate inside an animation transaction so NotificationBannerView's move+opacity
         // transition actually plays on insertion.
@@ -40,7 +40,7 @@ struct NotificationItem: Identifiable {
     let actions: [NotificationAction]
     let duration: Double
     let autoDismiss: Bool
-    
+
     init(
         type: NotificationType = .info,
         title: String,
@@ -60,7 +60,7 @@ struct NotificationItem: Identifiable {
 
 enum NotificationType {
     case info, success, warning, error
-    
+
     var icon: String {
         switch self {
         case .info: return "info.circle.fill"

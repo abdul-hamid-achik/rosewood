@@ -196,7 +196,7 @@ final class ProjectViewModel: ObservableObject {
     }
     private var activeCursorBuffer: ActiveCursorBuffer?
 
-    @Published var selectedTabIndex: Int? = nil {
+    @Published var selectedTabIndex: Int? {
         willSet {
             // Flush the outgoing tab's live edits into its struct before the selection changes.
             // The buffer is keyed by tab id, so this single chokepoint correctly commits whatever
@@ -233,10 +233,10 @@ final class ProjectViewModel: ObservableObject {
     }
     @Published var showNewFileSheet: Bool = false
     @Published var showNewFolderSheet: Bool = false
-    @Published var renameItem: FileItem? = nil
+    @Published var renameItem: FileItem?
     @Published var quickOpenQuery: String = ""
     @Published var quickOpenActive: Bool = false
-    @Published var pendingNewItemDirectory: URL? = nil
+    @Published var pendingNewItemDirectory: URL?
     @Published var sidebarMode: SidebarMode = .explorer {
         didSet {
             handleSidebarModeChange(from: oldValue)
@@ -2671,7 +2671,7 @@ final class ProjectViewModel: ObservableObject {
             reloadFileTree()
             openFile(at: fileURL)
             refreshGitState()
-            
+
             // Show success notification
             NotificationManager.shared.show(NotificationItem(
                 type: .success,
@@ -2694,7 +2694,7 @@ final class ProjectViewModel: ObservableObject {
             expandedDirectoryPaths.insert(normalizedPath(for: folderURL))
             reloadFileTree()
             persistSession()
-            
+
             // Show success notification
             NotificationManager.shared.show(NotificationItem(
                 type: .success,
@@ -2728,7 +2728,7 @@ final class ProjectViewModel: ObservableObject {
             isLoadingFile = true
             loadingFileProgress = 0.0
             invalidateCachedFileContent(for: url)
-            
+
             let fileHandling = configService.settings.fileHandling
             let contentType = fileService.detectContentType(at: url, settings: fileHandling)
 
@@ -2917,9 +2917,8 @@ final class ProjectViewModel: ObservableObject {
             switch response {
             case .alertFirstButtonReturn:
                 guard saveTab(at: index) else { return false }
-            case .alertSecondButtonReturn:
+                case .alertSecondButtonReturn:
                 discardedUnsavedChanges = true
-                break
             default:
                 return false
             }

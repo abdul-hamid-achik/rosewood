@@ -117,7 +117,7 @@ final class LSPService: ObservableObject, LSPServiceProtocol {
         } else {
             delay = 300_000_000    // 300ms for normal files
         }
-        
+
         debounceTimers[uri] = Task { [weak self] in
             try? await Task.sleep(nanoseconds: delay)
             guard !Task.isCancelled else { return }

@@ -270,10 +270,10 @@ struct StatusBarView: View {
                 }
 
                 if projectViewModel.isStatusBarDetailsReady,
-                    (diagnosticsModel.currentTabDiagnosticCount.errors > 0
+                    diagnosticsModel.currentTabDiagnosticCount.errors > 0
                     || diagnosticsModel.currentTabDiagnosticCount.warnings > 0
                     || diagnosticsModel.workspaceDiagnosticCount.errors > 0
-                    || diagnosticsModel.workspaceDiagnosticCount.warnings > 0) {
+                    || diagnosticsModel.workspaceDiagnosticCount.warnings > 0 {
                     statusDivider
 
                     diagnosticsToggle
@@ -316,8 +316,8 @@ struct StatusBarView: View {
                     diagnosticsToggle
 
                     if shouldShowGitMetadata,
-                       (projectViewModel.gitRepositoryStatus.branchName != nil
-                        || projectViewModel.selectedGitChangeReviewLabel != nil) {
+                       projectViewModel.gitRepositoryStatus.branchName != nil
+                        || projectViewModel.selectedGitChangeReviewLabel != nil {
                         statusDivider
                     }
                 }

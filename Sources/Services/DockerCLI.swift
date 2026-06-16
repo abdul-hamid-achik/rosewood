@@ -2,9 +2,9 @@ import Foundation
 
 actor DockerCLI {
     private let fileManager = FileManager.default
-    
+
     // MARK: - Compose Operations
-    
+
     func composeUp(projectPath: URL) async throws {
         let process = try createDockerProcess()
         process.arguments = [
@@ -14,7 +14,7 @@ actor DockerCLI {
         ]
         try await runProcess(process)
     }
-    
+
     func composeDown(projectPath: URL) async throws {
         let process = try createDockerProcess()
         process.arguments = [
@@ -24,9 +24,9 @@ actor DockerCLI {
         ]
         try await runProcess(process)
     }
-    
+
     // MARK: - Log Streaming
-    
+
     func streamLogs(containerId: String, tail: Int?) async throws -> AsyncStream<LogLine> {
         let dockerPath = try findDockerPath()
 
@@ -84,9 +84,9 @@ actor DockerCLI {
             }
         }
     }
-    
+
     // MARK: - Compose Detection
-    
+
     func detectComposeProjects(
         projectRoot: URL?,
         scanDepth: Int,
@@ -95,16 +95,16 @@ actor DockerCLI {
     ) async -> [DockerComposeProject] {
         var projects: [DockerComposeProject] = []
         let patterns = composePatterns
-        
+
         guard let root = projectRoot else { return projects }
-        
+
         // Scan root directory
         projects.append(contentsOf: await scanForComposeFiles(
             in: root,
             patterns: patterns,
             containers: existingContainers
         ))
-        
+
         // Scan first-level subdirectories
         if scanDepth >= 1 {
             let commonPaths = [
@@ -113,7 +113,7 @@ actor DockerCLI {
                 root.appendingPathComponent("services"),
                 root.appendingPathComponent("dev")
             ]
-            
+
             for path in commonPaths where fileManager.fileExists(atPath: path.path) {
                 projects.append(contentsOf: await scanForComposeFiles(
                     in: path,
@@ -121,7 +121,7 @@ actor DockerCLI {
                     containers: existingContainers
                 ))
             }
-            
+
             // Also scan for directories containing docker-compose files
             if let contents = try? fileManager.contentsOfDirectory(at: root, includingPropertiesForKeys: [.isDirectoryKey]) {
                 for item in contents {
@@ -135,23 +135,23 @@ actor DockerCLI {
                 }
             }
         }
-        
+
         // Deduplicate by configPath
         var seen = Set<URL>()
         return projects.filter { project in
             seen.insert(project.configPath).inserted
         }
     }
-    
+
     // MARK: - Private Helpers
-    
+
     private func scanForComposeFiles(
         in directory: URL,
         patterns: [String],
         containers: [DockerContainer]
     ) async -> [DockerComposeProject] {
         var projects: [DockerComposeProject] = []
-        
+
         for pattern in patterns {
             let composePath = directory.appendingPathComponent(pattern)
             if fileManager.fileExists(atPath: composePath.path) {
@@ -162,10 +162,10 @@ actor DockerCLI {
                 projects.append(project)
             }
         }
-        
+
         return projects
     }
-    
+
     private func parseComposeProject(
         configPath: URL,
         containers: [DockerContainer]
@@ -173,13 +173,13 @@ actor DockerCLI {
         let workingDir = configPath.deletingLastPathComponent()
         let configName = configPath.lastPathComponent
         let projectName = workingDir.lastPathComponent
-        
+
         // Match containers to compose services
         let projectContainers = containers.filter { container in
             container.labels["com.docker.compose.project.config"] == configName ||
             container.labels["com.docker.compose.project"] == projectName
         }
-        
+
         let services: [DockerComposeService]
         if projectContainers.isEmpty {
             // No running containers - try to parse compose file for service names
@@ -187,7 +187,7 @@ actor DockerCLI {
         } else {
             services = projectContainers.map { DockerComposeService(from: $0) }
         }
-        
+
         return DockerComposeProject(
             id: configPath.path,
             name: projectName,
@@ -197,7 +197,7 @@ actor DockerCLI {
             services: services
         )
     }
-    
+
     private func parseComposeServices(from configPath: URL) async -> [DockerComposeService] {
         guard let contents = try? String(contentsOf: configPath, encoding: .utf8) else {
             return []
@@ -236,27 +236,27 @@ actor DockerCLI {
 
         return services
     }
-    
+
     private func createDockerProcess() throws -> Process {
         let process = Process()
         let dockerPath = try findDockerPath()
         process.executableURL = URL(fileURLWithPath: dockerPath)
         return process
     }
-    
+
     private func findDockerPath() throws -> String {
         let dockerPaths = [
             "/usr/local/bin/docker",
             "/usr/bin/docker",
             "/opt/homebrew/bin/docker"
         ]
-        
+
         for path in dockerPaths {
             if fileManager.fileExists(atPath: path) {
                 return path
             }
         }
-        
+
         // Try PATH
         let path = ProcessInfo.processInfo.environment["PATH"] ?? ""
         for dir in path.split(separator: ":") {
@@ -265,10 +265,10 @@ actor DockerCLI {
                 return dockerPath
             }
         }
-        
+
         throw DockerError.notConnected
     }
-    
+
     private func runProcess(_ process: Process) async throws {
         guard let executableURL = process.executableURL else {
             throw NSError(domain: "DockerCLI", code: 0, userInfo: [NSLocalizedDescriptionKey: "Docker executable is not configured"])

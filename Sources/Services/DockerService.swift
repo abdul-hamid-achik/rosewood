@@ -10,7 +10,7 @@ protocol DockerServiceProtocol: AnyObject {
     var volumes: [DockerVolume] { get }
     var composeProjects: [DockerComposeProject] { get }
     var isRefreshing: Bool { get }
-    
+
     func connect() async
     func disconnect()
     func refresh() async
@@ -27,14 +27,14 @@ protocol DockerServiceProtocol: AnyObject {
 @MainActor
 final class DockerService: DockerServiceProtocol, ObservableObject {
     static let shared = DockerService()
-    
+
     @Published private(set) var connectionState: DockerConnectionState = .connecting
     @Published private(set) var containers: [DockerContainer] = []
     @Published private(set) var images: [DockerImage] = []
     @Published private(set) var volumes: [DockerVolume] = []
     @Published private(set) var composeProjects: [DockerComposeProject] = []
     @Published private(set) var isRefreshing: Bool = false
-    
+
     private var dockerClient: DockerClient?
     private let cli = DockerCLI()
     private var refreshTask: Task<Void, Never>?
@@ -66,14 +66,14 @@ final class DockerService: DockerServiceProtocol, ObservableObject {
             connectionState = .disconnected(error: "Docker integration disabled")
         }
     }
-    
+
     var isAvailable: Bool {
         if case .connected = connectionState { return true }
         return false
     }
-    
+
     // MARK: - Connection Management
-    
+
     func connect() async {
         guard configService.settings.docker.enableDockerIntegration else {
             disconnect(reason: "Docker integration disabled", clearState: true)
@@ -83,9 +83,9 @@ final class DockerService: DockerServiceProtocol, ObservableObject {
         reconnectTimer?.invalidate()
         reconnectTimer = nil
         connectionState = .connecting
-        
+
         let socketPath = configService.settings.docker.resolvedSocketPath
-        
+
         do {
             guard let daemonURL = URL(httpURLWithSocketPath: socketPath) else {
                 throw DockerError.notConnected
@@ -95,7 +95,7 @@ final class DockerService: DockerServiceProtocol, ObservableObject {
             connectionState = .connected
             reconnectAttempts = 0
             startAutoRefresh()
-            
+
             await MainActor.run {
                 NotificationManager.shared.show(NotificationItem(
                     type: .success,
@@ -108,13 +108,13 @@ final class DockerService: DockerServiceProtocol, ObservableObject {
             handleConnectionError(error)
         }
     }
-    
+
     private func handleConnectionError(_ error: Error) {
         let errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-        
+
         if errorMessage.contains("ENOENT") || errorMessage.contains("No such file or directory") || errorMessage.contains("Connection refused") {
             connectionState = .notInstalled
-            
+
             Task { @MainActor in
                 NotificationManager.shared.show(NotificationItem(
                     type: .error,
@@ -133,7 +133,7 @@ final class DockerService: DockerServiceProtocol, ObservableObject {
             scheduleReconnect()
         }
     }
-    
+
     private func scheduleReconnect() {
         let settings = configService.settings.docker
         let maxAttempts = settings.maxReconnectAttempts
@@ -141,19 +141,19 @@ final class DockerService: DockerServiceProtocol, ObservableObject {
 
         reconnectTimer?.invalidate()
         reconnectTimer = nil
-        
+
         guard settings.enableDockerIntegration, reconnectAttempts < maxAttempts else { return }
-        
+
         reconnectAttempts += 1
         let delay = min(baseDelay * Int(pow(2.0, Double(reconnectAttempts - 1))), 30)
-        
+
         connectionState = .reconnecting(timeLeft: delay, attempt: reconnectAttempts)
-        
+
         var timeLeft = delay
         reconnectTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] timer in
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                
+
                 timeLeft -= 1
                 if timeLeft <= 0 {
                     timer.invalidate()
@@ -164,7 +164,7 @@ final class DockerService: DockerServiceProtocol, ObservableObject {
             }
         }
     }
-    
+
     func disconnect() {
         disconnect(reason: "Disconnected")
     }
@@ -183,15 +183,15 @@ final class DockerService: DockerServiceProtocol, ObservableObject {
         }
         connectionState = .disconnected(error: reason)
     }
-    
+
     // MARK: - Auto Refresh
-    
+
     private func startAutoRefresh() {
         let interval = configService.settings.docker.refreshIntervalSeconds
 
         refreshTask?.cancel()
         refreshTask = nil
-        
+
         refreshTask = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: UInt64(interval) * 1_000_000_000)
@@ -199,15 +199,15 @@ final class DockerService: DockerServiceProtocol, ObservableObject {
             }
         }
     }
-    
+
     // MARK: - Data Refresh
-    
+
     func refresh() async {
         guard case .connected = connectionState, let client = dockerClient else { return }
-        
+
         isRefreshing = true
         defer { isRefreshing = false }
-        
+
         do {
             async let containersTask = refreshContainers(client)
             async let imagesTask = refreshImages(client)
@@ -215,7 +215,7 @@ final class DockerService: DockerServiceProtocol, ObservableObject {
             let newContainers = try await containersTask
             async let composeTask = refreshComposeProjects(containers: newContainers)
             let (newImages, newVolumes, newProjects) = try await (imagesTask, volumesTask, composeTask)
-            
+
             await MainActor.run {
                 self.containers = newContainers
                 self.images = newImages
@@ -251,22 +251,22 @@ final class DockerService: DockerServiceProtocol, ObservableObject {
             startAutoRefresh()
         }
     }
-    
+
     // MARK: - Container Operations
-    
+
     func startContainer(id: String) async throws {
         guard let client = dockerClient else { throw DockerError.notConnected }
         try await client.containers.start(id)
         await refresh()
     }
-    
+
     func stopContainer(id: String, timeout: Int? = nil) async throws {
         guard let client = dockerClient else { throw DockerError.notConnected }
         let timeoutValue = timeout.map { UInt($0) }
         try await client.containers.stop(id, timeout: timeoutValue)
         await refresh()
     }
-    
+
     func restartContainer(id: String, timeout: Int? = nil) async throws {
         guard let client = dockerClient else { throw DockerError.notConnected }
         let timeoutValue = timeout.map { UInt($0) }
@@ -274,35 +274,35 @@ final class DockerService: DockerServiceProtocol, ObservableObject {
         try await client.containers.start(id)
         await refresh()
     }
-    
+
     func removeContainer(id: String, force: Bool = false) async throws {
         guard let client = dockerClient else { throw DockerError.notConnected }
         try await client.containers.remove(id, force: force, removeAnonymousVolumes: false)
         await refresh()
     }
-    
+
     // MARK: - Image Operations
-    
+
     func removeImage(id: String, force: Bool = false) async throws {
         guard let client = dockerClient else { throw DockerError.notConnected }
         try await client.images.remove(id, force: force)
         await refresh()
     }
-    
+
     // MARK: - Compose Operations (via CLI)
-    
+
     func composeUp(projectPath: URL) async throws {
         try await cli.composeUp(projectPath: projectPath)
         await refresh()
     }
-    
+
     func composeDown(projectPath: URL) async throws {
         try await cli.composeDown(projectPath: projectPath)
         await refresh()
     }
-    
+
     // MARK: - Log Streaming
-    
+
     func streamLogs(containerId: String, tail: Int? = 500) -> AsyncStream<LogLine> {
         AsyncStream { continuation in
             let task = Task {
@@ -327,9 +327,9 @@ final class DockerService: DockerServiceProtocol, ObservableObject {
             }
         }
     }
-    
+
     // MARK: - Private Helpers
-    
+
     private func refreshContainers(_ client: DockerClient) async throws -> [DockerContainer] {
         let result = try await client.containers.list(all: true)
         return result.map { container in
@@ -352,7 +352,7 @@ final class DockerService: DockerServiceProtocol, ObservableObject {
             )
         }
     }
-    
+
     private func mapContainerStatus(_ state: String?) -> DockerContainerStatus {
         guard let state = state else { return .exited }
         switch state.lowercased() {
@@ -364,7 +364,7 @@ final class DockerService: DockerServiceProtocol, ObservableObject {
         default: return .exited
         }
     }
-    
+
     private func refreshImages(_ client: DockerClient) async throws -> [DockerImage] {
         let result = try await client.images.list(all: true)
         return result.map { image in
@@ -377,7 +377,7 @@ final class DockerService: DockerServiceProtocol, ObservableObject {
             )
         }
     }
-    
+
     private func refreshVolumes(_ client: DockerClient) async throws -> [DockerVolume] {
         let result = try await client.volumes.list()
         return result.map { volume in
@@ -389,10 +389,10 @@ final class DockerService: DockerServiceProtocol, ObservableObject {
             )
         }
     }
-    
+
     private func refreshComposeProjects(containers: [DockerContainer]) async -> [DockerComposeProject] {
         guard configService.settings.docker.autoDetectComposeFiles else { return [] }
-        
+
         let projectRoot = configService.projectConfigURL?.deletingLastPathComponent()
         let patterns = configService.settings.docker.composeFilePatterns
         return await cli.detectComposeProjects(
@@ -410,7 +410,7 @@ enum DockerError: LocalizedError {
     case imageNotFound(id: String)
     case composeFileNotFound(path: String)
     case invalidSocketPath(path: String)
-    
+
     var errorDescription: String? {
         switch self {
         case .notConnected: return "Docker is not connected"

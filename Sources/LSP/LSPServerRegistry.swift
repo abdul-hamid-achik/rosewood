@@ -158,7 +158,7 @@ enum LSPServerRegistry {
             languageId: "ocaml",
             command: "ocamllsp",
             discoveryMethod: .pathLookup(name: "ocamllsp")
-        ),
+        )
     ]
 
     private static var resolvedPaths: [String: String?] = [:]
@@ -297,7 +297,7 @@ enum LSPServerRegistry {
             "/opt/homebrew/bin/\(name)",
             "\(NSHomeDirectory())/.cargo/bin/\(name)",
             "/usr/bin/\(name)",
-            "\(NSHomeDirectory())/.local/bin/\(name)",
+            "\(NSHomeDirectory())/.local/bin/\(name)"
         ]
 
         for path in commonPaths {
@@ -313,7 +313,7 @@ enum LSPServerRegistry {
             "/usr/local/bin",
             "/opt/homebrew/bin",
             "\(NSHomeDirectory())/.cargo/bin",
-            "\(NSHomeDirectory())/.local/bin",
+            "\(NSHomeDirectory())/.local/bin"
         ]
         let existingPath = env["PATH"] ?? "/usr/bin:/bin"
         env["PATH"] = (extraPaths + [existingPath]).joined(separator: ":")
