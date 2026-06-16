@@ -41,6 +41,12 @@ enum ProcessRunner {
         let process = Process()
         let stdoutPipe = Pipe()
         let stderrPipe = Pipe()
+        // Mark the pipe fds close-on-exec so an unrelated CONCURRENT spawn can't inherit them
+        // before its own exec and hold a write-end open — which would withhold EOF from our reader
+        // and hang the drain (the root cause of intermittent CI test hangs under parallel spawns).
+        // Our own child still receives stdout/stderr: Process dup2's the write fds onto 1/2 in the
+        // child, and dup2 clears close-on-exec on the target.
+        setCloseOnExec(stdoutPipe, stderrPipe)
         let stdoutReader = PipeReader(pipe: stdoutPipe)
         let stderrReader = PipeReader(pipe: stderrPipe)
 
@@ -88,6 +94,18 @@ enum ProcessRunner {
             stdoutData: stdoutData,
             stderrData: stderrData
         )
+    }
+
+    private static func setCloseOnExec(_ pipes: Pipe...) {
+        for pipe in pipes {
+            for handle in [pipe.fileHandleForReading, pipe.fileHandleForWriting] {
+                let descriptor = handle.fileDescriptor
+                let flags = fcntl(descriptor, F_GETFD)
+                if flags != -1 {
+                    _ = fcntl(descriptor, F_SETFD, flags | FD_CLOEXEC)
+                }
+            }
+        }
     }
 
     private static func terminate(_ process: Process) {
@@ -145,8 +163,17 @@ private final class PipeReader: @unchecked Sendable {
         fileHandle.closeFile()
     }
 
-    func finish() -> Data {
-        semaphore.wait()
+    /// Wait for the background reader to hit EOF, but never block indefinitely. EOF can be withheld
+    /// when a pipe write-end stays open in another process — most often an unrelated concurrent
+    /// `posix_spawn` that inherited this pipe's write fd before exec (fd leak across parallel
+    /// spawns). Without a bound this turns a timed-out 2s command into an unbounded hang (the
+    /// `run` loop already killed the child, yet `run` can't return). After a grace period we force
+    /// the blocked `read(upToCount:)` to return by closing the handle, then collect what we have.
+    func finish(forceCloseAfter timeout: TimeInterval = 5.0) -> Data {
+        if semaphore.wait(timeout: .now() + timeout) == .timedOut {
+            fileHandle.closeFile()
+            semaphore.wait()
+        }
         return accumulator.snapshot()
     }
 }
