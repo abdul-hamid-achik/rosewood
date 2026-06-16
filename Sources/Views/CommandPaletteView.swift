@@ -335,11 +335,12 @@ struct CommandPaletteView: View {
                 }
 
                 if visibleActions.isEmpty && visibleItems.isEmpty {
-                    Text(emptyStateText)
-                        .font(RosewoodType.subheadline)
-                        .foregroundColor(themeColors.mutedText)
-                        .padding(RosewoodUI.spacing6)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    RosewoodEmptyState(
+                        systemImage: "magnifyingglass",
+                        title: emptyStateText,
+                        tint: themeColors.mutedText,
+                        fillsHeight: false
+                    )
                 }
             }
             .padding(.vertical, RosewoodUI.spacing2)

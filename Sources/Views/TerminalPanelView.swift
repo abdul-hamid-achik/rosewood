@@ -152,14 +152,13 @@ struct TerminalPanelView: View {
 
     private var emptyStateView: some View {
         VStack(spacing: RosewoodUI.spacing5) {
-            Image(systemName: "terminal")
-                .font(.system(size: 28))
-                .foregroundColor(themeColors.mutedText)
-            
-            Text("No terminals open")
-                .font(RosewoodType.subheadline)
-                .foregroundColor(themeColors.subduedText)
-            
+            RosewoodEmptyState(
+                systemImage: "terminal",
+                title: "No terminals open",
+                subtitle: "Open a terminal to run commands in your project.",
+                fillsHeight: false
+            )
+
             Button("Open Terminal") {
                 projectViewModel.openLocalTerminal()
             }

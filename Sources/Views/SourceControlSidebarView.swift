@@ -91,6 +91,12 @@ struct SourceControlSidebarView: View {
                 Spacer()
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if !projectViewModel.isGitToolAvailable {
+            SourceControlEmptyStateView(
+                iconName: "exclamationmark.triangle",
+                title: "Git Not Available",
+                message: "Git couldn’t be found on your PATH. Install Git (or make sure it’s on your PATH) to enable source control."
+            )
         } else if !projectViewModel.gitRepositoryStatus.isRepository {
             SourceControlEmptyStateView(
                 iconName: "arrow.triangle.branch",

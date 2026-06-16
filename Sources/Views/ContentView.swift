@@ -160,8 +160,15 @@ struct ContentView: View {
                 DebugSidebarView()
             } else if projectViewModel.sidebarMode == .docker {
                 DockerSidebarView()
+            } else if projectViewModel.isLoadingFileTree && projectViewModel.fileTree.isEmpty {
+                fileTreeLoadingView
             } else if projectViewModel.fileTree.isEmpty {
-                emptyStateView
+                // A folder IS open but has no files — don't show the "No Folder Open" CTA.
+                if projectViewModel.rootDirectory == nil {
+                    emptyStateView
+                } else {
+                    folderEmptyStateView
+                }
             } else {
                 VStack(spacing: 0) {
                     FileTreeView(items: projectViewModel.fileTree)
@@ -288,6 +295,28 @@ struct ContentView: View {
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var fileTreeLoadingView: some View {
+        VStack(spacing: RosewoodUI.spacing3) {
+            Spacer()
+            ProgressView()
+                .controlSize(.small)
+            Text("Loading files…")
+                .font(RosewoodType.caption)
+                .foregroundColor(themeColors.mutedText)
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var folderEmptyStateView: some View {
+        RosewoodEmptyState(
+            systemImage: "folder",
+            title: "This Folder Is Empty",
+            subtitle: "There are no files here yet.",
+            tint: themeColors.mutedText
+        )
     }
 
     private var editorArea: some View {

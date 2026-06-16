@@ -198,17 +198,8 @@ struct DockerSidebarView: View {
     }
 
     private func emptyState(icon: String, message: String) -> some View {
-        VStack(spacing: RosewoodUI.spacing3) {
-            Image(systemName: icon)
-                .font(.system(size: 24))
-                .foregroundColor(themeColors.mutedText)
-            Text(message)
-                .font(.system(size: 12))
-                .foregroundColor(themeColors.subduedText)
-                .multilineTextAlignment(.center)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, RosewoodUI.spacing6)
+        // Lives inside a RosewoodSidebarCard, so fillsHeight: false keeps it compact.
+        RosewoodEmptyState(systemImage: icon, title: message, fillsHeight: false)
     }
 
     private var connectionIcon: String {

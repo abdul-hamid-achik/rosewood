@@ -62,15 +62,12 @@ struct ImageViewerView: View {
                     ImageCanvasView(image: nsImage, zoomScale: zoomScale, themeColors: themeColors)
                         .background(themeColors.background)
                 } else {
-                    VStack(spacing: RosewoodUI.spacing5) {
-                        Image(systemName: "photo")
-                            .font(.system(size: 32))
-                            .foregroundColor(themeColors.mutedText)
-                        Text("Unable to render this image")
-                            .font(RosewoodType.bodyStrong)
-                            .foregroundColor(themeColors.subduedText)
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    RosewoodEmptyState(
+                        systemImage: "photo.badge.exclamationmark",
+                        title: "Unable to render this image",
+                        subtitle: "The file may be corrupt or use an unsupported format. Try opening it in another app.",
+                        tint: themeColors.warning
+                    )
                     .background(themeColors.background)
                 }
             }

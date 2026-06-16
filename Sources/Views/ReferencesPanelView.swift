@@ -102,6 +102,11 @@ struct ReferencesPanelView: View {
     }
 
     private var emptyStateView: some View {
-        RosewoodEmptyState(systemImage: "scope", title: "No references found.", tint: themeColors.accent)
+        RosewoodEmptyState(
+            systemImage: "scope",
+            title: "No references found.",
+            subtitle: "This symbol isn’t used elsewhere, or it’s local to this file. Place the cursor on a symbol and run Find References (⇧F12) to search again.",
+            tint: themeColors.accent
+        )
     }
 }

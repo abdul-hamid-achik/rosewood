@@ -152,12 +152,13 @@ struct DockerLogsPanelView: View {
                     .font(RosewoodType.subheadline)
                     .foregroundColor(themeColors.subduedText)
             } else {
-                Image(systemName: "doc.text")
-                    .font(.system(size: 28))
-                    .foregroundColor(themeColors.mutedText)
-                Text("No logs to display")
-                    .font(RosewoodType.subheadline)
-                    .foregroundColor(themeColors.subduedText)
+                RosewoodEmptyState(
+                    systemImage: "doc.text",
+                    title: "No logs to display",
+                    subtitle: dockerModel.selectedContainer?.status == .running
+                        ? "This container hasn’t written any output yet."
+                        : "Start the container to stream its logs."
+                )
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
