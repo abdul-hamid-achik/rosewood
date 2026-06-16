@@ -103,6 +103,7 @@ extension ProjectViewModel {
         dismissGitDiffWorkspace()
         selectedGitDiff = nil
         selectedGitDiffPath = nil
+        gitDiffLoadFailed = false
         isLoadingGitDiff = false
         if isGitDiffPanelVisible {
             bottomPanel = nil
@@ -152,12 +153,13 @@ extension ProjectViewModel {
         let token = gitDiffToken
         selectedGitDiffPath = changedFile.path
         selectedGitDiff = nil
+        gitDiffLoadFailed = false
         isLoadingGitDiff = true
 
         let normalizedRootPath = rootDirectory.map(normalizedPath(for:))
         gitDiffTask = Task { [weak self] in
             guard let self else { return }
-            let diff = await self.gitService.diff(for: changedFile, projectRoot: self.rootDirectory)
+            let outcome = await self.gitService.diff(for: changedFile, projectRoot: self.rootDirectory)
             guard !Task.isCancelled,
                   self.gitDiffToken == token,
                   self.selectedGitDiffPath == changedFile.path,
@@ -165,7 +167,17 @@ extension ProjectViewModel {
                 return
             }
 
-            self.selectedGitDiff = diff
+            switch outcome {
+            case .diff(let result):
+                self.selectedGitDiff = result
+                self.gitDiffLoadFailed = false
+            case .noChanges:
+                self.selectedGitDiff = nil
+                self.gitDiffLoadFailed = false
+            case .failed:
+                self.selectedGitDiff = nil
+                self.gitDiffLoadFailed = true
+            }
             self.isLoadingGitDiff = false
         }
     }
@@ -173,6 +185,7 @@ extension ProjectViewModel {
     private func refreshSelectedGitDiffIfNeeded() {
         guard let selectedGitDiffPath else {
             selectedGitDiff = nil
+            gitDiffLoadFailed = false
             isLoadingGitDiff = false
             return
         }
@@ -246,6 +259,7 @@ extension ProjectViewModel {
         gitRepositoryStatus = .empty
         selectedGitDiff = nil
         selectedGitDiffPath = nil
+        gitDiffLoadFailed = false
         currentLineBlame = nil
         isRefreshingGitStatus = false
         isLoadingGitDiff = false

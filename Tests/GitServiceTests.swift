@@ -35,16 +35,39 @@ struct GitServiceTests {
         let status = await GitService().repositoryStatus(for: repositoryURL)
         let changedFile = try #require(status.changedFiles.first { $0.path == "Tracked.swift" })
 
-        let diff = await GitService().diff(for: changedFile, projectRoot: repositoryURL)
+        let outcome = await GitService().diff(for: changedFile, projectRoot: repositoryURL)
 
-        #expect(diff?.path == "Tracked.swift")
-        #expect(diff?.text.contains("-let tracked = 1") == true)
-        #expect(diff?.text.contains("+let tracked = 2") == true)
-        #expect(diff?.hunkCount == 1)
-        #expect(diff?.additionCount == 1)
-        #expect(diff?.deletionCount == 1)
-        #expect(diff?.hunks.first?.rows.first?.leftText == "let tracked = 1")
-        #expect(diff?.hunks.first?.rows.first?.rightText == "let tracked = 2")
+        guard case .diff(let diff) = outcome else {
+            Issue.record("expected a diff outcome, got \(outcome)")
+            return
+        }
+        #expect(diff.path == "Tracked.swift")
+        #expect(diff.text.contains("-let tracked = 1") == true)
+        #expect(diff.text.contains("+let tracked = 2") == true)
+        #expect(diff.hunkCount == 1)
+        #expect(diff.additionCount == 1)
+        #expect(diff.deletionCount == 1)
+        #expect(diff.hunks.first?.rows.first?.leftText == "let tracked = 1")
+        #expect(diff.hunks.first?.rows.first?.rightText == "let tracked = 2")
+    }
+
+    @Test
+    func diffReturnsFailedOutsideAGitRepository() async throws {
+        // A directory that is not inside any git repository can't resolve a repo root,
+        // so the diff must report .failed rather than collapsing to a "no diff" outcome.
+        let nonRepo = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: nonRepo, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: nonRepo) }
+
+        let changedFile = GitChangedFile(
+            path: "Whatever.swift",
+            previousPath: nil,
+            kind: .modified,
+            indexStatus: " ",
+            workingTreeStatus: "M"
+        )
+        let outcome = await GitService().diff(for: changedFile, projectRoot: nonRepo)
+        #expect(outcome == .failed)
     }
 
     @Test

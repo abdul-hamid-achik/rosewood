@@ -1,9 +1,18 @@
 import Foundation
 
+/// Outcome of loading a diff, so the UI can tell a real load FAILURE (repo can't be resolved /
+/// git errored) apart from a legitimate empty diff (e.g. an empty untracked file) — both of
+/// which previously collapsed to `nil` and rendered as "No diff available".
+enum GitDiffOutcome: Equatable {
+    case diff(GitDiffResult)
+    case noChanges
+    case failed
+}
+
 protocol GitServiceProtocol: AnyObject {
     func toolAvailable() async -> Bool
     func repositoryStatus(for projectRoot: URL?) async -> GitRepositoryStatus
-    func diff(for changedFile: GitChangedFile, projectRoot: URL?) async -> GitDiffResult?
+    func diff(for changedFile: GitChangedFile, projectRoot: URL?) async -> GitDiffOutcome
     func blame(for fileURL: URL?, line: Int, projectRoot: URL?) async -> GitBlameInfo?
     func stage(changedFile: GitChangedFile, projectRoot: URL?) async -> GitOperationResult
     func unstage(changedFile: GitChangedFile, projectRoot: URL?) async -> GitOperationResult
@@ -50,14 +59,14 @@ final class GitService: GitServiceProtocol {
         }.value
     }
 
-    func diff(for changedFile: GitChangedFile, projectRoot: URL?) async -> GitDiffResult? {
+    func diff(for changedFile: GitChangedFile, projectRoot: URL?) async -> GitDiffOutcome {
         guard let projectRoot else {
-            return nil
+            return .failed
         }
 
         return await Task.detached(priority: .utility) { [self] in
             guard let repositoryRoot = try? resolveRepositoryRoot(for: projectRoot) else {
-                return nil
+                return .failed
             }
 
             let diffText: String
@@ -92,8 +101,8 @@ final class GitService: GitServiceProtocol {
             }
 
             let trimmed = diffText.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmed.isEmpty else { return nil }
-            return GitDiffResult(path: changedFile.path, text: trimmed)
+            guard !trimmed.isEmpty else { return .noChanges }
+            return .diff(GitDiffResult(path: changedFile.path, text: trimmed))
         }.value
     }
 

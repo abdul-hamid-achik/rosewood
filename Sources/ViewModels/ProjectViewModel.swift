@@ -357,6 +357,10 @@ final class ProjectViewModel: ObservableObject {
         get { gitModel.selectedGitDiffPath }
         set { gitModel.selectedGitDiffPath = newValue }
     }
+    var gitDiffLoadFailed: Bool {
+        get { gitModel.gitDiffLoadFailed }
+        set { gitModel.gitDiffLoadFailed = newValue }
+    }
     var currentLineBlame: GitBlameInfo? {
         get { gitModel.currentLineBlame }
         set { gitModel.currentLineBlame = newValue }

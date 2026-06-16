@@ -22,6 +22,9 @@ final class GitModel: ObservableObject {
     }
     @Published var selectedGitDiff: GitDiffResult?
     @Published var selectedGitDiffPath: String?
+    /// True when the selected change's diff couldn't be loaded (vs. a legitimate empty diff),
+    /// so the diff panel can show a real error state instead of "No diff available".
+    @Published var gitDiffLoadFailed: Bool = false
     @Published var isRefreshingGitStatus: Bool = false
     @Published var isLoadingGitDiff: Bool = false
     @Published var isGitToolAvailable: Bool = true

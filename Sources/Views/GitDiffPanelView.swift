@@ -149,6 +149,23 @@ struct GitDiffPanelView: View {
             case .patch:
                 patchView(text: diff.text)
             }
+        } else if projectViewModel.gitDiffLoadFailed {
+            VStack(spacing: RosewoodUI.spacing4) {
+                RosewoodEmptyState(
+                    systemImage: "exclamationmark.triangle",
+                    title: "Couldn’t Load Diff",
+                    subtitle: "The diff for this change couldn’t be loaded. Try refreshing Git status.",
+                    tint: themeColors.danger,
+                    fillsHeight: false
+                )
+                Button("Refresh") {
+                    projectViewModel.refreshGitState()
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .tint(themeColors.accent)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             RosewoodEmptyState(systemImage: "square.split.2x1", title: "No diff available for this change.")
         }

@@ -2983,6 +2983,52 @@ struct ProjectViewModelTests {
     }
 
     @Test
+    func gitDiffLoadFailureSurfacesErrorFlag() async throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+        let configURL = tempConfigURL()
+        defer { try? FileManager.default.removeItem(at: configURL) }
+
+        let changedFile = GitChangedFile(
+            path: "Broken.swift",
+            previousPath: nil,
+            kind: .modified,
+            indexStatus: "M",
+            workingTreeStatus: " "
+        )
+        let gitService = MockGitService()
+        gitService.repositoryStatusResult = GitRepositoryStatus(
+            repositoryRoot: rootURL,
+            branchName: "main",
+            changedFiles: [changedFile],
+            ignoredPaths: []
+        )
+        // The diff load fails (vs. returning a legitimate empty diff).
+        gitService.diffFailurePaths.insert(changedFile.path)
+
+        let viewModel = makeViewModel(
+            sessionStore: makeDefaults(),
+            sessionKey: "git-diff-failure-test",
+            configService: ConfigurationService(userConfigURL: configURL),
+            fileWatcher: FileWatcherService(),
+            ui: TestProjectUI(),
+            gitService: gitService
+        )
+
+        viewModel.rootDirectory = rootURL
+        viewModel.refreshGitState()
+        try await waitUntil { viewModel.gitRepositoryStatus.changedFiles.count == 1 }
+
+        viewModel.openGitChangedFile(changedFile)
+        try await waitUntil { viewModel.gitDiffLoadFailed }
+
+        #expect(viewModel.gitDiffLoadFailed == true)
+        #expect(viewModel.selectedGitDiff == nil)
+    }
+
+    @Test
     func openGitChangedFileLoadsDiffAndShowsWorkspaceDiff() async throws {
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -6085,6 +6131,7 @@ private final class MockGitService: GitServiceProtocol {
     var toolAvailableResult: Bool = true
     var repositoryStatusResult: GitRepositoryStatus = .empty
     var diffResults: [String: GitDiffResult] = [:]
+    var diffFailurePaths: Set<String> = []
     var blameResults: [String: GitBlameInfo] = [:]
     var stageResult: GitOperationResult = .success
     var unstageResult: GitOperationResult = .success
@@ -6118,10 +6165,16 @@ private final class MockGitService: GitServiceProtocol {
         return withLock { repositoryStatusResult }
     }
 
-    func diff(for changedFile: GitChangedFile, projectRoot: URL?) async -> GitDiffResult? {
+    func diff(for changedFile: GitChangedFile, projectRoot: URL?) async -> GitDiffOutcome {
         return withLock {
             diffCalls.append(changedFile.path)
-            return diffResults[changedFile.path]
+            if diffFailurePaths.contains(changedFile.path) {
+                return .failed
+            }
+            if let result = diffResults[changedFile.path] {
+                return .diff(result)
+            }
+            return .noChanges
         }
     }
 
