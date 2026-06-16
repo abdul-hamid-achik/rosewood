@@ -201,10 +201,16 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
         let minimapChanged = nsView.minimapView.isHidden == showMinimap
         let wordWrapChanged = nsView.textView.isHorizontallyResizable == wordWrap
         let lineNumbersChanged = nsView.showLineNumbers != showLineNumbers
+        let tabSizeChanged = nsView.tabSize != tabSize
 
         // Apply incremental changes
         if fontChanged {
             nsView.textView.font = editorFont
+        }
+
+        // Apply tab size before any theme pass so a re-render picks up the new tab width.
+        if tabSizeChanged {
+            nsView.setTabSize(tabSize)
         }
 
         if themeChanged {
@@ -1564,6 +1570,24 @@ final class EditorContainerView: NSView {
         minimapView.needsDisplay = true
     }
 
+    /// Live-apply the "Tab Size" setting: recompute the tab paragraph style and reapply it to the
+    /// document, the typing attributes, and the text view default so tab-indented text re-renders.
+    func setTabSize(_ size: Int) {
+        tabSize = max(size, 1)
+        let paragraphStyle = makeTabParagraphStyle()
+        textView.defaultParagraphStyle = paragraphStyle
+        var typing = textView.typingAttributes
+        typing[.paragraphStyle] = paragraphStyle
+        textView.typingAttributes = typing
+        if let textStorage = textView.textStorage, textStorage.length > 0 {
+            textStorage.addAttribute(
+                .paragraphStyle,
+                value: paragraphStyle,
+                range: NSRange(location: 0, length: textStorage.length)
+            )
+        }
+    }
+
     /// Live-apply the "Word Wrap" setting, mirroring applyTheme's container/scroller setup so toggling
     /// at runtime matches a fresh load (the previous partial path left the horizontal scroller stale).
     func setWordWrap(_ wordWrap: Bool) {
@@ -1595,7 +1619,8 @@ final class EditorContainerView: NSView {
         ]
         textView.typingAttributes = [
             .font: editorFont,
-            .foregroundColor: themeColors.nsForeground
+            .foregroundColor: themeColors.nsForeground,
+            .paragraphStyle: makeTabParagraphStyle()
         ]
         lineNumberView.themeColors = themeColors
         lineNumberView.editorFont = editorFont
@@ -1721,15 +1746,29 @@ final class EditorContainerView: NSView {
         updateMinimap()
     }
 
+    /// Paragraph style that makes a literal tab character render at the configured Tab Size
+    /// (tabSize × the font's space width). Without it, AppKit renders tabs at its hardcoded
+    /// default interval, so the "Tab Size" setting had no effect on tab-indented files.
+    func makeTabParagraphStyle() -> NSParagraphStyle {
+        let style = NSMutableParagraphStyle()
+        let spaceWidth = (" " as NSString).size(withAttributes: [.font: editorFont]).width
+        style.tabStops = []
+        style.defaultTabInterval = spaceWidth * CGFloat(max(tabSize, 1))
+        return style
+    }
+
     private func applyBaseTextAttributes(themeColors: ThemeColors) {
         guard let textStorage = textView.textStorage else { return }
         let fullRange = NSRange(location: 0, length: textStorage.length)
+        let paragraphStyle = makeTabParagraphStyle()
+        textView.defaultParagraphStyle = paragraphStyle
 
         textStorage.beginEditing()
         if fullRange.length > 0 {
             textStorage.setAttributes([
                 .font: editorFont,
-                .foregroundColor: themeColors.nsForeground
+                .foregroundColor: themeColors.nsForeground,
+                .paragraphStyle: paragraphStyle
             ], range: fullRange)
         }
         textStorage.endEditing()
@@ -1957,7 +1996,8 @@ final class EditorContainerView: NSView {
         }
         textView.typingAttributes = [
             .font: editorFont,
-            .foregroundColor: themeColors.nsForeground
+            .foregroundColor: themeColors.nsForeground,
+            .paragraphStyle: makeTabParagraphStyle()
         ]
         updateTextViewFrame()
         textView.needsDisplay = true
