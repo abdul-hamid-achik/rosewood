@@ -4,6 +4,7 @@ enum DebugSessionEvent: Equatable, Sendable {
     case output(DebugConsoleEntry.Kind, String)
     case state(DebugSessionState)
     case stopped(filePath: String?, line: Int?, reason: String)
+    case callStack([DAPStackFrame])
     case terminated
 }
 
@@ -198,6 +199,8 @@ final class DebugSessionService: DebugSessionServiceProtocol {
         case let .stopped(filePath, line, reason):
             eventHandler?(.state(.paused))
             eventHandler?(.stopped(filePath: filePath, line: line, reason: reason))
+        case .callStack(let frames):
+            eventHandler?(.callStack(frames))
         case .terminated:
             activeClient = nil
             activeProjectRoot = nil

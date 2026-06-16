@@ -322,11 +322,12 @@ actor DAPClient {
             return
         }
 
-        let topFrame = await fetchTopFrame(threadId: eventBody.threadId)
-        // Re-check after the await: a continued/terminated/newer-stop during fetchTopFrame
+        let frames = await fetchStack(threadId: eventBody.threadId)
+        // Re-check after the await: a continued/terminated/newer-stop during fetchStack
         // bumps stopGeneration, so this stale emit is dropped rather than re-pausing the UI.
         guard generation == stopGeneration else { return }
         pausedThreadId = eventBody.threadId
+        let topFrame = frames.first
         onEvent?(
             .stopped(
                 filePath: topFrame?.source?.path,
@@ -334,6 +335,7 @@ actor DAPClient {
                 reason: eventBody.description ?? eventBody.text ?? eventBody.reason
             )
         )
+        onEvent?(.callStack(frames))
     }
 
     /// Transition to running exactly once, bumping the stop generation (so any in-flight stopped
@@ -390,7 +392,9 @@ actor DAPClient {
         _ = try await sendRequest("pause", params: DAPPauseArguments(threadId: threadId))
     }
 
-    private func fetchTopFrame(threadId: Int?) async -> DAPStackFrame? {
+    /// Fetches the full call stack for the stopped thread (levels: nil = all frames). The first
+    /// frame is the current execution point. Returns [] on failure.
+    private func fetchStack(threadId: Int?) async -> [DAPStackFrame] {
         let resolvedThreadId: Int
         if let threadId {
             resolvedThreadId = threadId
@@ -398,20 +402,20 @@ actor DAPClient {
             guard let threadsData = try? await sendRequest("threads", params: Optional<String>.none),
                   let threads = try? JSONDecoder().decode(DAPThreadsResponseBody.self, from: threadsData).threads,
                   let firstThread = threads.first else {
-                return nil
+                return []
             }
             resolvedThreadId = firstThread.id
         }
 
         guard let stackData = try? await sendRequest(
             "stackTrace",
-            params: DAPStackTraceArguments(threadId: resolvedThreadId, startFrame: 0, levels: 1)
+            params: DAPStackTraceArguments(threadId: resolvedThreadId, startFrame: 0, levels: nil)
         ),
         let response = try? JSONDecoder().decode(DAPStackTraceResponseBody.self, from: stackData) else {
-            return nil
+            return []
         }
 
-        return response.stackFrames.first
+        return response.stackFrames
     }
 
     private func waitForInitializedEvent(timeoutNanoseconds: UInt64 = 5_000_000_000) async throws {

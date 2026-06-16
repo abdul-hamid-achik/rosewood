@@ -13,6 +13,9 @@ struct DebugSidebarView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: RosewoodUI.spacing6) {
                 sessionSection
+                if debugModel.debugSessionState == .paused {
+                    callStackSection
+                }
                 configurationSection
                 breakpointSection
             }
@@ -199,6 +202,54 @@ struct DebugSidebarView: View {
                         debugMetadata(label: "Working Dir", value: configuration.cwd ?? ".")
                     }
                     .padding(.top, 4)
+                }
+            }
+        }
+    }
+
+    private var callStackSection: some View {
+        RosewoodSidebarCard {
+            sectionTitle("Call Stack")
+
+            if debugModel.callStackFrames.isEmpty {
+                Text("No stack frames.")
+                    .font(.system(size: 12))
+                    .foregroundColor(themeColors.subduedText)
+            } else {
+                ForEach(debugModel.callStackFrames, id: \.id) { frame in
+                    let isSelected = frame.id == debugModel.selectedFrameId
+                    Button {
+                        projectViewModel.selectStackFrame(frame)
+                    } label: {
+                        HStack(alignment: .top, spacing: RosewoodUI.spacing3) {
+                            Image(systemName: isSelected ? "arrowtriangle.right.fill" : "function")
+                                .font(.system(size: 9))
+                                .foregroundColor(isSelected ? themeColors.accent : themeColors.mutedText)
+                                .frame(width: 12)
+                                .padding(.top, 3)
+
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack(spacing: 8) {
+                                    Text(frame.name)
+                                        .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
+                                        .foregroundColor(themeColors.foreground)
+                                        .lineLimit(1)
+
+                                    headerChip("Ln \(frame.line)", tint: themeColors.subduedText)
+                                }
+
+                                if let sourceName = frame.source?.name {
+                                    Text(sourceName)
+                                        .font(.system(size: 11))
+                                        .foregroundColor(themeColors.mutedText)
+                                        .lineLimit(1)
+                                }
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.vertical, 2)
                 }
             }
         }

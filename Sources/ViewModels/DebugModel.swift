@@ -16,4 +16,8 @@ final class DebugModel: ObservableObject {
     @Published var debugConfigurationError: String?
     @Published var debugSessionState: DebugSessionState = .idle
     @Published var debugConsoleEntries: [DebugConsoleEntry] = []
+    /// Full call stack at the current stop (first frame = execution point); empty when not paused.
+    @Published var callStackFrames: [DAPStackFrame] = []
+    /// The stack frame the user has selected to inspect (defaults to the top frame on each stop).
+    @Published var selectedFrameId: Int?
 }

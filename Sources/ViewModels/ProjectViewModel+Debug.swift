@@ -254,6 +254,14 @@ extension ProjectViewModel {
             if case .idle = state {
                 clearStoppedLocation()
             }
+            if case .running = state {
+                // Resumed: the previous stop's call stack is no longer valid.
+                callStackFrames = []
+                selectedFrameId = nil
+            }
+        case let .callStack(frames):
+            callStackFrames = frames
+            selectedFrameId = frames.first?.id
         case let .stopped(filePath, line, reason):
             debugStoppedFilePath = filePath.map { normalizedPath(for: URL(fileURLWithPath: $0)) }
             debugStoppedLine = line
@@ -274,6 +282,21 @@ extension ProjectViewModel {
     func clearStoppedLocation() {
         debugStoppedFilePath = nil
         debugStoppedLine = nil
+        callStackFrames = []
+        selectedFrameId = nil
+    }
+
+    /// Select a stack frame to inspect and navigate the editor to its source line (when it has one).
+    /// The green execution marker stays at the actual stop (top frame); this is navigation only.
+    func selectStackFrame(_ frame: DAPStackFrame) {
+        selectedFrameId = frame.id
+        guard let path = frame.source?.path, !path.isEmpty else { return }
+        let fileURL = URL(fileURLWithPath: path)
+        guard FileManager.default.fileExists(atPath: fileURL.path) else { return }
+        openFile(at: fileURL)
+        if let selectedTabIndex, openTabs.indices.contains(selectedTabIndex) {
+            openTabs[selectedTabIndex].pendingLineJump = frame.line
+        }
     }
 
     func syncActiveDebugBreakpoints() {

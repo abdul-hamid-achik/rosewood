@@ -338,6 +338,14 @@ final class ProjectViewModel: ObservableObject {
         get { debugModel.debugConsoleEntries }
         set { debugModel.debugConsoleEntries = newValue }
     }
+    var callStackFrames: [DAPStackFrame] {
+        get { debugModel.callStackFrames }
+        set { debugModel.callStackFrames = newValue }
+    }
+    var selectedFrameId: Int? {
+        get { debugModel.selectedFrameId }
+        set { debugModel.selectedFrameId = newValue }
+    }
     // referencesModel.referenceResults moved to `referencesModel` (a child ObservableObject) so the references
     // panel observes only that; the building/navigation logic below still writes into it.
     @Published var isGitDiffWorkspaceVisible: Bool = false

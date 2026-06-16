@@ -123,5 +123,6 @@ enum DAPClientEvent: Equatable, Sendable {
     case output(String)
     case running
     case stopped(filePath: String?, line: Int?, reason: String)
+    case callStack([DAPStackFrame])
     case terminated
 }

@@ -195,6 +195,41 @@ struct DAPClientTests {
     }
 
     @Test
+    func stoppedEmitsFullCallStack() async throws {
+        let transport = MockDAPClientTransport()
+        let recorder = DAPClientEventRecorder()
+        let client = DAPClient(transport: transport)
+        await client.setOnEvent { recorder.record($0) }
+        try await performDAPHandshake(client: client, transport: transport)
+
+        transport.receiveEvent(name: "stopped", body: ["reason": "breakpoint", "threadId": 7])
+        let stackRequest = try await waitForSentCommand("stackTrace", transport: transport)
+        transport.receiveResponse(
+            requestID: stackRequest.requestID,
+            body: [
+                "stackFrames": [
+                    ["id": 1, "name": "inner", "line": 5, "column": 1, "source": ["name": "A.swift", "path": "/tmp/A.swift"]],
+                    ["id": 2, "name": "middle", "line": 12, "column": 1, "source": ["name": "B.swift", "path": "/tmp/B.swift"]],
+                    ["id": 3, "name": "main", "line": 20, "column": 1, "source": ["name": "C.swift", "path": "/tmp/C.swift"]]
+                ],
+                "totalFrames": 3
+            ]
+        )
+
+        try await waitUntil { recorder.lastCallStackFrames != nil }
+        let frames = try #require(recorder.lastCallStackFrames)
+        #expect(frames.count == 3)
+        #expect(frames.map(\.name) == ["inner", "middle", "main"])
+        // The .stopped event maps to the top (first) frame.
+        if case let .stopped(filePath, line, _) = try #require(recorder.lastStoppedEvent) {
+            #expect(filePath == "/tmp/A.swift")
+            #expect(line == 5)
+        } else {
+            Issue.record("expected a stopped event")
+        }
+    }
+
+    @Test
     func resumeSendsContinueWithStoppedThread() async throws {
         let transport = MockDAPClientTransport()
         let recorder = DAPClientEventRecorder()
@@ -319,6 +354,17 @@ private final class DAPClientEventRecorder: @unchecked Sendable {
             }
             return false
         }
+    }
+
+    var lastCallStackFrames: [DAPStackFrame]? {
+        lock.lock()
+        defer { lock.unlock() }
+        for event in events.reversed() {
+            if case .callStack(let frames) = event {
+                return frames
+            }
+        }
+        return nil
     }
 
     func record(_ event: DAPClientEvent) {
