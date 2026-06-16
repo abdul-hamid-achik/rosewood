@@ -1,0 +1,90 @@
+# Features & Usage
+
+A tour of what Rosewood can do and how to drive it. Features marked *(needs …)* depend on an
+external tool — see [Dependencies](dependencies.md).
+
+## Editing
+
+- **Multi-tab editing** with dirty-state indicators. Reorder, switch (`Cmd+Shift+]` / `[`), jump to
+  a tab (`Cmd+1…9`), and reopen the last closed tab (`Cmd+Shift+T`).
+- **Syntax highlighting** for 20+ languages with switchable themes.
+- **Line operations:** toggle comment (`Cmd+/`), move line (`Opt+↑`/`↓`), duplicate (`Cmd+Shift+D`),
+  delete (`Cmd+Shift+K`), join (`Ctrl+Shift+J`), indent/outdent (`Tab` / `Shift+Tab`).
+- **Bracket matching** and auto-closing pairs.
+- **Code folding** from the gutter for brace and indentation blocks.
+- **Minimap** with click-to-scroll navigation.
+- **Auto-save** with reload prompts when a file changes on disk externally.
+
+## Navigation & search
+
+- **Quick Open** (`Cmd+P`) — fuzzy-find files in the project.
+- **Command Palette** (`Cmd+Shift+P`) — run commands and jump to actions.
+- **Find in File** (`Cmd+F`) / **Replace** (`Cmd+Opt+F`) — native find bar; `Cmd+G` / `Cmd+Shift+G`
+  for next/previous.
+- **Project-wide Search & Replace** (`Cmd+Shift+F`) — line-level results with a replace preview that
+  shows the substituted text (including regex `$1` capture groups). *(faster with ripgrep)*
+- **Go to Definition** (`F12`) and **Find References** (`Shift+F12`). *(needs a language server)*
+
+## Language tooling (LSP) *(needs a language server)*
+
+Autocomplete, diagnostics (inline + Problems panel), hover info, go-to-definition, and
+find-references activate per language when the matching server is installed. The status bar shows
+the active language-server state. If a server crashes, use **Restart Language Server** from the
+command palette. Install servers per [Dependencies → Language tooling](dependencies.md#language-tooling--language-servers-lsp).
+
+## Debugging (DAP) *(needs lldb-dap)*
+
+Define targets in `.rosewood.toml` ([Configuration → Debugging](configuration.md#debugging)), then
+use the **Run & Debug** sidebar to start a session. Set breakpoints in the gutter; the debug console
+streams program output and session state. See the configuration page for the `[debug]` format.
+
+## Source control *(needs git)*
+
+The **Source Control** sidebar shows the current branch and working-tree changes, with a unified
+diff preview and per-line blame. When git isn't installed it shows a "Git Not Available" state
+rather than an empty list.
+
+## Docker *(needs the docker CLI)*
+
+The **Docker** panel lists containers, images, compose projects, and volumes, and streams container
+logs. When Docker isn't installed or the daemon is down, the panel explains why and offers a Refresh.
+
+## Workspace
+
+- **File tree** with create, rename, duplicate, and delete (names are validated to stay inside the
+  folder, and "New File" won't overwrite an existing file).
+- **Session persistence** — open tabs, layout, and selection are restored across restarts.
+- **Status bar** — cursor position, encoding, language, LSP state, and diagnostics counts.
+
+## Keyboard shortcuts
+
+| Shortcut | Action |
+|----------|--------|
+| `Cmd+O` | Open File |
+| `Cmd+Shift+O` | Open Folder |
+| `Cmd+N` | New File |
+| `Cmd+Shift+N` | New Window |
+| `Cmd+S` | Save |
+| `Cmd+Shift+S` | Save As |
+| `Cmd+Opt+S` | Save All |
+| `Cmd+Shift+T` | Reopen Last Closed Tab |
+| `Cmd+W` | Close Tab |
+| `Cmd+Shift+]` / `[` | Next / Previous Tab |
+| `Cmd+1…9` | Go to Tab 1–9 |
+| `Cmd+P` | Quick Open |
+| `Cmd+Shift+P` | Command Palette |
+| `Ctrl+\`` | Toggle Terminal |
+| `Cmd+F` | Find in File |
+| `Cmd+Opt+F` | Replace in File |
+| `Cmd+G` / `Cmd+Shift+G` | Find Next / Previous |
+| `Cmd+Shift+F` | Find in Project |
+| `F12` | Go to Definition |
+| `Shift+F12` | Find References |
+| `Cmd+/` | Toggle Line Comment |
+| `Opt+↑` / `Opt+↓` | Move Line Up / Down |
+| `Cmd+Shift+D` | Duplicate Line |
+| `Cmd+Shift+K` | Delete Line |
+| `Ctrl+Shift+J` | Join Lines |
+| `Tab` / `Shift+Tab` | Indent / Outdent Selection |
+| `Cmd+,` | Settings |
+| `Cmd+Z` / `Cmd+Shift+Z` | Undo / Redo |

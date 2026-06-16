@@ -1,0 +1,86 @@
+# Getting Started
+
+## Requirements
+
+- **macOS 14.0 or later**
+- **Xcode 16+** (the test suite uses [swift-testing](https://github.com/swiftlang/swift-testing), which ships with Xcode 16; building the app alone works on Xcode 15+)
+- **[XcodeGen](https://github.com/yonaskolb/XcodeGen)** — the Xcode project is generated from `project.yml`
+- **[go-task](https://taskfile.dev)** *(optional)* — convenience wrapper around the build commands
+
+See [Dependencies](dependencies.md) for the full list, including the optional runtime tools that
+enable language tooling, debugging, search, and Docker.
+
+```bash
+brew install xcodegen go-task
+```
+
+## Build & run
+
+The project file is generated, so always run `xcodegen` (or `task gen`) after cloning or after
+adding/removing source files.
+
+### With the Taskfile (recommended)
+
+```bash
+task gen      # generate Rosewood.xcodeproj from project.yml
+task build    # build the debug app into .derived/
+task run      # build and launch the debug app
+task test     # run the unit-test suite
+task lint     # run SwiftLint
+```
+
+Run `task` with no arguments to list every available task.
+
+### With xcodebuild directly
+
+```bash
+xcodegen generate
+xcodebuild build -scheme Rosewood -configuration Debug -destination 'platform=macOS'
+xcodebuild test  -scheme RosewoodTests -destination 'platform=macOS'
+```
+
+### In Xcode
+
+```bash
+xcodegen generate
+open Rosewood.xcodeproj
+```
+
+## Install for daily use
+
+```bash
+task install   # copies the app to ~/Applications and the CLI launcher to ~/.local/bin
+task where     # prints the install paths
+task remove    # uninstalls both
+```
+
+Installs land at:
+
+```text
+~/Applications/Rosewood.app
+~/.local/bin/rosewood
+```
+
+If the `rosewood` CLI isn't found, add `~/.local/bin` to your `PATH`:
+
+```bash
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
+```
+
+You can then open a folder from the terminal:
+
+```bash
+rosewood .
+```
+
+## Continuous integration
+
+Every push and pull request runs the CI workflow in `.github/workflows/ci.yml` on a macOS runner:
+it generates the project, runs SwiftLint, builds, and runs the unit-test suite. Keep `task lint`
+and `task test` green locally before pushing.
+
+## Next steps
+
+- [Dependencies](dependencies.md) — install the optional tools to unlock LSP, debugging, search, and Docker
+- [Configuration](configuration.md) — tune settings and define debug configurations
+- [Features & Usage](features.md) — what the editor can do and how to drive it
