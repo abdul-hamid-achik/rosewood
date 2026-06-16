@@ -590,6 +590,45 @@ struct FileServiceRootReadabilityTests {
     }
 }
 
+struct FileServiceReplacementPreviewTests {
+    @Test
+    func regexPreviewAppliesTemplateSubstitution() {
+        var options = ProjectSearchOptions()
+        options.isRegularExpression = true
+        let result = FileService.replacementPreview(
+            forMatchedText: "foo42",
+            query: "foo(\\d+)",
+            replacement: "$1",
+            options: options
+        )
+        #expect(result == "42")
+    }
+
+    @Test
+    func regexPreviewSupportsMultipleCaptureGroups() {
+        var options = ProjectSearchOptions()
+        options.isRegularExpression = true
+        let result = FileService.replacementPreview(
+            forMatchedText: "user@host",
+            query: "(\\w+)@(\\w+)",
+            replacement: "$2.$1",
+            options: options
+        )
+        #expect(result == "host.user")
+    }
+
+    @Test
+    func literalPreviewReturnsReplacementVerbatim() {
+        let result = FileService.replacementPreview(
+            forMatchedText: "foo",
+            query: "foo",
+            replacement: "bar",
+            options: ProjectSearchOptions()
+        )
+        #expect(result == "bar")
+    }
+}
+
 struct FileServiceCRLFSearchTests {
     @Test
     func scanningSearchReportsCorrectLineNumbersForCRLFFiles() throws {

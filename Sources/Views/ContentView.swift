@@ -1143,11 +1143,29 @@ struct SearchSidebarView: View {
     }
 
     private func replacementPreviewText(for result: ProjectSearchResult) -> Text {
-        Text("→ ")
+        let options = projectViewModel.currentProjectSearchOptions
+        let query = projectViewModel.projectSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        let replacement = projectViewModel.projectReplaceQuery
+        return Text("→ ")
             .foregroundColor(themeColors.warning)
         + highlightedText(
             for: result,
-            highlightedTextProvider: { _ in projectViewModel.projectReplaceQuery },
+            highlightedTextProvider: { matchRange in
+                // In regex mode, show the actual substituted result (e.g. $1 → the capture)
+                // rather than the literal template. Literal mode is unchanged.
+                guard options.isRegularExpression else { return replacement }
+                let matchedText = substring(
+                    of: result.lineText.isEmpty ? " " : result.lineText,
+                    from: matchRange.start,
+                    to: matchRange.start + matchRange.length
+                )
+                return FileService.replacementPreview(
+                    forMatchedText: matchedText,
+                    query: query,
+                    replacement: replacement,
+                    options: options
+                )
+            },
             baseColor: themeColors.subduedText,
             highlightColor: themeColors.success
         )

@@ -727,6 +727,20 @@ final class FileService {
         )
     }
 
+    /// Computes the text a single matched substring would become under `replacement`, applying
+    /// regex template substitution ($1, $2…) in regex mode so the inline replace PREVIEW shows
+    /// the real result rather than the literal template. Falls back to the matched text unchanged
+    /// if the isolated match can't be re-resolved (e.g. a pattern that relied on surrounding context).
+    static func replacementPreview(
+        forMatchedText matchedText: String,
+        query: String,
+        replacement: String,
+        options: ProjectSearchOptions
+    ) -> String {
+        guard let matcher = ProjectSearchMatcher(query: query, options: options) else { return replacement }
+        return matcher.replacingMatches(in: matchedText, replacement: replacement).content
+    }
+
     private func searchProjectByScanning(
         at rootURL: URL,
         matcher: ProjectSearchMatcher,
