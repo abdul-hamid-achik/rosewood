@@ -363,6 +363,30 @@ actor DAPClient {
         return first.id
     }
 
+    /// Scopes (Locals/Arguments/…) for a stack frame. Stop-generation-guarded: returns [] if the
+    /// program resumed/re-stopped/terminated while the request was in flight (stale frame).
+    func scopes(frameId: Int) async -> [DAPScope] {
+        let generation = stopGeneration
+        guard let data = try? await sendRequest("scopes", params: DAPScopesArguments(frameId: frameId)),
+              let body = try? JSONDecoder().decode(DAPScopesResponseBody.self, from: data) else {
+            return []
+        }
+        guard generation == stopGeneration else { return [] }
+        return body.scopes
+    }
+
+    /// Variables for a scope or expandable variable (keyed by variablesReference). Same stop-generation
+    /// guard; serves both scope children and nested variable expansion.
+    func variables(reference: Int) async -> [DAPVariable] {
+        let generation = stopGeneration
+        guard let data = try? await sendRequest("variables", params: DAPVariablesArguments(variablesReference: reference)),
+              let body = try? JSONDecoder().decode(DAPVariablesResponseBody.self, from: data) else {
+            return []
+        }
+        guard generation == stopGeneration else { return [] }
+        return body.variables
+    }
+
     func resume() async throws {
         guard let threadId = await resolveThreadId() else { return }
         _ = try await sendRequest("continue", params: DAPContinueArguments(threadId: threadId))

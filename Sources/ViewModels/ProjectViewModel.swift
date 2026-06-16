@@ -346,6 +346,14 @@ final class ProjectViewModel: ObservableObject {
         get { debugModel.selectedFrameId }
         set { debugModel.selectedFrameId = newValue }
     }
+    var variableRows: [VariableRow] {
+        get { debugModel.variableRows }
+        set { debugModel.variableRows = newValue }
+    }
+    var expandedVariableRefs: Set<Int> {
+        get { debugModel.expandedVariableRefs }
+        set { debugModel.expandedVariableRefs = newValue }
+    }
     // referencesModel.referenceResults moved to `referencesModel` (a child ObservableObject) so the references
     // panel observes only that; the building/navigation logic below still writes into it.
     @Published var isGitDiffWorkspaceVisible: Bool = false

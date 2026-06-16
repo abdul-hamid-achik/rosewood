@@ -119,6 +119,35 @@ struct DAPStackFrame: Codable, Equatable, Sendable {
     let source: DAPSource?
 }
 
+struct DAPScopesArguments: Codable, Sendable {
+    let frameId: Int
+}
+
+struct DAPScopesResponseBody: Codable, Sendable {
+    let scopes: [DAPScope]
+}
+
+struct DAPScope: Codable, Equatable, Sendable {
+    let name: String
+    let variablesReference: Int
+    let expensive: Bool?
+}
+
+struct DAPVariablesArguments: Codable, Sendable {
+    let variablesReference: Int
+}
+
+struct DAPVariablesResponseBody: Codable, Sendable {
+    let variables: [DAPVariable]
+}
+
+struct DAPVariable: Codable, Equatable, Sendable {
+    let name: String
+    let value: String
+    let type: String?
+    let variablesReference: Int   // > 0 == expandable (has children)
+}
+
 enum DAPClientEvent: Equatable, Sendable {
     case output(String)
     case running

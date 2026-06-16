@@ -255,13 +255,18 @@ extension ProjectViewModel {
                 clearStoppedLocation()
             }
             if case .running = state {
-                // Resumed: the previous stop's call stack is no longer valid.
+                // Resumed: the previous stop's call stack / variables are no longer valid.
                 callStackFrames = []
                 selectedFrameId = nil
+                variableRows = []
+                expandedVariableRefs = []
             }
         case let .callStack(frames):
             callStackFrames = frames
             selectedFrameId = frames.first?.id
+            variableRows = []
+            expandedVariableRefs = []
+            loadScopesForSelectedFrame()
         case let .stopped(filePath, line, reason):
             debugStoppedFilePath = filePath.map { normalizedPath(for: URL(fileURLWithPath: $0)) }
             debugStoppedLine = line
@@ -284,18 +289,87 @@ extension ProjectViewModel {
         debugStoppedLine = nil
         callStackFrames = []
         selectedFrameId = nil
+        variableRows = []
+        expandedVariableRefs = []
     }
 
-    /// Select a stack frame to inspect and navigate the editor to its source line (when it has one).
-    /// The green execution marker stays at the actual stop (top frame); this is navigation only.
+    /// Select a stack frame to inspect: reload its scopes/variables and navigate the editor to its
+    /// source line (when it has one). The green execution marker stays at the actual stop (top frame).
     func selectStackFrame(_ frame: DAPStackFrame) {
         selectedFrameId = frame.id
+        variableRows = []
+        expandedVariableRefs = []
+        loadScopesForSelectedFrame()
         guard let path = frame.source?.path, !path.isEmpty else { return }
         let fileURL = URL(fileURLWithPath: path)
         guard FileManager.default.fileExists(atPath: fileURL.path) else { return }
         openFile(at: fileURL)
         if let selectedTabIndex, openTabs.indices.contains(selectedTabIndex) {
             openTabs[selectedTabIndex].pendingLineJump = frame.line
+        }
+    }
+
+    /// Fetch the scopes (Locals/Arguments/…) for the selected frame as depth-0 variable rows.
+    private func loadScopesForSelectedFrame() {
+        guard let frameId = selectedFrameId else { return }
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let scopes = await self.debugSessionService.scopes(frameId: frameId)
+            // Apply only if this is still the selected frame (a newer stop/frame-select supersedes).
+            guard self.selectedFrameId == frameId else { return }
+            self.variableRows = scopes.map { scope in
+                VariableRow(
+                    id: "scope/\(scope.name)",
+                    name: scope.name,
+                    value: nil,
+                    type: nil,
+                    variablesReference: scope.variablesReference,
+                    depth: 0,
+                    isScope: true
+                )
+            }
+            self.expandedVariableRefs = []
+        }
+    }
+
+    /// Lazily expand/collapse a scope or variable node in the flattened tree.
+    func toggleVariableExpansion(_ row: VariableRow) {
+        guard row.isExpandable else { return }
+
+        if expandedVariableRefs.contains(row.variablesReference) {
+            guard let index = variableRows.firstIndex(where: { $0.id == row.id }) else { return }
+            var end = index + 1
+            while end < variableRows.count, variableRows[end].depth > row.depth { end += 1 }
+            for removed in variableRows[(index + 1)..<end] {
+                expandedVariableRefs.remove(removed.variablesReference)
+            }
+            variableRows.removeSubrange((index + 1)..<end)
+            expandedVariableRefs.remove(row.variablesReference)
+            return
+        }
+
+        let reference = row.variablesReference
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let children = await self.debugSessionService.variables(reference: reference)
+            // Re-verify the row is still present AND still collapsed before injecting children
+            // (an intra-stop frame switch clears variableRows; a superseded fetch returns []).
+            guard let index = self.variableRows.firstIndex(where: { $0.id == row.id }),
+                  !self.expandedVariableRefs.contains(reference),
+                  !children.isEmpty else { return }
+            let childRows = children.map { variable in
+                VariableRow(
+                    id: "\(row.id)/\(variable.name)",
+                    name: variable.name,
+                    value: variable.value,
+                    type: variable.type,
+                    variablesReference: variable.variablesReference,
+                    depth: row.depth + 1,
+                    isScope: false
+                )
+            }
+            self.variableRows.insert(contentsOf: childRows, at: index + 1)
+            self.expandedVariableRefs.insert(reference)
         }
     }
 

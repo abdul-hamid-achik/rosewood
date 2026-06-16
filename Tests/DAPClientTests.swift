@@ -334,6 +334,71 @@ struct DAPClientTests {
         let state = await client.state
         #expect(state == .running)
     }
+
+    @Test
+    func scopesRequestReturnsScopesForFrame() async throws {
+        let transport = MockDAPClientTransport()
+        let recorder = DAPClientEventRecorder()
+        let client = try await startPausedDAPClient(threadId: 7, transport: transport, recorder: recorder)
+
+        let task = Task { await client.scopes(frameId: 11) }
+        let req = try await waitForSentCommand("scopes", transport: transport)
+        #expect((req.json["arguments"] as? [String: Any])?["frameId"] as? Int == 11)
+        transport.receiveResponse(
+            requestID: req.requestID,
+            body: ["scopes": [["name": "Locals", "variablesReference": 1001, "expensive": false]]]
+        )
+        let scopes = await task.value
+        #expect(scopes.count == 1)
+        #expect(scopes.first?.name == "Locals")
+        #expect(scopes.first?.variablesReference == 1001)
+    }
+
+    @Test
+    func variablesRequestReturnsVariablesForReference() async throws {
+        let transport = MockDAPClientTransport()
+        let recorder = DAPClientEventRecorder()
+        let client = try await startPausedDAPClient(threadId: 7, transport: transport, recorder: recorder)
+
+        let task = Task { await client.variables(reference: 1001) }
+        let req = try await waitForSentCommand("variables", transport: transport)
+        #expect((req.json["arguments"] as? [String: Any])?["variablesReference"] as? Int == 1001)
+        transport.receiveResponse(
+            requestID: req.requestID,
+            body: ["variables": [
+                ["name": "x", "value": "42", "type": "Int", "variablesReference": 0],
+                ["name": "obj", "value": "Foo()", "type": "Foo", "variablesReference": 2002]
+            ]]
+        )
+        let variables = await task.value
+        #expect(variables.count == 2)
+        #expect(variables.first?.value == "42")
+        #expect(variables.last?.variablesReference == 2002)  // expandable
+    }
+
+    @Test
+    func scopesDroppedWhenSupersededByContinued() async throws {
+        let transport = MockDAPClientTransport()
+        let recorder = DAPClientEventRecorder()
+        let client = try await startPausedDAPClient(threadId: 7, transport: transport, recorder: recorder)
+
+        let task = Task { await client.scopes(frameId: 11) }
+        let req = try await waitForSentCommand("scopes", transport: transport)
+        // Resume before answering: the stop generation bumps, so the in-flight scopes must drop.
+        transport.receiveEvent(name: "continued", body: ["threadId": 7])
+        var sawRunning = false
+        for _ in 0..<300 {
+            if await client.state == .running { sawRunning = true; break }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        #expect(sawRunning)
+        transport.receiveResponse(
+            requestID: req.requestID,
+            body: ["scopes": [["name": "Locals", "variablesReference": 1001, "expensive": false]]]
+        )
+        let scopes = await task.value
+        #expect(scopes.isEmpty)
+    }
 }
 
 private struct SentDAPRequest {

@@ -53,6 +53,8 @@ protocol DebugSessionServiceProtocol: AnyObject {
     func stepInto() async
     func stepOut() async
     func pause() async
+    func scopes(frameId: Int) async -> [DAPScope]
+    func variables(reference: Int) async -> [DAPVariable]
 }
 
 final class DebugSessionService: DebugSessionServiceProtocol {
@@ -188,6 +190,16 @@ final class DebugSessionService: DebugSessionServiceProtocol {
         }
     }
 
+    func scopes(frameId: Int) async -> [DAPScope] {
+        guard let activeClient else { return [] }
+        return await activeClient.scopes(frameId: frameId)
+    }
+
+    func variables(reference: Int) async -> [DAPVariable] {
+        guard let activeClient else { return [] }
+        return await activeClient.variables(reference: reference)
+    }
+
     private func handleClientEvent(_ event: DAPClientEvent) {
         switch event {
         case .output(let output):
@@ -285,6 +297,10 @@ final class MockDebugSessionService: DebugSessionServiceProtocol {
     private(set) var stepIntoCallCount: Int = 0
     private(set) var stepOutCallCount: Int = 0
     private(set) var pauseCallCount: Int = 0
+    var nextScopes: [DAPScope] = []
+    var nextVariables: [Int: [DAPVariable]] = [:]
+    private(set) var scopesCalls: [Int] = []
+    private(set) var variablesCalls: [Int] = []
 
     func setEventHandler(_ handler: @escaping @Sendable (DebugSessionEvent) -> Void) {
         eventHandler = handler
@@ -317,4 +333,12 @@ final class MockDebugSessionService: DebugSessionServiceProtocol {
     func stepInto() async { stepIntoCallCount += 1 }
     func stepOut() async { stepOutCallCount += 1 }
     func pause() async { pauseCallCount += 1 }
+    func scopes(frameId: Int) async -> [DAPScope] {
+        scopesCalls.append(frameId)
+        return nextScopes
+    }
+    func variables(reference: Int) async -> [DAPVariable] {
+        variablesCalls.append(reference)
+        return nextVariables[reference] ?? []
+    }
 }

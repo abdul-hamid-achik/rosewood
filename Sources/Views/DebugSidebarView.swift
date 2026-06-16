@@ -15,6 +15,7 @@ struct DebugSidebarView: View {
                 sessionSection
                 if debugModel.debugSessionState == .paused {
                     callStackSection
+                    variablesSection
                 }
                 configurationSection
                 breakpointSection
@@ -250,6 +251,52 @@ struct DebugSidebarView: View {
                     }
                     .buttonStyle(.plain)
                     .padding(.vertical, 2)
+                }
+            }
+        }
+    }
+
+    private var variablesSection: some View {
+        RosewoodSidebarCard {
+            sectionTitle("Variables")
+
+            if debugModel.variableRows.isEmpty {
+                Text("No variables.")
+                    .font(.system(size: 12))
+                    .foregroundColor(themeColors.subduedText)
+            } else {
+                ForEach(debugModel.variableRows) { row in
+                    let isExpanded = debugModel.expandedVariableRefs.contains(row.variablesReference)
+                    Button {
+                        projectViewModel.toggleVariableExpansion(row)
+                    } label: {
+                        HStack(spacing: RosewoodUI.spacing2) {
+                            Image(systemName: row.isExpandable ? (isExpanded ? "chevron.down" : "chevron.right") : "circle.fill")
+                                .font(.system(size: row.isExpandable ? 9 : 4))
+                                .foregroundColor(themeColors.mutedText)
+                                .frame(width: 10)
+
+                            Text(row.name)
+                                .font(.system(size: 11, weight: row.isScope ? .semibold : .regular, design: .monospaced))
+                                .foregroundColor(row.isScope ? themeColors.subduedText : themeColors.accent)
+                                .lineLimit(1)
+
+                            if let value = row.value {
+                                Text(value)
+                                    .font(.system(size: 11, design: .monospaced))
+                                    .foregroundColor(themeColors.foreground)
+                                    .lineLimit(1)
+                                    .truncationMode(.tail)
+                            }
+
+                            Spacer(minLength: 0)
+                        }
+                        .padding(.leading, CGFloat(row.depth) * RosewoodUI.treeIndentStep)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!row.isExpandable)
+                    .padding(.vertical, 1)
                 }
             }
         }
