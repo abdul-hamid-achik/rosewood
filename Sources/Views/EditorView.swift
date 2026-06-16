@@ -200,6 +200,7 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
         let themeChanged = nsView.themeColors != themeColors
         let minimapChanged = nsView.minimapView.isHidden == showMinimap
         let wordWrapChanged = nsView.textView.isHorizontallyResizable == wordWrap
+        let lineNumbersChanged = nsView.showLineNumbers != showLineNumbers
 
         // Apply incremental changes
         if fontChanged {
@@ -207,6 +208,8 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
         }
 
         if themeChanged {
+            // applyTheme already re-applies line numbers / minimap / word wrap, so the
+            // dedicated branches below are skipped when a full theme pass runs.
             nsView.applyTheme(
                 themeColors,
                 font: editorFont,
@@ -214,15 +217,18 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
                 showLineNumbers: showLineNumbers,
                 wordWrap: wordWrap
             )
-        }
-
-        if minimapChanged {
-            nsView.minimapView.isHidden = !showMinimap
-        }
-
-        if wordWrapChanged {
-            nsView.textView.isHorizontallyResizable = !wordWrap
-            nsView.textView.textContainer?.widthTracksTextView = wordWrap
+        } else {
+            // Live-apply editor settings so Settings toggles take effect immediately on the open
+            // editor instead of only after a theme change or tab reopen.
+            if lineNumbersChanged {
+                nsView.setLineNumbersVisible(showLineNumbers)
+            }
+            if minimapChanged {
+                nsView.setMinimapVisible(showMinimap)
+            }
+            if wordWrapChanged {
+                nsView.setWordWrap(wordWrap)
+            }
         }
 
         // Always update these (cheap operations)
@@ -1538,6 +1544,41 @@ final class EditorContainerView: NSView {
 
     func configure(delegate: NSTextViewDelegate) {
         textView.delegate = delegate
+    }
+
+    /// Live-apply the "Show Line Numbers" setting without recreating the editor (mirrors the ruler
+    /// handling in applyTheme). Previously the toggle only took effect after a theme change or tab reopen.
+    func setLineNumbersVisible(_ visible: Bool) {
+        showLineNumbers = visible
+        scrollView.hasVerticalRuler = visible
+        scrollView.rulersVisible = visible
+        lineNumberView.needsDisplay = true
+    }
+
+    /// Live-apply the "Show Minimap" setting, updating BOTH visibility and the width constraint that
+    /// reserves its horizontal space — updating only `isHidden` (as before) left a 96pt gap or overlap.
+    func setMinimapVisible(_ visible: Bool) {
+        showMinimap = visible
+        minimapView.isHidden = !visible
+        minimapWidthConstraint.constant = visible ? 96 : 0
+        minimapView.needsDisplay = true
+    }
+
+    /// Live-apply the "Word Wrap" setting, mirroring applyTheme's container/scroller setup so toggling
+    /// at runtime matches a fresh load (the previous partial path left the horizontal scroller stale).
+    func setWordWrap(_ wordWrap: Bool) {
+        self.wordWrap = wordWrap
+        if wordWrap {
+            textView.textContainer?.widthTracksTextView = true
+            textView.textContainer?.containerSize = NSSize(width: scrollView.contentSize.width, height: CGFloat.greatestFiniteMagnitude)
+            scrollView.hasHorizontalScroller = false
+            textView.isHorizontallyResizable = false
+        } else {
+            textView.textContainer?.widthTracksTextView = false
+            textView.textContainer?.containerSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+            scrollView.hasHorizontalScroller = true
+            textView.isHorizontallyResizable = true
+        }
     }
 
     func applyTheme(_ themeColors: ThemeColors, font: NSFont, showMinimap: Bool, showLineNumbers: Bool, wordWrap: Bool) {
