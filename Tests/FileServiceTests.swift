@@ -117,7 +117,7 @@ struct FileServiceTests {
 
         let savedData = try Data(contentsOf: fileURL)
         #expect(savedData.starts(with: byteOrderMark))
-        #expect(String(data: savedData, encoding: .utf8) == "after\n")
+        #expect(savedData == byteOrderMark + Data("after\n".utf8))
     }
 
     @Test

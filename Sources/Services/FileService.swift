@@ -559,13 +559,27 @@ final class FileService {
         // Decode the bytes we already loaded instead of opening and reading every UTF-8 file a
         // second time. File open, session restore, search/replace, and diagnostics all funnel
         // through this method, so avoiding the duplicate I/O matters on large workspaces.
-        if let content = String(data: data, encoding: .utf8) {
+        let hasUTF8ByteOrderMark = data.starts(with: Self.utf8ByteOrderMark)
+        let utf8Content: String?
+        if hasUTF8ByteOrderMark {
+            // Foundation's UTF-8 decoder does not handle a BOM consistently across SDK
+            // versions: some versions consume it while others expose U+FEFF as editor text.
+            // Remove the marker from the bytes explicitly while remembering it for saving.
+            utf8Content = String(
+                data: Data(data.dropFirst(Self.utf8ByteOrderMark.count)),
+                encoding: .utf8
+            )
+        } else {
+            utf8Content = String(data: data, encoding: .utf8)
+        }
+
+        if let content = utf8Content {
             return (
                 content,
                 FileDocumentMetadata(
                     encoding: .utf8,
                     lineEnding: LineEndingStyle.detect(in: content),
-                    hasUTF8ByteOrderMark: data.starts(with: Self.utf8ByteOrderMark)
+                    hasUTF8ByteOrderMark: hasUTF8ByteOrderMark
                 )
             )
         }
