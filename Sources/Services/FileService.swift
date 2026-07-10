@@ -176,6 +176,7 @@ private struct ProjectSearchMatcher {
 
 final class FileService {
     static let shared = FileService()
+    private static let utf8ByteOrderMark = Data([0xEF, 0xBB, 0xBF])
 
     var directoryLoadDelayPerItemNanoseconds: UInt64 = 0
     var projectSearchDelayPerFileNanoseconds: UInt64 = 0
@@ -191,16 +192,12 @@ final class FileService {
     var ripgrepCommandName: String = "rg"
 
     func ripgrepAvailable() -> Bool {
-        let arguments: [String]
-        if ripgrepLaunchPath == "/usr/bin/env" {
-            arguments = [ripgrepCommandName, "--version"]
-        } else {
-            arguments = ["--version"]
+        guard let executableURL = resolvedRipgrepExecutableURL() else {
+            return false
         }
-
         guard let result = try? ProcessRunner.run(
-            executableURL: URL(fileURLWithPath: ripgrepLaunchPath),
-            arguments: arguments,
+            executableURL: executableURL,
+            arguments: ["--version"],
             environment: ripgrepEnvironment(),
             timeout: 2.0
         ) else {
@@ -216,20 +213,34 @@ final class FileService {
         }.value
     }
 
-    private func ripgrepEnvironment() -> [String: String]? {
-        guard ripgrepLaunchPath == "/usr/bin/env" else {
+    private func resolvedRipgrepExecutableURL() -> URL? {
+        let executable = ripgrepLaunchPath == "/usr/bin/env"
+            ? ripgrepCommandName
+            : ripgrepLaunchPath
+        guard let executablePath = ExecutableResolver.resolve(
+            executable,
+            environment: ripgrepBaseEnvironment,
+            additionalSearchDirectories: ripgrepAdditionalSearchPaths,
+            homeDirectory: ripgrepHomeDirectory
+        ) else {
             return nil
         }
+        return URL(fileURLWithPath: executablePath)
+    }
 
-        var environment = ripgrepBaseEnvironment
-        let existingPath = environment["PATH"] ?? "/usr/bin:/bin"
-        let pathEntries = (ripgrepAdditionalSearchPaths + existingPath.split(separator: ":").map(String.init))
-            .reduce(into: [String]()) { result, entry in
-                guard !entry.isEmpty, !result.contains(entry) else { return }
-                result.append(entry)
-            }
-        environment["PATH"] = pathEntries.joined(separator: ":")
-        return environment
+    private func ripgrepEnvironment() -> [String: String] {
+        ExecutableResolver.augmentedEnvironment(
+            base: ripgrepBaseEnvironment,
+            additionalSearchDirectories: ripgrepAdditionalSearchPaths,
+            homeDirectory: ripgrepHomeDirectory
+        )
+    }
+
+    private var ripgrepHomeDirectory: String {
+        guard let configuredHome = ripgrepBaseEnvironment["HOME"], !configuredHome.isEmpty else {
+            return NSHomeDirectory()
+        }
+        return configuredHome
     }
 
     static func naturalSortKey(for value: String) -> String {
@@ -545,26 +556,40 @@ final class FileService {
     func readDocument(at url: URL) throws -> (content: String, metadata: FileDocumentMetadata) {
         let data = try Data(contentsOf: url)
 
-        do {
-            let content = try String(contentsOf: url, encoding: .utf8)
+        // Decode the bytes we already loaded instead of opening and reading every UTF-8 file a
+        // second time. File open, session restore, search/replace, and diagnostics all funnel
+        // through this method, so avoiding the duplicate I/O matters on large workspaces.
+        if let content = String(data: data, encoding: .utf8) {
             return (
                 content,
                 FileDocumentMetadata(
                     encoding: .utf8,
-                    lineEnding: LineEndingStyle.detect(in: content)
-                )
-            )
-        } catch {
-            var detectedEncoding: String.Encoding = .utf8
-            let content = try String(contentsOf: url, usedEncoding: &detectedEncoding)
-            return (
-                content,
-                FileDocumentMetadata(
-                    encoding: detectedEncoding,
-                    lineEnding: detectLineEnding(in: content, data: data, encoding: detectedEncoding)
+                    lineEnding: LineEndingStyle.detect(in: content),
+                    hasUTF8ByteOrderMark: data.starts(with: Self.utf8ByteOrderMark)
                 )
             )
         }
+
+        var decodedString: NSString?
+        var usedLossyConversion = ObjCBool(false)
+        let rawEncoding = NSString.stringEncoding(
+            for: data,
+            encodingOptions: nil,
+            convertedString: &decodedString,
+            usedLossyConversion: &usedLossyConversion
+        )
+        guard rawEncoding != 0, let content = decodedString as String? else {
+            throw CocoaError(.fileReadInapplicableStringEncoding)
+        }
+
+        let detectedEncoding = String.Encoding(rawValue: rawEncoding)
+        return (
+            content,
+            FileDocumentMetadata(
+                encoding: detectedEncoding,
+                lineEnding: detectLineEnding(in: content, data: data, encoding: detectedEncoding)
+            )
+        )
     }
 
     func writeFile(content: String, to url: URL) throws {
@@ -573,11 +598,44 @@ final class FileService {
 
     func writeDocument(content: String, metadata: FileDocumentMetadata, to url: URL) throws {
         let normalizedContent = normalized(content: content, lineEnding: metadata.lineEnding)
-        guard let data = normalizedContent.data(using: metadata.encoding) else {
+        guard var data = normalizedContent.data(using: metadata.encoding) else {
             throw CocoaError(.fileWriteInapplicableStringEncoding)
         }
+        if metadata.encoding == .utf8,
+           metadata.hasUTF8ByteOrderMark,
+           !data.starts(with: Self.utf8ByteOrderMark) {
+            data.insert(contentsOf: Self.utf8ByteOrderMark, at: 0)
+        }
 
-        try data.write(to: url, options: .atomic)
+        // Atomic Data writes replace the final path component. If that component is a symbolic
+        // link, writing to `url` would therefore destroy the link and create a new regular file
+        // while leaving the intended target unchanged. Resolve only file symlinks before the
+        // atomic replacement so editing through a symlink remains safe and predictable.
+        let isSymbolicLink = (try? url.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) == true
+        let writeURL = isSymbolicLink ? url.resolvingSymlinksInPath() : url
+        try atomicWritePreservingMetadata(data, to: writeURL)
+    }
+
+    private func atomicWritePreservingMetadata(_ data: Data, to url: URL) throws {
+        let temporaryURL = url.deletingLastPathComponent()
+            .appendingPathComponent(".rosewood-write-\(UUID().uuidString).tmp")
+        var shouldRemoveTemporaryFile = true
+        defer {
+            if shouldRemoveTemporaryFile {
+                try? FileManager.default.removeItem(at: temporaryURL)
+            }
+        }
+
+        try data.write(to: temporaryURL, options: .withoutOverwriting)
+        if FileManager.default.fileExists(atPath: url.path) {
+            // Foundation's Data.write(.atomic) swaps in a brand-new file and drops extended
+            // attributes such as Finder tags. replaceItemAt keeps the existing file metadata
+            // while atomically installing the temporary file's bytes.
+            _ = try FileManager.default.replaceItemAt(url, withItemAt: temporaryURL)
+        } else {
+            try FileManager.default.moveItem(at: temporaryURL, to: url)
+        }
+        shouldRemoveTemporaryFile = false
     }
 
     func detectContentType(at url: URL, settings: AppSettings.FileHandling) -> ContentType {
@@ -802,10 +860,13 @@ final class FileService {
         if isCancelled() {
             return []
         }
+        guard let executableURL = resolvedRipgrepExecutableURL() else {
+            return nil
+        }
 
         do {
             let result = try ProcessRunner.run(
-                executableURL: URL(fileURLWithPath: ripgrepLaunchPath),
+                executableURL: executableURL,
                 arguments: ripgrepArguments(for: query, options: options, includeHidden: includeHidden),
                 currentDirectoryURL: rootURL,
                 environment: ripgrepEnvironment(),
@@ -836,7 +897,7 @@ final class FileService {
         options: ProjectSearchOptions,
         includeHidden: Bool
     ) -> [String] {
-        var arguments = [ripgrepCommandName, "--json", "--line-number", "--column", "--color", "never", "--max-filesize", "1M"]
+        var arguments = ["--json", "--line-number", "--column", "--color", "never", "--max-filesize", "1M"]
 
         if includeHidden {
             arguments.append("--hidden")

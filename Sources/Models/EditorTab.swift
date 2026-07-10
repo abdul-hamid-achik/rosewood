@@ -7,6 +7,9 @@ struct EditorTab: Identifiable {
     var content: String
     var originalContent: String
     var isDirty: Bool
+    /// True when disk changed underneath a newer in-memory edit. Autosave must pause for this tab
+    /// until the user explicitly saves or reconciles it, otherwise it could erase the disk change.
+    var requiresExplicitSave: Bool
     var cursorPosition: CursorPosition
     var scrollPosition: ScrollPosition?  // Added for scroll persistence
     var pendingLineJump: Int?
@@ -22,6 +25,7 @@ struct EditorTab: Identifiable {
         content: String = "",
         originalContent: String = "",
         isDirty: Bool = false,
+        requiresExplicitSave: Bool = false,
         cursorPosition: CursorPosition = CursorPosition(),
         pendingLineJump: Int? = nil,
         documentVersion: Int = 0,
@@ -35,6 +39,7 @@ struct EditorTab: Identifiable {
         self.content = content
         self.originalContent = originalContent
         self.isDirty = isDirty
+        self.requiresExplicitSave = requiresExplicitSave
         self.cursorPosition = cursorPosition
         self.pendingLineJump = pendingLineJump
         self.documentVersion = documentVersion

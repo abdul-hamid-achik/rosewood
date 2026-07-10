@@ -385,8 +385,36 @@ struct EditorSupportTests {
 
         #expect(distinctColors.count > 1, "Editor layout should retain multiple syntax token colors after applyText")
     }
+
+    @Test
+    @MainActor
+    func editorContainerInvalidatesFullHighlightProgressAfterEditing() async throws {
+        let container = EditorContainerView(
+            themeColors: .nord,
+            font: NSFont.monospacedSystemFont(ofSize: 13, weight: .regular),
+            showMinimap: false,
+            showLineNumbers: true,
+            wordWrap: false
+        )
+        let originalText = "let alpha = 1"
+        container.applyText(
+            originalText,
+            language: "swift",
+            themeColors: .nord,
+            documentIdentity: "highlight-progress"
+        )
+
+        try await waitUntilEditorSupport {
+            container.hasCompletedFullDocumentHighlight
+        }
+
+        container.refreshAfterEditing(text: originalText + "\n", themeColors: .nord)
+
+        #expect(!container.hasCompletedFullDocumentHighlight)
+    }
 }
 
+@MainActor
 private func waitUntilEditorSupport(
     timeoutNanoseconds: UInt64 = 2_000_000_000,
     stepNanoseconds: UInt64 = 25_000_000,

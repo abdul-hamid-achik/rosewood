@@ -4,6 +4,31 @@ import Testing
 
 struct GitServiceTests {
     @Test
+    func toolAvailableResolvesGitOutsideMinimalGUIPath() async throws {
+        let directoryURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("rosewood-git-resolver-\(UUID().uuidString)", isDirectory: true)
+        let executableURL = directoryURL.appendingPathComponent("fake-git")
+        try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+        try """
+        #!/bin/sh
+        test "$1" = "--version"
+        """.write(to: executableURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o755],
+            ofItemAtPath: executableURL.path
+        )
+        defer { try? FileManager.default.removeItem(at: directoryURL) }
+
+        let service = GitService(
+            gitBaseEnvironment: ["PATH": "/usr/bin:/bin"],
+            gitAdditionalSearchPaths: [directoryURL.path],
+            gitCommandName: "fake-git"
+        )
+
+        #expect(await service.toolAvailable())
+    }
+
+    @Test
     func repositoryStatusReturnsBranchAndChangedFiles() async throws {
         let repositoryURL = try makeRepository()
         defer { try? FileManager.default.removeItem(at: repositoryURL) }

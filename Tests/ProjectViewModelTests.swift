@@ -126,6 +126,39 @@ struct ProjectViewModelTests {
     }
 
     @Test
+    func savingExistingWorkspaceFileDoesNotRestartFileTreeLoad() async throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let fileURL = rootURL.appendingPathComponent("Existing.swift")
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        try "let value = 1\n".write(to: fileURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let configURL = tempConfigURL()
+        defer { try? FileManager.default.removeItem(at: configURL) }
+
+        let viewModel = makeViewModel(
+            sessionStore: makeDefaults(),
+            sessionKey: "save-without-tree-reload-test",
+            configService: ConfigurationService(userConfigURL: configURL),
+            fileWatcher: FileWatcherService(),
+            ui: TestProjectUI()
+        )
+        viewModel.rootDirectory = rootURL
+        viewModel.openFile(at: fileURL)
+
+        try await waitUntil {
+            !viewModel.isLoadingFileTree
+        }
+
+        viewModel.updateTabContent("let value = 2\n")
+        viewModel.saveCurrentFile()
+
+        #expect(!viewModel.isLoadingFileTree)
+        #expect(try String(contentsOf: fileURL, encoding: .utf8) == "let value = 2\n")
+    }
+
+    @Test
     func tabSwitchFlushesActiveEditBuffer() async throws {
         let fileA = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
@@ -3635,12 +3668,14 @@ struct ProjectViewModelTests {
         let ui = TestProjectUI(
             confirmResponses: [.alertFirstButtonReturn]
         )
+        let lspService = MockLSPService()
         let viewModel = makeViewModel(
             sessionStore: makeDefaults(),
             sessionKey: "replace-flow-test",
             configService: ConfigurationService(userConfigURL: configURL),
             fileWatcher: FileWatcherService(),
-            ui: ui
+            ui: ui,
+            lspService: lspService
         )
 
         viewModel.rootDirectory = rootURL
@@ -3671,6 +3706,61 @@ struct ProjectViewModelTests {
         #expect(viewModel.openTabs.first?.isDirty == false)
         #expect(viewModel.lastProjectReplaceTransaction?.replacementCount == 3)
         #expect(ui.alerts.contains { $0.title == "Replace Complete" })
+        #expect(lspService.documentChangedCalls.last?.text.contains("cedar") == true)
+    }
+
+    @Test
+    func projectReplacePreservesEditsTypedWhileReplacementIsRunning() async throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let fileURL = rootURL.appendingPathComponent("Example.swift")
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        try "let rosewood = 1\n".write(to: fileURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let configURL = tempConfigURL()
+        defer { try? FileManager.default.removeItem(at: configURL) }
+        try configuration(fontSize: 13, autoSaveDelay: 0.01, autoSaveEnabled: true)
+            .write(to: configURL, atomically: true, encoding: .utf8)
+
+        let ui = TestProjectUI()
+        let viewModel = makeViewModel(
+            sessionStore: makeDefaults(),
+            sessionKey: "replace-preserves-concurrent-edit-test",
+            configService: ConfigurationService(userConfigURL: configURL),
+            fileWatcher: FileWatcherService(),
+            ui: ui
+        )
+        viewModel.rootDirectory = rootURL
+        viewModel.openFile(at: fileURL)
+        viewModel.projectSearchQuery = "rosewood"
+        viewModel.projectReplaceQuery = "cedar"
+        viewModel.performProjectSearch()
+
+        try await waitUntil {
+            viewModel.projectSearchResults.count == 1 && !viewModel.isSearchingProject
+        }
+
+        viewModel.replaceAllProjectResults()
+        viewModel.applyProjectReplacePreview()
+
+        let concurrentEdit = "let rosewood = 1\n// typed while replace was running\n"
+        viewModel.updateTabContent(concurrentEdit)
+
+        try await waitUntil {
+            !viewModel.isReplacingInProject &&
+                (try? String(contentsOf: fileURL, encoding: .utf8)) == "let cedar = 1\n"
+        }
+
+        #expect(viewModel.openTabs.first?.content == concurrentEdit)
+        #expect(viewModel.openTabs.first?.isDirty == true)
+        #expect(viewModel.openTabs.first?.requiresExplicitSave == true)
+        #expect(ui.alerts.contains { $0.title == "Replace Completed with Unsaved Edits" })
+
+        // Even with an aggressively short autosave delay, the preserved editor snapshot must not
+        // overwrite the replacement result until the user explicitly chooses Save.
+        try await Task.sleep(nanoseconds: 100_000_000)
+        #expect(try String(contentsOf: fileURL, encoding: .utf8) == "let cedar = 1\n")
     }
 
     @Test
@@ -4386,7 +4476,7 @@ struct ProjectViewModelTests {
         defer { try? FileManager.default.removeItem(at: configURL) }
 
         let fileWatcher = FileWatcherService()
-        let ui = TestProjectUI(confirmResponses: [.alertFirstButtonReturn])
+        let ui = TestProjectUI(confirmResponses: [.alertFirstButtonReturn, .alertFirstButtonReturn])
         let viewModel = makeViewModel(
             sessionStore: makeDefaults(),
             sessionKey: "external-reload-test",
@@ -4396,19 +4486,40 @@ struct ProjectViewModelTests {
         )
 
         viewModel.openFile(at: fileURL)
+        let projectChangeHandler = try #require(fileWatcher.onExternalFileChange)
+        var observedInitialAtomicReplacement = false
+        fileWatcher.onExternalFileChange = { _ in
+            observedInitialAtomicReplacement = true
+        }
+
+        // Dispatch-source registration completes asynchronously after resume(). Give that initial
+        // registration a run-loop turn so this test measures re-arming, not startup timing.
+        try await Task.sleep(nanoseconds: 100_000_000)
         try "print(\"after\")".write(to: fileURL, atomically: true, encoding: .utf8)
+        try await waitUntil {
+            observedInitialAtomicReplacement
+        }
 
-        fileWatcher.onExternalFileChange?(fileURL)
-
+        // Let the project process the event that arrived on the old inode. This must rebuild the
+        // watch before we restore the normal callback; otherwise another atomic write is invisible.
+        projectChangeHandler(fileURL)
+        fileWatcher.onExternalFileChange = projectChangeHandler
         try await waitUntil {
             viewModel.openTabs.first?.content == "print(\"after\")"
         }
 
+        try "print(\"after again\")".write(to: fileURL, atomically: true, encoding: .utf8)
+        try await waitUntil {
+            viewModel.openTabs.first?.content == "print(\"after again\")"
+        }
+
         #expect(viewModel.openTabs.first?.isDirty == false)
+        #expect(!ui.confirms.isEmpty)
+        #expect(fileWatcher.watchedURLs == Set([fileURL]))
     }
 
     @Test
-    func externalFileChangeIgnoreKeepsCurrentContent() throws {
+    func externalFileChangeIgnoreKeepsCurrentContent() async throws {
         let fileURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
             .appendingPathExtension("swift")
@@ -4431,9 +4542,15 @@ struct ProjectViewModelTests {
         viewModel.openFile(at: fileURL)
         try "print(\"after\")".write(to: fileURL, atomically: true, encoding: .utf8)
 
-        fileWatcher.onExternalFileChange?(fileURL)
+        try await waitUntil {
+            viewModel.openTabs.first?.originalContent == "print(\"after\")" &&
+                viewModel.openTabs.first?.requiresExplicitSave == true
+        }
 
         #expect(viewModel.openTabs.first?.content == "print(\"before\")")
+        #expect(viewModel.openTabs.first?.originalContent == "print(\"after\")")
+        #expect(viewModel.openTabs.first?.isDirty == true)
+        #expect(viewModel.openTabs.first?.requiresExplicitSave == true)
     }
 
     @Test

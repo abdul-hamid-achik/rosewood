@@ -1736,7 +1736,7 @@ final class EditorContainerView: NSView {
     private var fullHighlightTask: Task<Void, Never>?
     private var highlightRequestID = 0
     private var hasCompletedInitialHighlight = false
-    private var hasCompletedFullDocumentHighlight = false
+    private(set) var hasCompletedFullDocumentHighlight = false
     private var lastAppliedText: String = ""
     private var lastAppliedLanguage: String = ""
     private var lastAppliedThemeColors: ThemeColors = .nord
@@ -1780,6 +1780,10 @@ final class EditorContainerView: NSView {
         currentDisplayText = text
         if shouldReplaceText {
             currentDisplayVersion += 1
+            // A full-document pass only describes the previous text version. Resetting this
+            // progress makes large-document edits take the viewport-preview path first, then
+            // schedule the full pass after the editor has been idle.
+            hasCompletedFullDocumentHighlight = false
         }
 
         guard let textStorage = textView.textStorage else { return }
@@ -2093,6 +2097,12 @@ final class EditorContainerView: NSView {
     }
 
     func refreshAfterEditing(text: String, themeColors: ThemeColors) {
+        if text != currentDisplayText {
+            // Invalidate the completed full pass immediately, before the deferred applyText call.
+            // Theme/layout updates that arrive in this window must not request an eager full-file
+            // highlight for text the completed pass never saw.
+            hasCompletedFullDocumentHighlight = false
+        }
         currentDisplayText = text
         currentDisplayVersion += 1
         // Only override the accessibility value while folds are active (then the displayed text
@@ -2107,7 +2117,6 @@ final class EditorContainerView: NSView {
             .foregroundColor: themeColors.nsForeground,
             .paragraphStyle: makeTabParagraphStyle()
         ]
-        updateTextViewFrame()
         textView.needsDisplay = true
         lineNumberView.needsDisplay = true
         updateMinimap()

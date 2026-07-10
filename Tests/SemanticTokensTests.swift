@@ -166,6 +166,7 @@ struct SemanticTokensTests {
     }
 }
 
+@MainActor
 private func waitForSemantic(
     timeoutNanoseconds: UInt64 = 2_000_000_000,
     stepNanoseconds: UInt64 = 25_000_000,

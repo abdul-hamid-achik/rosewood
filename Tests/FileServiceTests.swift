@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 import Testing
 @testable import Rosewood
 
@@ -27,7 +28,7 @@ struct FileServiceTests {
         let fileURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
             .appendingPathExtension("yml")
-        let text = "name: cafe"
+        let text = "name: café"
         let data = text.data(using: .isoLatin1)!
 
         FileManager.default.createFile(atPath: fileURL.path, contents: data)
@@ -69,6 +70,93 @@ struct FileServiceTests {
         let rawContents = try String(contentsOf: fileURL, encoding: .utf8)
         #expect(rawContents.contains("\r\n"))
         #expect(!rawContents.contains("\nlet beta") || rawContents.contains("\r\nlet beta"))
+    }
+
+    @Test
+    func writeDocumentPreservesSymbolicLinkAndUpdatesItsTarget() throws {
+        let directoryURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let targetURL = directoryURL.appendingPathComponent("Target.swift")
+        let linkURL = directoryURL.appendingPathComponent("Linked.swift")
+
+        try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+        try "let value = \"before\"\n".write(to: targetURL, atomically: true, encoding: .utf8)
+        try FileManager.default.createSymbolicLink(at: linkURL, withDestinationURL: targetURL)
+        defer { try? FileManager.default.removeItem(at: directoryURL) }
+
+        try FileService.shared.writeDocument(
+            content: "let value = \"after\"\n",
+            metadata: .utf8LF,
+            to: linkURL
+        )
+
+        let linkAttributes = try FileManager.default.attributesOfItem(atPath: linkURL.path)
+        #expect(linkAttributes[.type] as? FileAttributeType == .typeSymbolicLink)
+        #expect(try String(contentsOf: targetURL, encoding: .utf8) == "let value = \"after\"\n")
+        #expect(try String(contentsOf: linkURL, encoding: .utf8) == "let value = \"after\"\n")
+    }
+
+    @Test
+    func writeDocumentPreservesUTF8ByteOrderMark() throws {
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("txt")
+        let byteOrderMark = Data([0xEF, 0xBB, 0xBF])
+        try (byteOrderMark + Data("before\n".utf8)).write(to: fileURL)
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+
+        let document = try FileService.shared.readDocument(at: fileURL)
+        #expect(document.content == "before\n")
+        #expect(document.metadata.hasUTF8ByteOrderMark)
+
+        try FileService.shared.writeDocument(
+            content: "after\n",
+            metadata: document.metadata,
+            to: fileURL
+        )
+
+        let savedData = try Data(contentsOf: fileURL)
+        #expect(savedData.starts(with: byteOrderMark))
+        #expect(String(data: savedData, encoding: .utf8) == "after\n")
+    }
+
+    @Test
+    func writeDocumentPreservesExistingFileMetadata() throws {
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("swift")
+        try "let value = 1\n".write(to: fileURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o640], ofItemAtPath: fileURL.path)
+        let attributeName = "com.rosewood.tests.metadata"
+        let attributeValue = Array("Rosewood".utf8)
+        let setResult = fileURL.path.withCString { path in
+            attributeName.withCString { name in
+                attributeValue.withUnsafeBytes { bytes in
+                    setxattr(path, name, bytes.baseAddress, bytes.count, 0, 0)
+                }
+            }
+        }
+        #expect(setResult == 0)
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+
+        try FileService.shared.writeDocument(
+            content: "let value = 2\n",
+            metadata: .utf8LF,
+            to: fileURL
+        )
+
+        let attributes = try FileManager.default.attributesOfItem(atPath: fileURL.path)
+        #expect(attributes[.posixPermissions] as? NSNumber == NSNumber(value: 0o640))
+        var savedAttribute = [UInt8](repeating: 0, count: 64)
+        let savedAttributeCount = fileURL.path.withCString { path in
+            attributeName.withCString { name in
+                savedAttribute.withUnsafeMutableBytes { bytes in
+                    getxattr(path, name, bytes.baseAddress, bytes.count, 0, 0)
+                }
+            }
+        }
+        #expect(savedAttributeCount == attributeValue.count)
+        #expect(String(decoding: savedAttribute.prefix(max(savedAttributeCount, 0)), as: UTF8.self) == "Rosewood")
     }
 
     @Test

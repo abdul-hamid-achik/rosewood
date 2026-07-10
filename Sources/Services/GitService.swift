@@ -26,13 +26,29 @@ protocol GitServiceProtocol: AnyObject {
 final class GitService: GitServiceProtocol {
     static let shared = GitService()
 
-    init() {}
+    private let gitBaseEnvironment: [String: String]
+    private let gitAdditionalSearchPaths: [String]
+    private let gitCommandName: String
+
+    init(
+        gitBaseEnvironment: [String: String] = ProcessInfo.processInfo.environment,
+        gitAdditionalSearchPaths: [String] = [],
+        gitCommandName: String = "git"
+    ) {
+        self.gitBaseEnvironment = gitBaseEnvironment
+        self.gitAdditionalSearchPaths = gitAdditionalSearchPaths
+        self.gitCommandName = gitCommandName
+    }
 
     func toolAvailable() async -> Bool {
-        await Task.detached(priority: .utility) {
+        await Task.detached(priority: .utility) { [self] in
+            guard let executableURL = resolvedGitExecutableURL() else {
+                return false
+            }
             guard let result = try? ProcessRunner.run(
-                executableURL: URL(fileURLWithPath: "/usr/bin/env"),
-                arguments: ["git", "--version"],
+                executableURL: executableURL,
+                arguments: ["--version"],
+                environment: gitEnvironment(),
                 timeout: 2.0
             ) else {
                 return false
@@ -460,9 +476,13 @@ final class GitService: GitServiceProtocol {
         allowNonZeroExit: Bool = false,
         timeout: TimeInterval? = nil
     ) throws -> String {
+        guard let executableURL = resolvedGitExecutableURL() else {
+            throw GitServiceError.toolUnavailable
+        }
+
         // GIT_TERMINAL_PROMPT=0 + SSH BatchMode make network ops (push/pull/fetch) fail fast on
         // missing credentials instead of blocking on an interactive prompt.
-        let environment = (ProcessInfo.processInfo.environment).merging([
+        let environment = gitEnvironment().merging([
             "GIT_PAGER": "cat",
             "GIT_TERMINAL_PROMPT": "0",
             "GIT_SSH_COMMAND": "ssh -oBatchMode=yes -oStrictHostKeyChecking=accept-new"
@@ -471,8 +491,8 @@ final class GitService: GitServiceProtocol {
         }
 
         let result = try ProcessRunner.run(
-            executableURL: URL(fileURLWithPath: "/usr/bin/env"),
-            arguments: ["git"] + arguments,
+            executableURL: executableURL,
+            arguments: arguments,
             currentDirectoryURL: workingDirectory,
             environment: environment,
             timeout: timeout
@@ -484,16 +504,46 @@ final class GitService: GitServiceProtocol {
 
         return result.stdout
     }
+
+    private func resolvedGitExecutableURL() -> URL? {
+        guard let executablePath = ExecutableResolver.resolve(
+            gitCommandName,
+            environment: gitBaseEnvironment,
+            additionalSearchDirectories: gitAdditionalSearchPaths,
+            homeDirectory: gitHomeDirectory
+        ) else {
+            return nil
+        }
+        return URL(fileURLWithPath: executablePath)
+    }
+
+    private func gitEnvironment() -> [String: String] {
+        ExecutableResolver.augmentedEnvironment(
+            base: gitBaseEnvironment,
+            additionalSearchDirectories: gitAdditionalSearchPaths,
+            homeDirectory: gitHomeDirectory
+        )
+    }
+
+    private var gitHomeDirectory: String {
+        guard let configuredHome = gitBaseEnvironment["HOME"], !configuredHome.isEmpty else {
+            return NSHomeDirectory()
+        }
+        return configuredHome
+    }
 }
 
 enum GitServiceError: LocalizedError {
     case invalidRepositoryRoot
+    case toolUnavailable
     case commandFailed(String)
 
     var errorDescription: String? {
         switch self {
         case .invalidRepositoryRoot:
             return "Git did not return a repository root."
+        case .toolUnavailable:
+            return "Git executable could not be resolved."
         case .commandFailed(let message):
             return message.isEmpty ? "Git command failed." : message
         }

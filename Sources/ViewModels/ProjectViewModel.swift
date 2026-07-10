@@ -3133,6 +3133,10 @@ final class ProjectViewModel: ObservableObject {
             openTabs[index].isDirty = nowDirty
             changed = true
         }
+        if !nowDirty, openTabs[index].requiresExplicitSave {
+            openTabs[index].requiresExplicitSave = false
+            changed = true
+        }
         return changed
     }
 
@@ -3210,6 +3214,9 @@ final class ProjectViewModel: ObservableObject {
         let nowDirty = content != tab.originalContent
         if tab.isDirty != nowDirty {
             openTabs[selectedTabIndex].isDirty = nowDirty
+        }
+        if !nowDirty, openTabs[selectedTabIndex].requiresExplicitSave {
+            openTabs[selectedTabIndex].requiresExplicitSave = false
         }
 
         invalidateWorkspaceDiagnosticsCache()
@@ -3476,9 +3483,15 @@ final class ProjectViewModel: ObservableObject {
 
     private func autoSaveAllDirtyTabs() {
         autoSaveTask = nil
+        // A project replace/undo is writing workspace files on a background task. Let it finish
+        // and reconcile open-tab versions before any autosave can race those writes.
+        guard !isReplacingInProject else {
+            scheduleAutoSave()
+            return
+        }
         // Flush the live buffer first so the isDirty scan + each saveTab see the latest typed text.
         commitActiveEditBuffer()
-        for index in openTabs.indices where openTabs[index].isDirty {
+        for index in openTabs.indices where openTabs[index].isDirty && !openTabs[index].requiresExplicitSave {
             _ = saveTab(at: index)
         }
     }
@@ -3488,16 +3501,22 @@ final class ProjectViewModel: ObservableObject {
         guard let tabIndex = openTabs.firstIndex(where: {
             $0.filePath?.standardizedFileURL == standardizedURL
         }) else { return }
+        // Editors commonly save atomically by replacing the file's inode. The dispatch source
+        // that delivered this callback still watches the old inode, so rebuild it after every
+        // handled event regardless of whether the user reloads, ignores, or keeps local edits.
+        defer { fileWatcher.rewatch(url: standardizedURL) }
         // Flush the live buffer so the on-disk comparison below is against the live text.
         commitActiveEditBuffer()
+        let onDiskDocument = try? fileService.readDocument(at: url)
 
         // Skip if the on-disk content already matches what we have — coalesced watcher
         // events and lingering self-writes can fire spuriously.
-        if let onDisk = try? fileService.readDocument(at: url).content,
-           onDisk == openTabs[tabIndex].content {
-            if onDisk != openTabs[tabIndex].originalContent {
-                openTabs[tabIndex].originalContent = onDisk
+        if let onDiskDocument, onDiskDocument.content == openTabs[tabIndex].content {
+            if onDiskDocument.content != openTabs[tabIndex].originalContent {
+                openTabs[tabIndex].originalContent = onDiskDocument.content
+                openTabs[tabIndex].documentMetadata = onDiskDocument.metadata
                 openTabs[tabIndex].isDirty = false
+                openTabs[tabIndex].requiresExplicitSave = false
             }
             return
         }
@@ -3513,6 +3532,8 @@ final class ProjectViewModel: ObservableObject {
             )
             if response == .alertSecondButtonReturn {
                 reloadTab(at: tabIndex)
+            } else if let onDiskDocument {
+                preserveEditorChanges(at: tabIndex, against: onDiskDocument)
             }
         } else {
             let response = ui.confirm(
@@ -3523,8 +3544,24 @@ final class ProjectViewModel: ObservableObject {
             )
             if response == .alertFirstButtonReturn {
                 reloadTab(at: tabIndex)
+            } else if let onDiskDocument {
+                preserveEditorChanges(at: tabIndex, against: onDiskDocument)
             }
         }
+    }
+
+    private func preserveEditorChanges(
+        at index: Int,
+        against onDiskDocument: (content: String, metadata: FileDocumentMetadata)
+    ) {
+        guard openTabs.indices.contains(index) else { return }
+        openTabs[index].originalContent = onDiskDocument.content
+        openTabs[index].documentMetadata = onDiskDocument.metadata
+        openTabs[index].isDirty = openTabs[index].content != onDiskDocument.content
+        // "Keep" / "Ignore" means preserve both versions until the user makes an explicit save
+        // decision. A pending autosave must not silently overwrite the external version.
+        openTabs[index].requiresExplicitSave = openTabs[index].isDirty
+        persistSession()
     }
 
     private func reloadTab(at index: Int) {
@@ -3559,6 +3596,7 @@ final class ProjectViewModel: ObservableObject {
             }
 
             openTabs[index].isDirty = false
+            openTabs[index].requiresExplicitSave = false
             openTabs[index].contentType = contentType
             invalidateCachedFileContent(for: url)
             invalidateWorkspaceDiagnosticsCache()
@@ -4394,16 +4432,21 @@ final class ProjectViewModel: ObservableObject {
 
             openTabs[index].originalContent = openTabs[index].content
             openTabs[index].isDirty = false
+            openTabs[index].requiresExplicitSave = false
 
             if openTabs[index].contentType.isText, let uri = openTabs[index].documentURI {
                 lspService.documentSaved(uri: uri, language: openTabs[index].language)
             }
 
             invalidateCachedFileContent(for: url)
-            updateWorkspaceSymbolCache(for: url, contents: openTabs[index].content)
+            // Symbol extraction reparses the whole document. Keep routine saves/autosaves off the
+            // main thread by reusing the same debounced background path as live editor updates.
+            scheduleWorkspaceSymbolCacheUpdate(for: url, contents: openTabs[index].content)
             invalidateWorkspaceDiagnosticsCache()
 
-            if let rootDirectory {
+            // Rewriting an existing file does not change the explorer or workspace file index.
+            // Only Save As can add a new path that those views need to discover.
+            if didChangeURL, let rootDirectory {
                 let normalizedRootPath = normalizedPath(for: rootDirectory)
                 let newPath = normalizedPath(for: url)
                 let previousPath = previousURL.map(normalizedPath(for:))

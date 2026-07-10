@@ -1,6 +1,173 @@
 import Foundation
 import Darwin
 
+/// Resolves command-line tools for a native macOS app. Apps launched from Finder/Dock inherit a
+/// minimal environment rather than the PATH configured by the user's shell, so relying on
+/// `/usr/bin/env <tool>` produces false "not installed" warnings for Homebrew, MacPorts, mise,
+/// asdf, Cargo, and Nix installs.
+enum ExecutableResolver {
+    typealias LoginShellLookup = (_ executable: String, _ environment: [String: String]) -> String?
+
+    static func resolve(
+        _ executable: String,
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        additionalSearchDirectories: [String] = [],
+        homeDirectory: String = NSHomeDirectory(),
+        isExecutable: (String) -> Bool = { FileManager.default.isExecutableFile(atPath: $0) },
+        loginShellLookup: LoginShellLookup? = nil
+    ) -> String? {
+        let normalizedExecutable = executable.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedExecutable.isEmpty,
+              !normalizedExecutable.contains("\0"),
+              !normalizedExecutable.contains(where: \.isNewline) else {
+            return nil
+        }
+
+        if normalizedExecutable.contains("/") {
+            let expandedPath = expandHome(in: normalizedExecutable, homeDirectory: homeDirectory)
+            return isExecutable(expandedPath) ? expandedPath : nil
+        }
+
+        let resolvedEnvironment = augmentedEnvironment(
+            base: environment,
+            additionalSearchDirectories: additionalSearchDirectories,
+            homeDirectory: homeDirectory
+        )
+        for directory in searchDirectories(
+            environment: resolvedEnvironment,
+            additionalSearchDirectories: [],
+            homeDirectory: homeDirectory
+        ) {
+            let candidate = URL(fileURLWithPath: directory)
+                .appendingPathComponent(normalizedExecutable)
+                .standardizedFileURL.path
+            if isExecutable(candidate) {
+                return candidate
+            }
+        }
+
+        let lookup = loginShellLookup ?? defaultLoginShellLookup
+        guard let shellCandidate = lookup(normalizedExecutable, resolvedEnvironment) else {
+            return nil
+        }
+        let expandedCandidate = expandHome(in: shellCandidate, homeDirectory: homeDirectory)
+        return isExecutable(expandedCandidate) ? expandedCandidate : nil
+    }
+
+    /// Returns an environment whose PATH is useful for a GUI-launched macOS app while preserving
+    /// every other inherited variable. The ordering is deterministic and duplicates are removed.
+    static func augmentedEnvironment(
+        base: [String: String] = ProcessInfo.processInfo.environment,
+        additionalSearchDirectories: [String] = [],
+        homeDirectory: String = NSHomeDirectory()
+    ) -> [String: String] {
+        var result = base
+        result["PATH"] = searchDirectories(
+            environment: base,
+            additionalSearchDirectories: additionalSearchDirectories,
+            homeDirectory: homeDirectory
+        ).joined(separator: ":")
+        return result
+    }
+
+    static func searchDirectories(
+        environment: [String: String],
+        additionalSearchDirectories: [String] = [],
+        homeDirectory: String = NSHomeDirectory()
+    ) -> [String] {
+        let inheritedDirectories = (environment["PATH"] ?? "")
+            .split(separator: ":", omittingEmptySubsequences: true)
+            .map(String.init)
+
+        var standardDirectories: [String] = []
+        if let homebrewPrefix = environment["HOMEBREW_PREFIX"], !homebrewPrefix.isEmpty {
+            standardDirectories.append(contentsOf: [
+                URL(fileURLWithPath: homebrewPrefix).appendingPathComponent("bin").path,
+                URL(fileURLWithPath: homebrewPrefix).appendingPathComponent("sbin").path
+            ])
+        }
+        standardDirectories.append(contentsOf: [
+            "/opt/homebrew/bin",
+            "/opt/homebrew/sbin",
+            "/usr/local/bin",
+            "/usr/local/sbin",
+            "/opt/local/bin",
+            "/opt/local/sbin",
+            "\(homeDirectory)/bin",
+            "\(homeDirectory)/.local/bin",
+            "\(homeDirectory)/.cargo/bin",
+            "\(homeDirectory)/.local/share/mise/shims",
+            "\(homeDirectory)/.asdf/shims",
+            "\(homeDirectory)/.nix-profile/bin",
+            "/nix/var/nix/profiles/default/bin",
+            "/run/current-system/sw/bin",
+            "/Applications/Xcode.app/Contents/Developer/usr/bin",
+            "/Library/Developer/CommandLineTools/usr/bin",
+            "/usr/bin",
+            "/bin",
+            "/usr/sbin",
+            "/sbin"
+        ])
+
+        return (additionalSearchDirectories + inheritedDirectories + standardDirectories)
+            .map { expandHome(in: $0, homeDirectory: homeDirectory) }
+            .reduce(into: [String]()) { directories, directory in
+                guard !directory.isEmpty, !directories.contains(directory) else { return }
+                directories.append(directory)
+            }
+    }
+
+    private static func expandHome(in path: String, homeDirectory: String) -> String {
+        if path == "~" {
+            return homeDirectory
+        }
+        if path.hasPrefix("~/") {
+            return URL(fileURLWithPath: homeDirectory)
+                .appendingPathComponent(String(path.dropFirst(2)))
+                .path
+        }
+        return path
+    }
+
+    private static func defaultLoginShellLookup(
+        executable: String,
+        environment: [String: String]
+    ) -> String? {
+        let configuredShell = environment["SHELL"] ?? "/bin/zsh"
+        let supportedShellNames: Set<String> = ["zsh", "bash", "sh", "ksh"]
+        let shellURL: URL
+        if supportedShellNames.contains(URL(fileURLWithPath: configuredShell).lastPathComponent),
+           FileManager.default.isExecutableFile(atPath: configuredShell) {
+            shellURL = URL(fileURLWithPath: configuredShell)
+        } else if FileManager.default.isExecutableFile(atPath: "/bin/zsh") {
+            shellURL = URL(fileURLWithPath: "/bin/zsh")
+        } else {
+            shellURL = URL(fileURLWithPath: "/bin/sh")
+        }
+
+        var shellEnvironment = environment
+        shellEnvironment["TERM"] = "dumb"
+        shellEnvironment["NO_COLOR"] = "1"
+
+        guard let result = try? ProcessRunner.run(
+            executableURL: shellURL,
+            // The executable is passed as positional parameter $1, never interpolated into shell
+            // source, so names containing shell metacharacters cannot become code.
+            arguments: ["-l", "-c", "command -v \"$1\"", "rosewood-resolver", executable],
+            environment: shellEnvironment,
+            timeout: 3.0
+        ), result.terminationStatus == 0 else {
+            return nil
+        }
+
+        // Startup files sometimes print status text. Accept only an absolute executable path.
+        return result.stdout
+            .split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .last { $0.hasPrefix("/") && FileManager.default.isExecutableFile(atPath: $0) }
+    }
+}
+
 struct ProcessRunnerResult {
     let terminationStatus: Int32
     let stdoutData: Data

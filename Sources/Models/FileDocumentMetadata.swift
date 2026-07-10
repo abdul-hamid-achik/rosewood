@@ -73,15 +73,18 @@ struct FileDocumentMetadata: Equatable, Hashable, Codable, Sendable {
     var encodingRawValue: UInt
     var encodingLabel: String
     var lineEnding: LineEndingStyle
+    var hasUTF8ByteOrderMark: Bool
 
     init(
         encoding: String.Encoding = .utf8,
         encodingLabel: String? = nil,
-        lineEnding: LineEndingStyle = .lf
+        lineEnding: LineEndingStyle = .lf,
+        hasUTF8ByteOrderMark: Bool = false
     ) {
         self.encodingRawValue = encoding.rawValue
         self.encodingLabel = encodingLabel ?? encoding.displayLabel
         self.lineEnding = lineEnding
+        self.hasUTF8ByteOrderMark = hasUTF8ByteOrderMark
     }
 
     var encoding: String.Encoding {
@@ -89,6 +92,21 @@ struct FileDocumentMetadata: Equatable, Hashable, Codable, Sendable {
     }
 
     static let utf8LF = FileDocumentMetadata()
+
+    private enum CodingKeys: String, CodingKey {
+        case encodingRawValue
+        case encodingLabel
+        case lineEnding
+        case hasUTF8ByteOrderMark
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        encodingRawValue = try container.decode(UInt.self, forKey: .encodingRawValue)
+        encodingLabel = try container.decode(String.self, forKey: .encodingLabel)
+        lineEnding = try container.decode(LineEndingStyle.self, forKey: .lineEnding)
+        hasUTF8ByteOrderMark = try container.decodeIfPresent(Bool.self, forKey: .hasUTF8ByteOrderMark) ?? false
+    }
 }
 
 extension String.Encoding {

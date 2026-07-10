@@ -170,6 +170,12 @@ extension ProjectViewModel {
         let token = replaceInProjectToken
         let normalizedRootPath = rootDirectory.map(normalizedPath(for:))
         let fileSnapshots = lastProjectReplaceTransaction.fileSnapshots
+        let startingDocumentVersions = projectReplaceDocumentVersions(
+            affecting: fileSnapshots.map(\.fileURL)
+        )
+        for fileURL in fileSnapshots.map(\.fileURL) {
+            fileWatcher.suppressSelfWrite(for: fileURL)
+        }
         isReplacingInProject = true
 
         replaceInProjectTask = Task { [weak self, fileService] in
@@ -197,12 +203,21 @@ extension ProjectViewModel {
                 return
             }
 
-            self.syncOpenTabs(with: fileSnapshots.map(\.fileURL))
+            let preservedEditURLs = self.syncOpenTabs(
+                with: fileSnapshots.map(\.fileURL),
+                preservingChangesSince: startingDocumentVersions
+            )
             self.isReplacingInProject = false
             self.lastProjectReplaceTransaction = nil
             self.performProjectSearch()
             self.refreshGitState()
-            if failedURLs.isEmpty {
+            if !preservedEditURLs.isEmpty {
+                self.ui.alert(
+                    "Replace Undo Completed with Unsaved Edits",
+                    "Rosewood restored the files on disk and preserved newer editor changes in \(preservedEditURLs.count) tab\(preservedEditURLs.count == 1 ? "" : "s"). Autosave is paused for those tabs until you explicitly save them.",
+                    .warning
+                )
+            } else if failedURLs.isEmpty {
                 self.ui.alert(
                     "Replace Undone",
                     "Restored \(lastProjectReplaceTransaction.replacementCount) match\(lastProjectReplaceTransaction.replacementCount == 1 ? "" : "es") across \(lastProjectReplaceTransaction.fileCount) file\(lastProjectReplaceTransaction.fileCount == 1 ? "" : "s").",
@@ -353,6 +368,12 @@ extension ProjectViewModel {
         replaceInProjectToken = UUID()
         let token = replaceInProjectToken
         let normalizedRootPath = rootDirectory.map(normalizedPath(for:))
+        let startingDocumentVersions = projectReplaceDocumentVersions(
+            affecting: preview.affectedFileURLs
+        )
+        for fileURL in preview.affectedFileURLs {
+            fileWatcher.suppressSelfWrite(for: fileURL)
+        }
         isReplacingInProject = true
 
         replaceInProjectTask = Task { [weak self, fileService] in
@@ -370,7 +391,10 @@ extension ProjectViewModel {
                     return
                 }
 
-                self.syncOpenTabs(with: summary.modifiedFiles)
+                let preservedEditURLs = self.syncOpenTabs(
+                    with: summary.modifiedFiles,
+                    preservingChangesSince: startingDocumentVersions
+                )
                 self.isReplacingInProject = false
                 self.lastProjectReplaceTransaction = self.makeProjectReplaceTransaction(
                     preview: preview,
@@ -379,7 +403,13 @@ extension ProjectViewModel {
                 )
                 self.performProjectSearch()
                 self.refreshGitState()
-                if summary.replacementCount > 0 {
+                if !preservedEditURLs.isEmpty {
+                    self.ui.alert(
+                        "Replace Completed with Unsaved Edits",
+                        "Rosewood applied the replacement on disk and preserved newer editor changes in \(preservedEditURLs.count) tab\(preservedEditURLs.count == 1 ? "" : "s"). Autosave is paused for those tabs until you explicitly save them.",
+                        .warning
+                    )
+                } else if summary.replacementCount > 0 {
                     self.ui.alert(
                         "Replace Complete",
                         "Replaced \(summary.replacementCount) match\(summary.replacementCount == 1 ? "" : "es") in \(summary.modifiedFiles.count) file\(summary.modifiedFiles.count == 1 ? "" : "s").",
@@ -394,26 +424,81 @@ extension ProjectViewModel {
         }
     }
 
-    func syncOpenTabs(with fileURLs: [URL]) {
+    func projectReplaceDocumentVersions(affecting fileURLs: [URL]) -> [UUID: Int] {
         let normalizedPaths = Set(fileURLs.map(normalizedPath(for:)))
-        guard !normalizedPaths.isEmpty else { return }
-        // A replace/undo overwrites tab content from disk; drop the live buffer so it can't shadow it.
+        return Dictionary(uniqueKeysWithValues: openTabs.compactMap { tab in
+            guard let filePath = tab.filePath,
+                  normalizedPaths.contains(normalizedPath(for: filePath)) else {
+                return nil
+            }
+            return (tab.id, liveDocumentVersion(forTabID: tab.id) ?? tab.documentVersion)
+        })
+    }
+
+    @discardableResult
+    func syncOpenTabs(
+        with fileURLs: [URL],
+        preservingChangesSince startingDocumentVersions: [UUID: Int]
+    ) -> [URL] {
+        let normalizedPaths = Set(fileURLs.map(normalizedPath(for:)))
+        guard !normalizedPaths.isEmpty else { return [] }
+
+        // Capture live versions before clearing the active buffer. If the user typed after the
+        // background replace began, that version is newer than the operation's starting snapshot.
+        let currentDocumentVersions = Dictionary(uniqueKeysWithValues: openTabs.map { tab in
+            (tab.id, liveDocumentVersion(forTabID: tab.id) ?? tab.documentVersion)
+        })
         commitAndClearActiveEditBuffer()
+        var preservedEditURLs: [URL] = []
 
         for index in openTabs.indices {
             guard let filePath = openTabs[index].filePath,
                   normalizedPaths.contains(normalizedPath(for: filePath)),
-                  let content = try? fileService.readFile(at: filePath) else {
+                  let document = try? fileService.readDocument(at: filePath) else {
                 continue
             }
 
-            openTabs[index].content = content
-            openTabs[index].originalContent = content
-            openTabs[index].isDirty = false
-            updateWorkspaceSymbolCache(for: filePath, contents: content)
+            let startingVersion = startingDocumentVersions[openTabs[index].id]
+            let currentVersion = currentDocumentVersions[openTabs[index].id] ?? openTabs[index].documentVersion
+            let hasNewerEditorChanges = startingVersion.map { currentVersion > $0 } ?? openTabs[index].isDirty
+
+            if hasNewerEditorChanges, openTabs[index].content != document.content {
+                // Keep the user's newer buffer, but move the clean baseline to the replacement's
+                // on-disk result. Marking the tab explicit-save-only prevents autosave from
+                // immediately overwriting that disk result with the older editor snapshot.
+                openTabs[index].originalContent = document.content
+                openTabs[index].documentMetadata = document.metadata
+                openTabs[index].isDirty = true
+                openTabs[index].requiresExplicitSave = true
+                preservedEditURLs.append(filePath)
+            } else {
+                openTabs[index].content = document.content
+                openTabs[index].originalContent = document.content
+                openTabs[index].documentMetadata = document.metadata
+                openTabs[index].isDirty = false
+                openTabs[index].requiresExplicitSave = false
+                openTabs[index].documentVersion = currentVersion + 1
+
+                if openTabs[index].contentType.isText, let uri = openTabs[index].documentURI {
+                    lspService.documentChanged(
+                        uri: uri,
+                        language: openTabs[index].language,
+                        text: document.content
+                    )
+                }
+            }
+            invalidateWorkspaceSymbolCache(for: filePath)
+
+            // Project replace uses atomic writes just like Save, so its old descriptor points at
+            // the replaced inode. Re-arm it before returning control to the editor.
+            fileWatcher.rewatch(url: filePath)
         }
 
         cachedWorkspaceSymbols = nil
+        // One debounced task cannot safely be scheduled once per file (each call cancels the
+        // previous one). Rebuild the invalidated entries together in a single off-main pass.
+        scheduleWorkspaceSymbolIndexRefresh()
+        return preservedEditURLs
     }
 
     func handleProjectSearchQueryChange(from oldValue: String) {
