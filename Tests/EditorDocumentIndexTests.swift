@@ -315,6 +315,222 @@ struct EditorDocumentIndexTests {
         #expect(!index.lastEditUsedFullRebuild)
     }
 
+    @Test
+    func largeStructuralEditsStayTreeLocalAcrossRepeatedMiddleInsertAndDelete() {
+        let physicalLineCount = 100_000
+        let middleLine = physicalLineCount / 2
+        let middleLineStart = middleLine * 2
+        let editOffset = middleLineStart + 1
+        let originalText = String(repeating: "x\n", count: physicalLineCount)
+        var text = originalText
+        var index = EditorDocumentIndex(text: text)
+        var maximumEditTreeNodeVisitCount = 0
+
+        #expect(index.lineCount == physicalLineCount + 1)
+        #expect(index.treeDepth < 128)
+        #expect(index.utf16Offset(
+            for: LSPPosition(line: middleLine - 1, character: 0)
+        ) == middleLineStart - 2)
+        #expect(index.utf16Offset(
+            for: LSPPosition(line: middleLine, character: 0)
+        ) == middleLineStart)
+
+        for _ in 0..<24 {
+            #expect(applyEdit(
+                to: &index,
+                text: &text,
+                oldRange: NSRange(location: editOffset, length: 0),
+                replacement: "\n"
+            ))
+            maximumEditTreeNodeVisitCount = max(
+                maximumEditTreeNodeVisitCount,
+                index.lastEditTreeNodeVisitCount
+            )
+
+            #expect(index.lineCount == physicalLineCount + 2)
+            #expect(index.fullRebuildCount == 1)
+            #expect(index.structuralTreeRebuildCount == 0)
+            #expect(index.lastScannedUTF16Length < 16)
+            #expect(index.lastTreeMutationNodeVisitCount < 256)
+            #expect(index.lastEditTreeNodeVisitCount < 512)
+            #expect(index.lastEditTreeNodeVisitCount >= index.lastTreeMutationNodeVisitCount)
+            #expect(index.treeDepth < 128)
+            #expect(index.utf16Offset(
+                for: LSPPosition(line: middleLine, character: 0)
+            ) == middleLineStart)
+            #expect(index.utf16Offset(
+                for: LSPPosition(line: middleLine + 1, character: 0)
+            ) == middleLineStart + 2)
+            #expect(index.utf16Offset(
+                for: LSPPosition(line: middleLine + 2, character: 0)
+            ) == middleLineStart + 3)
+            #expect(index.fullLineRange(
+                containingUTF16Offset: middleLineStart + 2
+            ) == NSRange(location: middleLineStart + 2, length: 1))
+            #expect(index.lineAndColumn(
+                atUTF16Offset: (text as NSString).length
+            ) == (line: index.lineCount, column: 1))
+
+            #expect(applyEdit(
+                to: &index,
+                text: &text,
+                oldRange: NSRange(location: editOffset, length: 1),
+                replacement: ""
+            ))
+            maximumEditTreeNodeVisitCount = max(
+                maximumEditTreeNodeVisitCount,
+                index.lastEditTreeNodeVisitCount
+            )
+
+            #expect(text == originalText)
+            #expect(index.lineCount == physicalLineCount + 1)
+            #expect(index.fullRebuildCount == 1)
+            #expect(index.structuralTreeRebuildCount == 0)
+            #expect(index.lastScannedUTF16Length < 16)
+            #expect(index.lastTreeMutationNodeVisitCount < 256)
+            #expect(index.lastEditTreeNodeVisitCount < 512)
+            #expect(index.treeDepth < 128)
+            #expect(index.utf16Offset(
+                for: LSPPosition(line: middleLine + 1, character: 0)
+            ) == middleLineStart + 2)
+            #expect(index.fullLineRange(
+                containingUTF16Offset: editOffset
+            ) == NSRange(location: middleLineStart, length: 2))
+            #expect(index.lineAndColumn(
+                atUTF16Offset: (text as NSString).length
+            ) == (line: index.lineCount, column: 1))
+        }
+
+        #expect(index.incrementalEditCount == 48)
+        #expect(index.structuralLocalEditCount == 48)
+        #expect(maximumEditTreeNodeVisitCount < 512)
+    }
+
+    @Test
+    func unicodeSeparatorEditsAreStructuralOnlyInVisualMode() {
+        for separator in ["\u{0085}", "\u{2028}", "\u{2029}"] {
+            var visualText = "leftright"
+            var visualIndex = EditorDocumentIndex(text: visualText, lineBreakMode: .visual)
+
+            #expect(applyEdit(
+                to: &visualIndex,
+                text: &visualText,
+                oldRange: NSRange(location: 4, length: 0),
+                replacement: separator
+            ))
+            #expect(visualIndex.lineCount == 2)
+            #expect(visualIndex.structuralLocalEditCount == 1)
+            #expect(visualIndex.structuralTreeRebuildCount == 0)
+            expectMatchesOracle(visualIndex, text: visualText)
+
+            #expect(applyEdit(
+                to: &visualIndex,
+                text: &visualText,
+                oldRange: NSRange(location: 4, length: 1),
+                replacement: ""
+            ))
+            #expect(visualText == "leftright")
+            #expect(visualIndex.lineCount == 1)
+            #expect(visualIndex.structuralLocalEditCount == 2)
+
+            var lspText = "leftright"
+            var lspIndex = EditorDocumentIndex(text: lspText, lineBreakMode: .lsp)
+
+            #expect(applyEdit(
+                to: &lspIndex,
+                text: &lspText,
+                oldRange: NSRange(location: 4, length: 0),
+                replacement: separator
+            ))
+            #expect(lspIndex.lineCount == 1)
+            #expect(lspIndex.lines == [
+                EditorDocumentIndex.Line(contentLength: 10, terminatorLength: 0)
+            ])
+            #expect(lspIndex.structuralLocalEditCount == 0)
+            #expect(lspIndex.lastScannedUTF16Length == 1)
+            #expect(lspIndex.lineAndColumn(atUTF16Offset: 5) == (line: 1, column: 6))
+
+            #expect(applyEdit(
+                to: &lspIndex,
+                text: &lspText,
+                oldRange: NSRange(location: 4, length: 1),
+                replacement: ""
+            ))
+            #expect(lspText == "leftright")
+            #expect(lspIndex.lineCount == 1)
+            #expect(lspIndex.structuralLocalEditCount == 0)
+        }
+    }
+
+    @Test
+    func structuralEditsPreserveCRLFSeamsAndEOFSentinel() {
+        let fixtures: [(
+            text: String,
+            oldRange: NSRange,
+            replacement: String,
+            expected: String
+        )] = [
+            ("a\rb", NSRange(location: 2, length: 0), "\n", "a\r\nb"),
+            ("a\nb", NSRange(location: 1, length: 0), "\r", "a\r\nb"),
+            ("a\r\nb", NSRange(location: 2, length: 1), "", "a\rb"),
+            ("a\r\nb", NSRange(location: 1, length: 1), "", "a\nb"),
+            ("\ra\n", NSRange(location: 1, length: 1), "", "\r\n"),
+            ("", NSRange(location: 0, length: 0), "\n", "\n"),
+            ("\n", NSRange(location: 0, length: 1), "", ""),
+            ("a", NSRange(location: 1, length: 0), "\n", "a\n"),
+            ("a\n", NSRange(location: 1, length: 1), "", "a")
+        ]
+
+        for fixture in fixtures {
+            var text = fixture.text
+            var index = EditorDocumentIndex(text: text)
+
+            #expect(applyEdit(
+                to: &index,
+                text: &text,
+                oldRange: fixture.oldRange,
+                replacement: fixture.replacement
+            ))
+            #expect(text == fixture.expected)
+            #expect(index.fullRebuildCount == 1)
+            #expect(index.structuralTreeRebuildCount == 0)
+            #expect(index.structuralLocalEditCount == 1)
+            expectMatchesOracle(index, text: text)
+        }
+    }
+
+    @Test
+    func copiedIndexMutationsDoNotAliasPersistentTreeNodes() {
+        var originalText = "alpha\nbeta\ngamma"
+        var original = EditorDocumentIndex(text: originalText)
+        var copied = original
+        var copiedText = originalText
+
+        #expect(applyEdit(
+            to: &copied,
+            text: &copiedText,
+            oldRange: NSRange(location: 8, length: 0),
+            replacement: "\ncopy"
+        ))
+        #expect(copiedText == "alpha\nbe\ncopyta\ngamma")
+        #expect(copied.revision == 2)
+        #expect(original.revision == 1)
+        expectMatchesOracle(original, text: originalText)
+        expectMatchesOracle(copied, text: copiedText)
+
+        #expect(applyEdit(
+            to: &original,
+            text: &originalText,
+            oldRange: NSRange(location: 0, length: 0),
+            replacement: "Z"
+        ))
+        #expect(originalText == "Zalpha\nbeta\ngamma")
+        #expect(original.revision == 2)
+        #expect(copied.revision == 2)
+        expectMatchesOracle(original, text: originalText)
+        expectMatchesOracle(copied, text: copiedText)
+    }
+
     @Test @MainActor
     func textStorageDelegateIndexesCharactersAndIgnoresAttributeEdits() {
         let storage = NSTextStorage(string: "alpha\nbeta")
