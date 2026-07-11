@@ -31,6 +31,9 @@ final class DiagnosticsModel: ObservableObject {
     private(set) var currentNormalizedFilePath: String?
     private(set) var currentCursorLine: Int = 1
     private(set) var currentCursorColumn: Int = 1
+    /// Advances for every language-server publish, even when the diagnostic values are identical.
+    /// Consumers use this to distinguish a fresh confirmation from locally rebased stale ranges.
+    private(set) var publicationGeneration: UInt64 = 0
 
     private let lspService: LSPServiceProtocol
     private let normalize: (URL) -> String
@@ -62,6 +65,7 @@ final class DiagnosticsModel: ObservableObject {
     /// selection and republish. `objectWillChange.send()` is explicit because the diagnostic LIST
     /// can change (a new problem appears) without the active selection id changing.
     private func handleDiagnosticsChanged() {
+        publicationGeneration &+= 1
         invalidateWorkspaceDiagnosticsCache()
         synchronizeActiveDiagnosticSelection()
         objectWillChange.send()

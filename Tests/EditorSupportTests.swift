@@ -134,6 +134,146 @@ struct EditorSupportTests {
     }
 
     @Test
+    func bracketMatcherStopsAtConfiguredScanBudget() {
+        let text = ("(" + String(repeating: "x", count: 100) + ")") as NSString
+
+        #expect(
+            BracketMatcher.matchingRanges(
+                in: text,
+                caretLocation: 0,
+                maximumScanDistance: 50
+            ).isEmpty
+        )
+        #expect(
+            BracketMatcher.matchingRanges(
+                in: text,
+                caretLocation: 0,
+                maximumScanDistance: 102
+            ).count == 2
+        )
+    }
+
+    @Test
+    func bracketMatcherDefaultBudgetIncludes99999AndExcludes100000() {
+        #expect(BracketMatcher.defaultMaximumScanDistance == 100_000)
+
+        let lastIncluded = ("(" + String(repeating: "x", count: 99_998) + ")") as NSString
+        let firstExcluded = ("(" + String(repeating: "x", count: 99_999) + ")") as NSString
+
+        #expect(BracketMatcher.matchingRanges(in: lastIncluded, caretLocation: 0).count == 2)
+        #expect(
+            BracketMatcher.matchingRanges(
+                in: lastIncluded,
+                caretLocation: lastIncluded.length - 1
+            ).count == 2
+        )
+        #expect(BracketMatcher.matchingRanges(in: firstExcluded, caretLocation: 0).isEmpty)
+        #expect(
+            BracketMatcher.matchingRanges(
+                in: firstExcluded,
+                caretLocation: firstExcluded.length - 1
+            ).isEmpty
+        )
+    }
+
+    @Test
+    func editRangeTransformerRebasesOnlyUnaffectedRanges() {
+        let postEditRange = NSRange(location: 4, length: 3)
+
+        #expect(
+            EditorTextEditRangeTransformer.rebasedRange(
+                NSRange(location: 0, length: 2),
+                editedRange: postEditRange,
+                changeInLength: 2
+            ) == NSRange(location: 0, length: 2)
+        )
+        #expect(
+            EditorTextEditRangeTransformer.rebasedRange(
+                NSRange(location: 8, length: 2),
+                editedRange: postEditRange,
+                changeInLength: 2
+            ) == NSRange(location: 10, length: 2)
+        )
+        #expect(
+            EditorTextEditRangeTransformer.rebasedRange(
+                NSRange(location: 3, length: 3),
+                editedRange: postEditRange,
+                changeInLength: 2
+            ) == nil
+        )
+    }
+
+    @Test
+    func editRangeCleanupIncludesInsertedAndSurvivingContent() {
+        #expect(
+            EditorTextEditRangeTransformer.cleanupRange(
+                NSRange(location: 8, length: 5),
+                editedRange: NSRange(location: 10, length: 3),
+                changeInLength: 3,
+                updatedLength: 30
+            ) == NSRange(location: 8, length: 8)
+        )
+    }
+
+    @Test
+    func editRangeCleanupContractsOrRemovesRangesIntersectingDeletion() {
+        let deletion = NSRange(location: 10, length: 0)
+
+        #expect(
+            EditorTextEditRangeTransformer.cleanupRange(
+                NSRange(location: 8, length: 6),
+                editedRange: deletion,
+                changeInLength: -3,
+                updatedLength: 20
+            ) == NSRange(location: 8, length: 3)
+        )
+        #expect(
+            EditorTextEditRangeTransformer.cleanupRange(
+                NSRange(location: 10, length: 3),
+                editedRange: deletion,
+                changeInLength: -3,
+                updatedLength: 20
+            ) == nil
+        )
+    }
+
+    @Test
+    func editRangeCleanupClampsStaleRangesToUpdatedDocument() {
+        #expect(
+            EditorTextEditRangeTransformer.cleanupRange(
+                NSRange(location: 18, length: 10),
+                editedRange: NSRange(location: 5, length: 0),
+                changeInLength: -2,
+                updatedLength: 20
+            ) == NSRange(location: 16, length: 4)
+        )
+        #expect(
+            EditorTextEditRangeTransformer.cleanupRange(
+                NSRange(location: 25, length: 4),
+                editedRange: NSRange(location: 5, length: 0),
+                changeInLength: -2,
+                updatedLength: 20
+            ) == nil
+        )
+    }
+
+    @Test
+    func editRangeCleanupRemainsLocalInVeryLargeDocument() {
+        let originalLength = 100_000_000
+        let editLocation = originalLength / 2
+
+        let cleanupRange = EditorTextEditRangeTransformer.cleanupRange(
+            NSRange(location: editLocation - 2, length: 4),
+            editedRange: NSRange(location: editLocation, length: 3),
+            changeInLength: 3,
+            updatedLength: originalLength + 3
+        )
+
+        #expect(cleanupRange == NSRange(location: editLocation - 2, length: 7))
+        #expect(cleanupRange?.length == 7)
+    }
+
+    @Test
     func editorInputHandlerInsertsMatchingDelimiterPair() {
         let outcome = EditorInputHandler.outcome(
             for: "(",

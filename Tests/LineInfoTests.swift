@@ -118,4 +118,19 @@ struct LineInfoTests {
         #expect(infos[0].fullEndUTF16 <= nsText.length)
         #expect(infos[1].fullEndUTF16 == nsText.length)
     }
+
+    @Test
+    func parseAppKitUnicodeLineSeparatorsAndTrailingSentinel() {
+        for separator in ["\u{0085}", "\u{2028}", "\u{2029}"] {
+            let infos = LineInfo.parse("left\(separator)right\(separator)")
+
+            #expect(infos.count == 3)
+            #expect(infos[0].trimmedText == "left")
+            #expect(infos[0].hasTrailingNewline)
+            #expect(infos[1].trimmedText == "right")
+            #expect(infos[1].hasTrailingNewline)
+            #expect(infos[2].startUTF16 == 11)
+            #expect(infos[2].trimmedText.isEmpty)
+        }
+    }
 }

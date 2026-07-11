@@ -114,24 +114,30 @@ struct SemanticTokenDecoder {
         guard bitset > 0 else { return [] }
 
         var modifiers: [String] = []
-        for (index, modifier) in legend.tokenModifiers.enumerated() {
-            if (bitset & (1 << index)) != 0 {
-                modifiers.append(modifier)
-            }
+        for (index, modifier) in legend.tokenModifiers.enumerated()
+        where (bitset & (1 << index)) != 0 {
+            modifiers.append(modifier)
         }
         return modifiers
     }
 
     private static func computeLineOffsets(_ text: NSString) -> [Int] {
         var offsets: [Int] = [0]
-        let length = text.length
         var location = 0
-        while location < length {
-            let lineRange = text.lineRange(for: NSRange(location: location, length: 0))
-            let next = lineRange.location + lineRange.length
-            if next <= location { break }
-            location = next
-            offsets.append(location)
+        while location < text.length {
+            let character = text.character(at: location)
+            if character == 13 {
+                location += 1
+                if location < text.length, text.character(at: location) == 10 {
+                    location += 1
+                }
+                offsets.append(location)
+            } else if character == 10 {
+                location += 1
+                offsets.append(location)
+            } else {
+                location += 1
+            }
         }
         return offsets
     }

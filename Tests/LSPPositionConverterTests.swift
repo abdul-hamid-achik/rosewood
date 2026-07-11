@@ -270,6 +270,17 @@ struct LSPPositionConverterTests {
         #expect(offset == 6)
     }
 
+    @Test
+    func unicodeVisualSeparatorsDoNotCreateLSPLines() {
+        for separator in ["\u{0085}", "\u{2028}", "\u{2029}"] {
+            let text = "a\(separator)b"
+            let position = LSPPositionConverter.lspPosition(from: 2, in: text)
+
+            #expect(position == LSPPosition(line: 0, character: 2))
+            #expect(LSPPositionConverter.utf16Offset(for: position, in: text) == 2)
+        }
+    }
+
     // MARK: - Large File Performance
 
     @Test

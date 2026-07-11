@@ -35,8 +35,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItem
     private weak var openRecentMenu: NSMenu?
     private var windowContexts: [ObjectIdentifier: AppWindowContext] = [:]
     private var pendingInitialProjectViewModel: ProjectViewModel?
+    private var pendingCrashWindowSessionKeys: Set<String> = []
 
     private static let recentDocumentsKey = "rosewood.recentDocuments"
+    private static let crashWindowSessionKeysKey = "rosewood.crashWindowSessionKeys"
     private static let maxRecentDocuments = 10
     private static let defaultSessionKey = "rosewood.session"
     private static let helpMessage = """
@@ -95,15 +97,31 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItem
     func applicationDidFinishLaunching(_ notification: Notification) {
         if ProcessInfo.processInfo.environment["ROSEWOOD_UI_TEST_RESET_SESSION"] == "1" {
             recentDocumentsStore.removeObject(forKey: Self.recentDocumentsKey)
+            recentDocumentsStore.removeObject(forKey: Self.crashWindowSessionKeysKey)
         }
 
         if windowContexts.isEmpty {
-            _ = makeWindowContext(
-                projectViewModel: pendingInitialProjectViewModel,
-                sessionKey: Self.defaultSessionKey,
-                makeKey: true
-            )
-            pendingInitialProjectViewModel = nil
+            if let pendingInitialProjectViewModel {
+                _ = makeWindowContext(
+                    projectViewModel: pendingInitialProjectViewModel,
+                    sessionKey: Self.defaultSessionKey,
+                    makeKey: true
+                )
+                self.pendingInitialProjectViewModel = nil
+            } else {
+                let restoredSessionKeys = crashWindowSessionKeys.isEmpty
+                    ? [Self.defaultSessionKey]
+                    : crashWindowSessionKeys
+                pendingCrashWindowSessionKeys = Set(restoredSessionKeys)
+                for (index, sessionKey) in restoredSessionKeys.enumerated() {
+                    _ = makeWindowContext(
+                        sessionKey: sessionKey,
+                        makeKey: index == restoredSessionKeys.count - 1
+                    )
+                    pendingCrashWindowSessionKeys.remove(sessionKey)
+                }
+                persistCrashWindowSessionKeys()
+            }
         }
 
         HighlightService.shared.prewarm()
@@ -139,8 +157,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItem
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         let contexts = Array(windowContexts.values)
-        for context in contexts where !context.projectViewModel.canCloseWindow() {
-            return .terminateCancel
+        var approvedContexts: [AppWindowContext] = []
+        for context in contexts {
+            guard context.projectViewModel.canCloseWindow() else {
+                for approvedContext in approvedContexts {
+                    approvedContext.projectViewModel.resumeAfterCancelledSessionTransition()
+                }
+                return .terminateCancel
+            }
+            approvedContexts.append(context)
         }
         return .terminateNow
     }
@@ -149,6 +174,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItem
         // Kill any live terminal shells on quit (PTY masters also close on process death as a
         // backstop). Runs only after applicationShouldTerminate allowed .terminateNow.
         TerminalProcessController.shared.terminateAll()
+        // The registry exists only to reconstruct every window after an abnormal termination.
+        // A clean quit has already resolved and cleared each window's recovery journal.
+        recentDocumentsStore.removeObject(forKey: Self.crashWindowSessionKeysKey)
+        pendingCrashWindowSessionKeys.removeAll()
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
@@ -166,6 +195,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItem
     func windowWillClose(_ notification: Notification) {
         guard let window = notification.object as? NSWindow else { return }
         windowContexts.removeValue(forKey: ObjectIdentifier(window))
+        persistCrashWindowSessionKeys()
         if self.window === window {
             updateActiveContext(for: NSApp.keyWindow ?? Array(windowContexts.values).last?.window)
         }
@@ -263,6 +293,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItem
                 fileService: .shared,
                 sessionStore: .standard,
                 sessionKey: sessionKey,
+                recoveryStore: .live(identifier: sessionKey),
                 configService: configService,
                 fileWatcher: FileWatcherService(),
                 notificationCenter: effectiveNotificationCenter,
@@ -322,6 +353,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItem
             configService: configService
         )
         windowContexts[ObjectIdentifier(window)] = context
+        persistCrashWindowSessionKeys()
 
         if makeKey {
             window.makeKeyAndOrderFront(nil)
@@ -330,6 +362,29 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItem
         }
         updateActiveContext(for: window)
         return context
+    }
+
+    private var crashWindowSessionKeys: [String] {
+        let stored = recentDocumentsStore.stringArray(forKey: Self.crashWindowSessionKeysKey) ?? []
+        var seen: Set<String> = []
+        return stored.filter { key in
+            let isRosewoodSession = key == Self.defaultSessionKey
+                || key.hasPrefix(Self.defaultSessionKey + ".window.")
+            guard isRosewoodSession, seen.insert(key).inserted else {
+                return false
+            }
+            return true
+        }
+    }
+
+    private func persistCrashWindowSessionKeys() {
+        let liveKeys = Set(windowContexts.values.map(\.sessionKey))
+        let keys = liveKeys.union(pendingCrashWindowSessionKeys).sorted()
+        if keys.isEmpty {
+            recentDocumentsStore.removeObject(forKey: Self.crashWindowSessionKeysKey)
+        } else {
+            recentDocumentsStore.set(keys, forKey: Self.crashWindowSessionKeysKey)
+        }
     }
 
     @MainActor
@@ -746,7 +801,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItem
 
         recordRecentDocuments(fileURLs)
 
-        guard let targetContext = activeWindowContext ?? (projectViewModel == nil ? nil : makeWindowContext(projectViewModel: projectViewModel, sessionKey: Self.defaultSessionKey, makeKey: true)) else {
+        let targetContext = activeWindowContext ?? (projectViewModel == nil
+            ? nil
+            : makeWindowContext(
+                projectViewModel: projectViewModel,
+                sessionKey: Self.defaultSessionKey,
+                makeKey: true
+            ))
+        guard let targetContext else {
             pendingOpenURLs.append(contentsOf: fileURLs)
             return
         }
@@ -838,6 +900,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItem
 
     var openWindowCountForTesting: Int {
         windowContexts.count
+    }
+
+    var crashWindowSessionKeysForTesting: [String] {
+        crashWindowSessionKeys
+    }
+
+    func preservePendingCrashWindowSessionKeysForTesting(_ keys: [String]) {
+        pendingCrashWindowSessionKeys = Set(keys)
+        persistCrashWindowSessionKeys()
+    }
+
+    static var crashWindowSessionKeysDefaultsKeyForTesting: String {
+        crashWindowSessionKeysKey
     }
 
     static var helpMessageForTesting: String {

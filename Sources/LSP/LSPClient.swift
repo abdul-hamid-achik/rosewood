@@ -124,7 +124,7 @@ actor LSPClient {
         // Send initialize request
         let params = InitializeParams(
             processId: Int(ProcessInfo.processInfo.processIdentifier),
-            clientInfo: ClientInfo(name: "Rosewood", version: "0.1.0"),
+            clientInfo: ClientInfo(name: "Rosewood", version: "0.2.0"),
             rootUri: rootURI,
             capabilities: ClientCapabilities(
                 textDocument: TextDocumentClientCapabilities(

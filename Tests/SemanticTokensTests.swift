@@ -164,6 +164,108 @@ struct SemanticTokensTests {
 
         #expect(foregroundHex(at: tokenLocation, in: container) != warning, "Tokens must not survive a document switch")
     }
+
+    @Test
+    func sameTextDocumentSwitchActivelyClearsPaintedTokens() async throws {
+        let container = makeContainer()
+        container.applyText(sampleText, language: "swift", themeColors: .nord, documentIdentity: "doc-a")
+        try await waitForSyntaxHighlight(in: container)
+
+        let version = container.beginSemanticTokensRequest()
+        container.applySemanticTokens(
+            sampleTokens(),
+            legend: sampleLegend(),
+            version: version,
+            textForTokens: container.currentDisplayText
+        )
+        let warning = SemanticTokenDecoder.tokenTypeColor("keyword", themeColors: .nord).usingColorSpace(.sRGB)?.hexString
+        #expect(foregroundHex(at: tokenLocation, in: container) == warning)
+
+        container.applyText(sampleText, language: "swift", themeColors: .nord, documentIdentity: "doc-b")
+        try await waitForSyntaxHighlight(in: container)
+
+        #expect(
+            foregroundHex(at: tokenLocation, in: container) != warning,
+            "A same-text tab switch must remove the previous document's painted semantic layer"
+        )
+    }
+
+    @Test
+    func editInvalidationRemovesPaintAndRejectsInFlightVersion() async throws {
+        let container = makeContainer()
+        container.applyText(sampleText, language: "swift", themeColors: .nord, documentIdentity: "doc-a")
+        try await waitForSyntaxHighlight(in: container)
+
+        let staleVersion = container.beginSemanticTokensRequest()
+        container.applySemanticTokens(
+            sampleTokens(),
+            legend: sampleLegend(),
+            version: staleVersion,
+            textForTokens: container.currentDisplayText
+        )
+        let warning = SemanticTokenDecoder.tokenTypeColor("keyword", themeColors: .nord).usingColorSpace(.sRGB)?.hexString
+        #expect(foregroundHex(at: tokenLocation, in: container) == warning)
+
+        container.invalidateSemanticTokens()
+        container.applySemanticTokens(
+            sampleTokens(),
+            legend: sampleLegend(),
+            version: staleVersion,
+            textForTokens: container.currentDisplayText
+        )
+
+        #expect(foregroundHex(at: tokenLocation, in: container) != warning)
+        #expect(container.currentSemanticTokensVersion > staleVersion)
+    }
+
+    @Test
+    func storageDelegateStagesSemanticCleanupUntilTextKitRebasesRanges() async throws {
+        let container = makeContainer()
+        container.applyText(sampleText, language: "swift", themeColors: .nord, documentIdentity: "doc-a")
+        try await waitForSyntaxHighlight(in: container)
+
+        let version = container.beginSemanticTokensRequest()
+        container.applySemanticTokens(
+            sampleTokens(),
+            legend: sampleLegend(),
+            version: version,
+            textForTokens: container.currentDisplayText
+        )
+        let warning = SemanticTokenDecoder.tokenTypeColor("keyword", themeColors: .nord).usingColorSpace(.sRGB)?.hexString
+        let delegate = SemanticEditStorageDelegate(container: container)
+        container.textView.textStorage?.delegate = delegate
+
+        container.textView.textStorage?.replaceCharacters(
+            in: NSRange(location: 0, length: 0),
+            with: "XX"
+        )
+
+        #expect(foregroundHex(at: tokenLocation + 2, in: container) == warning)
+        container.consumePendingSemanticTokenCleanup()
+        #expect(foregroundHex(at: tokenLocation + 2, in: container) != warning)
+    }
+}
+
+@MainActor
+private final class SemanticEditStorageDelegate: NSObject, @preconcurrency NSTextStorageDelegate {
+    unowned let container: EditorContainerView
+
+    init(container: EditorContainerView) {
+        self.container = container
+    }
+
+    func textStorage(
+        _ textStorage: NSTextStorage,
+        didProcessEditing editedMask: NSTextStorageEditActions,
+        range editedRange: NSRange,
+        changeInLength delta: Int
+    ) {
+        guard editedMask.contains(.editedCharacters) else { return }
+        container.invalidateSemanticTokens(
+            afterEditing: editedRange,
+            changeInLength: delta
+        )
+    }
 }
 
 @MainActor

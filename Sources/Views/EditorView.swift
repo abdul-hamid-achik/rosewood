@@ -83,12 +83,14 @@ struct EditorView: View {
             showMinimap: effectiveShowMinimap,
             wordWrap: configService.settings.editor.wordWrap,
             diagnostics: diagnosticsModel.currentTabDiagnostics,
+            diagnosticsGeneration: diagnosticsModel.publicationGeneration,
             breakpointLines: projectViewModel.currentTabBreakpointLines,
             executionLine: projectViewModel.currentExecutionLine,
             fileURL: projectViewModel.selectedTab?.filePath ?? tab.filePath,
-            documentIdentity: projectViewModel.selectedTab?.documentURI
-                ?? tab.documentURI
-                ?? (projectViewModel.selectedTab?.filePath ?? tab.filePath)?.path,
+            // File URLs are not sufficient identities: multiple untitled tabs have no URI, and a
+            // reused NSTextView must still reset undo, diagnostics, and semantic colors when two
+            // tabs happen to contain identical text.
+            documentIdentity: projectViewModel.selectedTab?.id.uuidString ?? tab.id.uuidString,
             projectRootDirectory: projectViewModel.rootDirectory,
             prefersProjectSearchNavigation: projectViewModel.canNavigateProjectSearchResults,
             isLanguageServerAvailable: lspService.serverAvailable(for: tab.language),
@@ -158,6 +160,7 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
     let showMinimap: Bool
     let wordWrap: Bool
     let diagnostics: [LSPDiagnostic]
+    let diagnosticsGeneration: UInt64
     let breakpointLines: Set<Int>
     let executionLine: Int?
     let fileURL: URL?
@@ -253,17 +256,43 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
         context.coordinator.observedServerAvailable = isLanguageServerAvailable
     }
 
-    final class Coordinator: NSObject, NSTextViewDelegate, EditorTextViewMenuDelegate, NSUserInterfaceValidations {
+    final class Coordinator: NSObject, NSTextViewDelegate, NSTextStorageDelegate, EditorTextViewMenuDelegate, NSUserInterfaceValidations {
         var parent: CodeEditorRepresentable
         weak var containerView: EditorContainerView?
 
         private var renderState = EditorRenderState()
         private var isApplyingExternalUpdate = false
+        private var isReplacingExternalDocument = false
+        private var documentIndex = EditorDocumentIndex()
+        private var lspDocumentIndex = EditorDocumentIndex(lineBreakMode: .lsp)
+        private var foldedSourceIndex = EditorDocumentIndex()
+        private var foldedSourceText = ""
+        private var currentLineDecorationRange: NSRange?
+        private var bracketDecorationRanges: [NSRange] = []
+        private var pendingBackgroundCleanupRanges: [NSRange] = []
+        private var pendingUnderlineCleanupRanges: [NSRange] = []
+        private var pendingDiagnosticRepaintRanges: [NSRange] = []
+        private var diagnosticDecorations: [DiagnosticDecoration] = []
+        private var cachedDiagnostics: [LSPDiagnostic] = []
+        private var cachedDiagnosticsGeneration: UInt64 = 0
+        private var cachedDiagnosticRevision: UInt64 = 0
+        private var cachedDiagnosticDocumentIdentity: String?
+        private var cachedDiagnosticsWereFolded = false
+        private var cachedDiagnosticThemeColors: ThemeColors?
+        private var lastReportedCursor: CursorPosition?
+        private var activeDocumentIdentity: String?
+
+        private struct DiagnosticDecoration {
+            var range: NSRange
+            let severity: DiagnosticSeverity?
+        }
         private let completionPopup = CompletionPopupController()
         private let hoverPopup = HoverPopupController()
         private var completionTask: Task<Void, Never>?
         private var hoverTask: Task<Void, Never>?
+        private var definitionTask: Task<Void, Never>?
         private var referencesTask: Task<Void, Never>?
+        private var definitionRequestTracker = EditorLSPRequestTracker()
         private var referenceRequestTracker = EditorLSPRequestTracker()
         private var foldedStartLines: Set<Int> = []
         private var currentFoldSnapshot = FoldedTextSnapshot.identity
@@ -299,6 +328,7 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
             }
             completionTask?.cancel()
             hoverTask?.cancel()
+            definitionTask?.cancel()
             referencesTask?.cancel()
             deferredHighlightTask?.cancel()
             semanticTokensTask?.cancel()
@@ -307,6 +337,12 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
         func attach(to containerView: EditorContainerView) {
             self.containerView = containerView
             containerView.configure(delegate: self)
+            containerView.textView.textStorage?.delegate = self
+            documentIndex.reset(text: containerView.textView.string)
+            lspDocumentIndex.reset(text: containerView.textView.string)
+            containerView.lineNumberView.lineNumberForUTF16Offset = { [weak self] offset in
+                self?.documentIndex.lineAndColumn(atUTF16Offset: offset).line ?? 1
+            }
             containerView.textView.menuDelegate = self
             applyPopupTheme()
             containerView.onLayout = { [weak self] in
@@ -335,6 +371,66 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
             let textView = containerView.textView
             let requestedLineJump = parent.pendingLineJump
 
+            if activeDocumentIdentity != parent.documentIdentity {
+                activeDocumentIdentity = parent.documentIdentity
+                foldedStartLines.removeAll()
+                currentFoldSnapshot = .identity
+                foldedSourceText = ""
+                pendingSourceSelection = nil
+                completionTask?.cancel()
+                hoverTask?.cancel()
+                definitionTask?.cancel()
+                referencesTask?.cancel()
+                deferredHighlightTask?.cancel()
+                deferredHighlightTask = nil
+                semanticTokensTask?.cancel()
+                semanticTokensTask = nil
+                dwellTimer?.cancel()
+                dwellTimer = nil
+                lastHoverPoint = nil
+                _ = definitionRequestTracker.nextRequestID()
+                _ = referenceRequestTracker.nextRequestID()
+                completionPopup.dismiss()
+                hoverPopup.dismiss()
+                invalidateDiagnosticCache(in: textView)
+                containerView.invalidateSemanticTokens()
+                lastReportedCursor = nil
+            }
+
+            if requestedLineJump == nil,
+               !foldedStartLines.isEmpty,
+               foldedSourceText == text,
+               currentFoldSnapshot.foldedLines == foldedStartLines,
+               !renderState.needsTextApplication(
+                   for: currentFoldSnapshot.displayText,
+                   language: language,
+                   documentIdentity: parent.documentIdentity,
+                   renderedText: textView.string,
+                   isViewReadyForDisplay: containerView.isReadyForDisplay
+               ) {
+                // The source and fold set are unchanged. Reuse the current mapping instead of
+                // reparsing the complete source for diagnostics or cursor-only SwiftUI updates.
+                refreshEditorDecorations(in: textView)
+                updateCursorPosition(in: textView)
+                return
+            }
+
+            if foldedStartLines.isEmpty,
+               requestedLineJump == nil,
+               !renderState.needsTextApplication(
+                   for: text,
+                   language: language,
+                   documentIdentity: parent.documentIdentity,
+                   renderedText: textView.string,
+                   isViewReadyForDisplay: containerView.isReadyForDisplay
+               ) {
+                // Diagnostics/cursor/settings updates do not change an unfolded display. Avoid a
+                // full folding parse merely to discover that the text render is already current.
+                refreshEditorDecorations(in: textView)
+                updateCursorPosition(in: textView)
+                return
+            }
+
             if parent.deferHighlightingDuringEditing,
                requestedLineJump == nil,
                deferredHighlightTask != nil,
@@ -360,30 +456,44 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
                 )
             foldedStartLines = foldSnapshot.foldedLines
             currentFoldSnapshot = foldSnapshot
+            if foldSnapshot.hasActiveFolds, foldedSourceText != text {
+                foldedSourceIndex.reset(text: text)
+                foldedSourceText = text
+            }
             containerView.applyFolding(foldSnapshot) { [weak self] line in
                 self?.toggleFold(atActualLine: line)
             }
             let shouldApplyText = renderState.needsTextApplication(
                 for: foldSnapshot.displayText,
                 language: language,
+                documentIdentity: parent.documentIdentity,
                 renderedText: textView.string,
                 isViewReadyForDisplay: containerView.isReadyForDisplay
             )
-            guard shouldApplyText || requestedLineJump != nil else { return }
+            guard shouldApplyText || requestedLineJump != nil else {
+                // SwiftUI can deliver diagnostics without changing the text. Decorations are a
+                // separate render layer and must not be skipped by the text no-op fast path.
+                refreshEditorDecorations(in: textView)
+                updateCursorPosition(in: textView)
+                return
+            }
 
             let selectedRange = textView.selectedRange()
             isApplyingExternalUpdate = true
             if shouldApplyText {
+                isReplacingExternalDocument = true
                 containerView.applyText(
                     foldSnapshot.displayText,
                     language: language,
                     themeColors: parent.themeColors,
                     documentIdentity: parent.documentIdentity
                 )
-                lineTableNeedsUpdate = true
+                isReplacingExternalDocument = false
+                resetIndexedDisplayState(for: textView)
                 renderState.recordRender(
                     text: foldSnapshot.displayText,
                     language: language,
+                    documentIdentity: parent.documentIdentity,
                     isViewReadyForDisplay: containerView.isReadyForDisplay
                 )
             }
@@ -417,9 +527,18 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView, !isApplyingExternalUpdate else { return }
 
+            consumePendingDecorationCleanup(in: textView)
+            containerView?.consumePendingSemanticTokenCleanup()
             let updatedText = textView.string
             let selectedRange = textView.selectedRange()
-            lineTableNeedsUpdate = true
+            if documentIndex.utf16Length != (updatedText as NSString).length {
+                // Defensive fallback for an unexpected mutation path that bypassed the text
+                // storage delegate. Correct coordinates are more important than preserving the
+                // incremental fast path after a framework-level inconsistency.
+                documentIndex.reset(text: updatedText)
+                lspDocumentIndex.reset(text: updatedText)
+                invalidateDiagnosticCache(in: textView)
+            }
 
             if parent.deferHighlightingDuringEditing {
                 containerView?.refreshAfterEditing(text: updatedText, themeColors: parent.themeColors)
@@ -440,6 +559,7 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
             renderState.recordRender(
                 text: updatedText,
                 language: parent.language,
+                documentIdentity: parent.documentIdentity,
                 isViewReadyForDisplay: containerView?.isReadyForDisplay ?? false
             )
 
@@ -501,24 +621,35 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
                 )
                 foldedStartLines = foldSnapshot.foldedLines
                 currentFoldSnapshot = foldSnapshot
+                if foldSnapshot.hasActiveFolds, foldedSourceText != text {
+                    foldedSourceIndex.reset(text: text)
+                    foldedSourceText = text
+                }
                 containerView.applyFolding(foldSnapshot) { [weak self] line in
                     self?.toggleFold(atActualLine: line)
                 }
 
                 let selectedRange = containerView.textView.selectedRange()
+                let displayTextWillChange = containerView.textView.string != foldSnapshot.displayText
                 isApplyingExternalUpdate = true
+                isReplacingExternalDocument = true
                 containerView.applyText(
                     foldSnapshot.displayText,
                     language: language,
                     themeColors: parent.themeColors,
                     documentIdentity: parent.documentIdentity
                 )
+                isReplacingExternalDocument = false
+                if displayTextWillChange {
+                    resetIndexedDisplayState(for: containerView.textView)
+                }
                 let clampedLocation = min(selectedRange.location, (containerView.textView.string as NSString).length)
                 containerView.textView.setSelectedRange(NSRange(location: clampedLocation, length: 0))
                 isApplyingExternalUpdate = false
                 renderState.recordRender(
                     text: foldSnapshot.displayText,
                     language: language,
+                    documentIdentity: parent.documentIdentity,
                     isViewReadyForDisplay: containerView.isReadyForDisplay
                 )
                 refreshEditorDecorations(in: containerView.textView)
@@ -528,6 +659,8 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
 
         func textViewDidChangeSelection(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView, !isApplyingExternalUpdate else { return }
+            consumePendingDecorationCleanup(in: textView)
+            containerView?.consumePendingSemanticTokenCleanup()
             // A mouse-driven hover popup shouldn't linger once the caret moves elsewhere. Cancel any
             // in-flight hover request too, so a late LSP response can't re-show the popup at a now
             // stale position (the document/caret has moved since the request was sent).
@@ -604,50 +737,77 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
             return false
         }
 
-        private var lineOffsetTable: [Int] = [0]
-        private var lineTableNeedsUpdate = true
-
-        private func updateLineOffsetTable(for text: String) {
-            lineOffsetTable = [0]
-            var offset = 0
-            let nsText = text as NSString
-            nsText.enumerateSubstrings(in: NSRange(location: 0, length: nsText.length), options: .byLines) { _, _, enclosingRange, _ in
-                offset = enclosingRange.location + enclosingRange.length
-                self.lineOffsetTable.append(offset)
-            }
-            lineTableNeedsUpdate = false
-        }
-
-        private func lineAndColumn(for offset: Int, in text: String) -> (line: Int, column: Int) {
-            if lineTableNeedsUpdate {
-                updateLineOffsetTable(for: text)
+        func textStorage(
+            _ textStorage: NSTextStorage,
+            didProcessEditing editedMask: NSTextStorageEditActions,
+            range editedRange: NSRange,
+            changeInLength delta: Int
+        ) {
+            guard editedMask.contains(.editedCharacters),
+                  let containerView,
+                  let editorTextStorage = containerView.textView.textStorage,
+                  textStorage === editorTextStorage else {
+                return
             }
 
-            // Binary search
-            var low = 0
-            var high = lineOffsetTable.count - 1
+            // NSLayoutManager rebases temporary attributes only after this delegate callback
+            // returns. Stage post-edit cleanup ranges now and consume them from textDidChange (or
+            // the subsequent selection callback), after TextKit has completed that rebase.
+            guard !isReplacingExternalDocument else { return }
+            stageTrackedDecorationCleanup(
+                editedRange: editedRange,
+                changeInLength: delta,
+                updatedLength: textStorage.length
+            )
+            containerView.invalidateSemanticTokens(
+                afterEditing: editedRange,
+                changeInLength: delta
+            )
 
-            while low < high {
-                let mid = (low + high) / 2
-                if lineOffsetTable[mid] <= offset {
-                    low = mid + 1
-                } else {
-                    high = mid
+            let usedIncrementalPath = documentIndex.applyEdit(
+                editedRange: editedRange,
+                changeInLength: delta,
+                updatedText: textStorage.mutableString
+            )
+            let usedIncrementalLSPPath = lspDocumentIndex.applyEdit(
+                editedRange: editedRange,
+                changeInLength: delta,
+                updatedText: textStorage.mutableString
+            )
+            if usedIncrementalPath, usedIncrementalLSPPath {
+                diagnosticDecorations = diagnosticDecorations.compactMap { decoration in
+                    guard let range = EditorTextEditRangeTransformer.rebasedRange(
+                        decoration.range,
+                        editedRange: editedRange,
+                        changeInLength: delta
+                    ) else {
+                        return nil
+                    }
+                    return DiagnosticDecoration(range: range, severity: decoration.severity)
                 }
+                cachedDiagnosticRevision = lspDocumentIndex.revision
+            } else {
+                invalidateDiagnosticCache(in: containerView.textView)
             }
-
-            let line = low
-            let lineStart = line > 0 ? lineOffsetTable[line - 1] : 0
-            let column = offset - lineStart + 1
-
-            return (line, column)
         }
 
         private func updateCursorPosition(in textView: NSTextView) {
-            let text = textView.string
-            let location = min(textView.selectedRange().location, (text as NSString).length)
-
-            let (line, column) = lineAndColumn(for: location, in: text)
+            let displayedLocation = min(textView.selectedRange().location, documentIndex.utf16Length)
+            let lineAndColumn: (line: Int, column: Int)
+            if currentFoldSnapshot.hasActiveFolds {
+                let sourceRange = currentFoldSnapshot.sourceRange(
+                    forDisplayedRange: NSRange(location: displayedLocation, length: 0)
+                )
+                lineAndColumn = foldedSourceIndex.lineAndColumn(
+                    atUTF16Offset: min(sourceRange.location, foldedSourceIndex.utf16Length)
+                )
+            } else {
+                lineAndColumn = documentIndex.lineAndColumn(atUTF16Offset: displayedLocation)
+            }
+            let (line, column) = lineAndColumn
+            let position = CursorPosition(line: line, column: column)
+            guard position != lastReportedCursor else { return }
+            lastReportedCursor = position
             parent.onCursorChange(line, column)
         }
 
@@ -1067,9 +1227,18 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
         private func performGoToDefinition(at position: LSPPosition) {
             guard let uri = parent.documentURI, let lspService = parent.lspService else { return }
             let language = parent.language
+            let requestID = definitionRequestTracker.nextRequestID()
 
-            Task { @MainActor in
+            definitionTask?.cancel()
+
+            definitionTask = Task { @MainActor [weak self] in
                 let locations = await lspService.definition(uri: uri, language: language, position: position)
+                guard let self, !Task.isCancelled else { return }
+                guard definitionRequestTracker.shouldDeliver(
+                    requestID: requestID,
+                    documentURI: uri,
+                    currentDocumentURI: parent.documentURI
+                ) else { return }
                 guard let location = locations.first else { return }
 
                 guard let fileURL = URL(string: location.uri), fileURL.isFileURL else { return }
@@ -1104,30 +1273,46 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
         // MARK: - Decorations
 
         private func refreshEditorDecorations(in textView: NSTextView) {
-            guard let layoutManager = textView.layoutManager else { return }
-            let fullRange = NSRange(location: 0, length: (textView.string as NSString).length)
-            if fullRange.length > 0 {
-                layoutManager.removeTemporaryAttribute(.backgroundColor, forCharacterRange: fullRange)
-                layoutManager.removeTemporaryAttribute(.underlineStyle, forCharacterRange: fullRange)
-                layoutManager.removeTemporaryAttribute(.underlineColor, forCharacterRange: fullRange)
+            consumePendingDecorationCleanup(in: textView)
+            containerView?.consumePendingSemanticTokenCleanup()
+            let textLength = (textView.string as NSString).length
+            if documentIndex.utf16Length != textLength {
+                documentIndex.reset(text: textView.string)
+                lspDocumentIndex.reset(text: textView.string)
+                invalidateDiagnosticCache(in: textView)
             }
 
+            let previousBracketRanges = bracketDecorationRanges
+            let editedUnderlineRanges = pendingDiagnosticRepaintRanges
+            pendingDiagnosticRepaintRanges.removeAll(keepingCapacity: true)
+            clearSelectionDecorations(in: textView)
+            // Cache refresh removes the previous diagnostic underline layer. Do that before
+            // painting the new bracket layer, then paint diagnostics last so their thicker
+            // underline retains precedence where the ranges overlap.
+            let diagnosticCacheRefreshed = refreshDiagnosticCacheIfNeeded(in: textView)
             applyCurrentLineHighlight(in: textView)
             applyBracketHighlights(in: textView)
-            applyDiagnosticUnderlines(in: textView)
+            applyDiagnosticUnderlines(
+                in: textView,
+                restrictedTo: diagnosticCacheRefreshed
+                    ? nil
+                    : previousBracketRanges + bracketDecorationRanges + editedUnderlineRanges
+            )
         }
 
         private func applyCurrentLineHighlight(in textView: NSTextView) {
             guard let layoutManager = textView.layoutManager else { return }
-            let nsText = textView.string as NSString
             let selection = textView.selectedRange()
-            let lineRange = nsText.lineRange(for: NSRange(location: min(selection.location, nsText.length), length: 0))
+            let lineRange = documentIndex.fullLineRange(
+                containingUTF16Offset: min(selection.location, documentIndex.utf16Length)
+            )
             guard lineRange.length > 0 else { return }
 
             layoutManager.addTemporaryAttributes(
                 [.backgroundColor: parent.themeColors.nsSelection.withAlphaComponent(0.12)],
                 forCharacterRange: lineRange
             )
+            currentLineDecorationRange = lineRange
         }
 
         private func applyBracketHighlights(in textView: NSTextView) {
@@ -1135,7 +1320,11 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
             let nsText = textView.string as NSString
             let selectionLocation = min(textView.selectedRange().location, nsText.length)
 
-            for range in BracketMatcher.matchingRanges(in: nsText, caretLocation: selectionLocation) {
+            bracketDecorationRanges = BracketMatcher.matchingRanges(
+                in: nsText,
+                caretLocation: selectionLocation
+            )
+            for range in bracketDecorationRanges {
                 layoutManager.addTemporaryAttributes(
                     [
                         .underlineStyle: NSUnderlineStyle.single.rawValue,
@@ -1144,6 +1333,142 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
                     forCharacterRange: range
                 )
             }
+        }
+
+        private func clearSelectionDecorations(in textView: NSTextView) {
+            guard let layoutManager = textView.layoutManager else { return }
+            if let range = clampedDecorationRange(
+                currentLineDecorationRange,
+                to: (textView.string as NSString).length
+            ) {
+                layoutManager.removeTemporaryAttribute(.backgroundColor, forCharacterRange: range)
+            }
+            currentLineDecorationRange = nil
+
+            for range in bracketDecorationRanges.compactMap({
+                clampedDecorationRange($0, to: (textView.string as NSString).length)
+            }) {
+                layoutManager.removeTemporaryAttribute(.underlineStyle, forCharacterRange: range)
+                layoutManager.removeTemporaryAttribute(.underlineColor, forCharacterRange: range)
+            }
+            bracketDecorationRanges.removeAll(keepingCapacity: true)
+        }
+
+        private func stageTrackedDecorationCleanup(
+            editedRange: NSRange,
+            changeInLength: Int,
+            updatedLength: Int
+        ) {
+            if let currentLineDecorationRange,
+               let range = EditorTextEditRangeTransformer.cleanupRange(
+                   currentLineDecorationRange,
+                   editedRange: editedRange,
+                   changeInLength: changeInLength,
+                   updatedLength: updatedLength
+               ) {
+                pendingBackgroundCleanupRanges.append(range)
+            }
+
+            let invalidatedDiagnosticRanges = diagnosticDecorations.compactMap { decoration in
+                EditorTextEditRangeTransformer.rebasedRange(
+                    decoration.range,
+                    editedRange: editedRange,
+                    changeInLength: changeInLength
+                ) == nil ? decoration.range : nil
+            }
+            let underlineRanges = bracketDecorationRanges + invalidatedDiagnosticRanges
+            let cleanupRanges = underlineRanges.compactMap({
+                EditorTextEditRangeTransformer.cleanupRange(
+                    $0,
+                    editedRange: editedRange,
+                    changeInLength: changeInLength,
+                    updatedLength: updatedLength
+                )
+            })
+            pendingUnderlineCleanupRanges.append(contentsOf: cleanupRanges)
+            // Removing one temporary underline also removes any overlapping diagnostic's shared
+            // TextKit attributes. Repaint retained diagnostics over every consumed cleanup span.
+            pendingDiagnosticRepaintRanges.append(contentsOf: cleanupRanges)
+
+            currentLineDecorationRange = nil
+            bracketDecorationRanges.removeAll(keepingCapacity: true)
+        }
+
+        private func consumePendingDecorationCleanup(in textView: NSTextView) {
+            guard let layoutManager = textView.layoutManager else { return }
+            let textLength = (textView.string as NSString).length
+
+            for range in pendingBackgroundCleanupRanges.compactMap({
+                clampedDecorationRange($0, to: textLength)
+            }) {
+                layoutManager.removeTemporaryAttribute(.backgroundColor, forCharacterRange: range)
+            }
+            for range in pendingUnderlineCleanupRanges.compactMap({
+                clampedDecorationRange($0, to: textLength)
+            }) {
+                layoutManager.removeTemporaryAttribute(.underlineStyle, forCharacterRange: range)
+                layoutManager.removeTemporaryAttribute(.underlineColor, forCharacterRange: range)
+            }
+
+            pendingBackgroundCleanupRanges.removeAll(keepingCapacity: true)
+            pendingUnderlineCleanupRanges.removeAll(keepingCapacity: true)
+        }
+
+        private func clearAllTrackedDecorations(in textView: NSTextView) {
+            guard let layoutManager = textView.layoutManager else { return }
+            let textLength = (textView.string as NSString).length
+
+            if let range = clampedDecorationRange(currentLineDecorationRange, to: textLength) {
+                layoutManager.removeTemporaryAttribute(.backgroundColor, forCharacterRange: range)
+            }
+            for range in (bracketDecorationRanges + diagnosticDecorations.map(\.range)).compactMap({
+                clampedDecorationRange($0, to: textLength)
+            }) {
+                layoutManager.removeTemporaryAttribute(.underlineStyle, forCharacterRange: range)
+                layoutManager.removeTemporaryAttribute(.underlineColor, forCharacterRange: range)
+            }
+
+            currentLineDecorationRange = nil
+            bracketDecorationRanges.removeAll(keepingCapacity: true)
+            pendingDiagnosticRepaintRanges.removeAll(keepingCapacity: true)
+        }
+
+        private func resetIndexedDisplayState(for textView: NSTextView) {
+            consumePendingDecorationCleanup(in: textView)
+            containerView?.consumePendingSemanticTokenCleanup()
+            clearAllTrackedDecorations(in: textView)
+            documentIndex.reset(text: textView.string)
+            lspDocumentIndex.reset(text: textView.string)
+            invalidateDiagnosticCache(in: textView)
+            containerView?.invalidateSemanticTokens()
+            lastReportedCursor = nil
+        }
+
+        private func invalidateDiagnosticCache(in textView: NSTextView) {
+            if let layoutManager = textView.layoutManager {
+                let textLength = (textView.string as NSString).length
+                for range in diagnosticDecorations.compactMap({
+                    clampedDecorationRange($0.range, to: textLength)
+                }) {
+                    layoutManager.removeTemporaryAttribute(.underlineStyle, forCharacterRange: range)
+                    layoutManager.removeTemporaryAttribute(.underlineColor, forCharacterRange: range)
+                }
+            }
+            diagnosticDecorations.removeAll(keepingCapacity: true)
+            cachedDiagnostics.removeAll(keepingCapacity: true)
+            cachedDiagnosticsGeneration = 0
+            cachedDiagnosticRevision = 0
+            cachedDiagnosticDocumentIdentity = nil
+            cachedDiagnosticsWereFolded = false
+            cachedDiagnosticThemeColors = nil
+        }
+
+        private func clampedDecorationRange(_ range: NSRange?, to length: Int) -> NSRange? {
+            guard let range, range.location >= 0, range.length >= 0 else { return nil }
+            let location = min(range.location, length)
+            let end = min(NSMaxRange(range), length)
+            guard end > location else { return nil }
+            return NSRange(location: location, length: end - location)
         }
 
         // MARK: - Completion
@@ -1161,16 +1486,17 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
         /// synchronously (before the await) so a newer request supersedes this one; the result is
         /// additionally dropped if the display text has changed by the time it resolves.
         func requestSemanticTokens(debounceNanoseconds: UInt64 = Coordinator.semanticTokensOpenDebounceNanoseconds) {
+            semanticTokensTask?.cancel()
             guard let uri = parent.documentURI,
                   let lspService = parent.lspService,
                   let containerView,
                   parent.isLanguageServerAvailable,
-                  parent.language != "plaintext" else { return }
+                  parent.language != "plaintext",
+                  containerView.canRequestSemanticTokens else { return }
             let language = parent.language
             let version = containerView.beginSemanticTokensRequest()
             let textForTokens = containerView.currentDisplayText
 
-            semanticTokensTask?.cancel()
             semanticTokensTask = Task { @MainActor [weak self] in
                 do {
                     try await Task.sleep(nanoseconds: debounceNanoseconds)
@@ -1321,35 +1647,86 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
 
         // MARK: - Diagnostics
 
-        private func applyDiagnosticUnderlines(in textView: NSTextView) {
-            guard !currentFoldSnapshot.hasActiveFolds else { return }
+        private func applyDiagnosticUnderlines(
+            in textView: NSTextView,
+            restrictedTo dirtyRanges: [NSRange]?
+        ) {
             guard let layoutManager = textView.layoutManager else { return }
-            let text = textView.string
 
-            for diagnostic in parent.diagnostics {
-                guard let nsRange = LSPPositionConverter.nsRange(from: diagnostic.range, in: text) else { continue }
-                let clampedRange = NSIntersectionRange(nsRange, NSRange(location: 0, length: (text as NSString).length))
-                guard clampedRange.length > 0 else { continue }
-
-                let color: NSColor
-                switch diagnostic.severity {
-                case .error:
-                    color = parent.themeColors.nsDanger
-                case .warning:
-                    color = parent.themeColors.nsWarning
-                case .information, .hint:
-                    color = parent.themeColors.nsAccent
-                case .none:
-                    color = parent.themeColors.nsWarning
+            let decorationsToApply: [DiagnosticDecoration]
+            if let dirtyRanges {
+                decorationsToApply = diagnosticDecorations.filter { decoration in
+                    dirtyRanges.contains {
+                        NSIntersectionRange($0, decoration.range).length > 0
+                    }
                 }
+            } else {
+                decorationsToApply = diagnosticDecorations
+            }
 
+            for decoration in decorationsToApply {
                 layoutManager.addTemporaryAttributes(
                     [
                         .underlineStyle: NSUnderlineStyle.thick.rawValue,
-                        .underlineColor: color
+                        .underlineColor: diagnosticColor(for: decoration.severity)
                     ],
-                    forCharacterRange: clampedRange
+                    forCharacterRange: decoration.range
                 )
+            }
+        }
+
+        @discardableResult
+        private func refreshDiagnosticCacheIfNeeded(in textView: NSTextView) -> Bool {
+            let foldsAreActive = currentFoldSnapshot.hasActiveFolds
+            let needsRefresh = cachedDiagnostics != parent.diagnostics
+                || cachedDiagnosticsGeneration != parent.diagnosticsGeneration
+                || cachedDiagnosticRevision != lspDocumentIndex.revision
+                || cachedDiagnosticDocumentIdentity != parent.documentIdentity
+                || cachedDiagnosticsWereFolded != foldsAreActive
+                || cachedDiagnosticThemeColors != parent.themeColors
+            guard needsRefresh else { return false }
+
+            if let layoutManager = textView.layoutManager {
+                let textLength = (textView.string as NSString).length
+                for range in diagnosticDecorations.compactMap({
+                    clampedDecorationRange($0.range, to: textLength)
+                }) {
+                    layoutManager.removeTemporaryAttribute(.underlineStyle, forCharacterRange: range)
+                    layoutManager.removeTemporaryAttribute(.underlineColor, forCharacterRange: range)
+                }
+            }
+
+            cachedDiagnostics = parent.diagnostics
+            cachedDiagnosticsGeneration = parent.diagnosticsGeneration
+            cachedDiagnosticRevision = lspDocumentIndex.revision
+            cachedDiagnosticDocumentIdentity = parent.documentIdentity
+            cachedDiagnosticsWereFolded = foldsAreActive
+            cachedDiagnosticThemeColors = parent.themeColors
+            guard !foldsAreActive else {
+                diagnosticDecorations.removeAll(keepingCapacity: true)
+                return true
+            }
+
+            let documentRange = NSRange(location: 0, length: lspDocumentIndex.utf16Length)
+            diagnosticDecorations = parent.diagnostics.compactMap { diagnostic in
+                guard let range = lspDocumentIndex.nsRange(for: diagnostic.range) else { return nil }
+                let clampedRange = NSIntersectionRange(range, documentRange)
+                guard clampedRange.length > 0 else { return nil }
+                return DiagnosticDecoration(range: clampedRange, severity: diagnostic.severity)
+            }
+            return true
+        }
+
+        private func diagnosticColor(for severity: DiagnosticSeverity?) -> NSColor {
+            switch severity {
+            case .error:
+                return parent.themeColors.nsDanger
+            case .warning:
+                return parent.themeColors.nsWarning
+            case .information, .hint:
+                return parent.themeColors.nsAccent
+            case .none:
+                return parent.themeColors.nsWarning
             }
         }
     }
@@ -1358,19 +1735,27 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
 struct EditorRenderState {
     private var lastRenderedText: String = ""
     private var lastLanguage: String = ""
+    private var lastDocumentIdentity: String?
     private var requiresVisibleRefresh = true
 
-    mutating func recordRender(text: String, language: String, isViewReadyForDisplay: Bool) {
+    mutating func recordRender(
+        text: String,
+        language: String,
+        documentIdentity: String? = nil,
+        isViewReadyForDisplay: Bool
+    ) {
         requiresVisibleRefresh = !isViewReadyForDisplay
 
         guard isViewReadyForDisplay else { return }
         lastRenderedText = text
         lastLanguage = language
+        lastDocumentIdentity = documentIdentity
     }
 
     func needsTextApplication(
         for text: String,
         language: String,
+        documentIdentity: String? = nil,
         renderedText: String,
         isViewReadyForDisplay: Bool
     ) -> Bool {
@@ -1379,6 +1764,10 @@ struct EditorRenderState {
         }
 
         if lastLanguage != language {
+            return true
+        }
+
+        if lastDocumentIdentity != documentIdentity {
             return true
         }
 
@@ -1496,7 +1885,12 @@ final class EditorContainerView: NSView {
     private(set) var currentSemanticTokensVersion = 0
     private var semanticTokens: [DecodedSemanticToken] = []
     private var semanticTokensText: String?
+    private var pendingSemanticTokenCleanupRanges: [NSRange] = []
     private let semanticTokensCharacterLimit = 200_000
+
+    var canRequestSemanticTokens: Bool {
+        (currentDisplayText as NSString).length <= semanticTokensCharacterLimit
+    }
 
     init(themeColors: ThemeColors, font: NSFont, showMinimap: Bool, showLineNumbers: Bool, wordWrap: Bool, tabSize: Int = 4) {
         self.editorFont = font
@@ -1743,7 +2137,8 @@ final class EditorContainerView: NSView {
     private var lastAppliedFontSignature: String = ""
 
     func applyText(_ text: String, language: String, themeColors: ThemeColors, documentIdentity: String?) {
-        if currentDocumentIdentity != documentIdentity {
+        let identityChanged = currentDocumentIdentity != documentIdentity
+        if identityChanged {
             currentDocumentIdentity = documentIdentity
             hasCompletedInitialHighlight = false
             hasCompletedFullDocumentHighlight = false
@@ -1765,6 +2160,7 @@ final class EditorContainerView: NSView {
         let fontSignature = "\(editorFont.fontName):\(editorFont.pointSize)"
         let shouldReplaceText = text != lastAppliedText
         let shouldRehighlight = shouldReplaceText
+            || identityChanged
             || language != lastAppliedLanguage
             || themeColors != lastAppliedThemeColors
             || fontSignature != lastAppliedFontSignature
@@ -2026,10 +2422,56 @@ final class EditorContainerView: NSView {
         textView.needsDisplay = true
     }
 
-    /// Clear cached tokens (called on document-identity change, since the NSTextView is reused).
+    /// Clear cached tokens and their already-painted temporary colors. Bumping the request version
+    /// synchronously also rejects an older response that resolves after an edit or tab switch.
     func invalidateSemanticTokens() {
+        if let layoutManager = textView.layoutManager {
+            let textLength = (textView.string as NSString).length
+            let ranges = semanticTokens.map(\.range) + pendingSemanticTokenCleanupRanges
+            for tokenRange in ranges {
+                let range = NSIntersectionRange(
+                    tokenRange,
+                    NSRange(location: 0, length: textLength)
+                )
+                guard range.length > 0 else { continue }
+                layoutManager.removeTemporaryAttribute(.foregroundColor, forCharacterRange: range)
+            }
+        }
+        currentSemanticTokensVersion += 1
         semanticTokens = []
         semanticTokensText = nil
+        pendingSemanticTokenCleanupRanges.removeAll(keepingCapacity: true)
+    }
+
+    /// Stage conservative post-edit token spans while NSTextStorage is processing an edit. TextKit
+    /// shifts its temporary attributes only after the delegate returns; cleanup is consumed then.
+    func invalidateSemanticTokens(afterEditing editedRange: NSRange, changeInLength: Int) {
+        let textLength = (textView.string as NSString).length
+        pendingSemanticTokenCleanupRanges.append(contentsOf: semanticTokens.compactMap { token in
+            EditorTextEditRangeTransformer.cleanupRange(
+                token.range,
+                editedRange: editedRange,
+                changeInLength: changeInLength,
+                updatedLength: textLength
+            )
+        })
+        currentSemanticTokensVersion += 1
+        semanticTokens = []
+        semanticTokensText = nil
+    }
+
+    /// Called after NSTextStorageDelegate returns, when NSLayoutManager has rebased its temporary
+    /// attributes into post-edit coordinates.
+    func consumePendingSemanticTokenCleanup() {
+        guard let layoutManager = textView.layoutManager else { return }
+        let textLength = (textView.string as NSString).length
+        let documentRange = NSRange(location: 0, length: textLength)
+        for range in pendingSemanticTokenCleanupRanges {
+            let clamped = NSIntersectionRange(range, documentRange)
+            guard clamped.length > 0 else { continue }
+            layoutManager.removeTemporaryAttribute(.foregroundColor, forCharacterRange: clamped)
+        }
+        pendingSemanticTokenCleanupRanges.removeAll(keepingCapacity: true)
     }
 
     private func highlightScope(for text: String) -> HighlightRequestScope {
@@ -2176,6 +2618,10 @@ final class EditorContainerView: NSView {
     private func calculateAndApplyMinimap() async {
         let visibleRect = scrollView.contentView.bounds
         let documentHeight = textView.bounds.height
+        guard showMinimap else {
+            publishVisibleLineRangeWithoutMinimap(visibleRect: visibleRect)
+            return
+        }
         let cacheKey = MinimapCacheKey(
             displayVersion: currentDisplayVersion,
             visibleOriginY: visibleRect.minY.rounded(.towardZero),
@@ -2197,13 +2643,28 @@ final class EditorContainerView: NSView {
             lastMinimapSnapshot = snapshot
         }
 
-        guard showMinimap else {
-            onViewportChange?(snapshot.visibleStartLine, snapshot.visibleEndLine)
-            return
-        }
-
         minimapView.apply(snapshot: snapshot)
         onViewportChange?(snapshot.visibleStartLine, snapshot.visibleEndLine)
+    }
+
+    private func publishVisibleLineRangeWithoutMinimap(visibleRect: NSRect) {
+        guard let layoutManager = textView.layoutManager,
+              let textContainer = textView.textContainer else {
+            return
+        }
+        let glyphRange = layoutManager.glyphRange(forBoundingRect: visibleRect, in: textContainer)
+        let characterRange = layoutManager.characterRange(
+            forGlyphRange: glyphRange,
+            actualGlyphRange: nil
+        )
+        let textLength = (textView.string as NSString).length
+        let startOffset = min(characterRange.location, textLength)
+        let endOffset = min(NSMaxRange(characterRange), textLength)
+        let startLine = lineNumberView.lineNumberForUTF16Offset?(startOffset)
+            ?? TextMetrics.lineNumber(atUTF16Offset: startOffset, in: textView.string as NSString)
+        let endLine = lineNumberView.lineNumberForUTF16Offset?(endOffset)
+            ?? TextMetrics.lineNumber(atUTF16Offset: endOffset, in: textView.string as NSString)
+        onViewportChange?(startLine, max(startLine, endLine))
     }
 }
 
@@ -2324,6 +2785,7 @@ private final class LineNumberRulerView: NSRulerView {
     var foldableLines: Set<Int> = []
     var foldedLines: Set<Int> = []
     var actualLineNumberForDisplayLine: ((Int) -> Int)?
+    var lineNumberForUTF16Offset: ((Int) -> Int)?
 
     init(textView: NSTextView, themeColors: ThemeColors) {
         self.textView = textView
@@ -2380,7 +2842,8 @@ private final class LineNumberRulerView: NSRulerView {
             return
         }
 
-        var lineNumber = TextMetrics.lineNumber(atUTF16Offset: characterRange.location, in: textNSString)
+        var lineNumber = lineNumberForUTF16Offset?(characterRange.location)
+            ?? TextMetrics.lineNumber(atUTF16Offset: characterRange.location, in: textNSString)
 
         textNSString.enumerateSubstrings(
             in: NSRange(location: characterRange.location, length: textNSString.length - characterRange.location),
@@ -2654,37 +3117,63 @@ struct FoldedTextSnapshot {
     }
 
     private func sourceOffset(forDisplayedOffset offset: Int, affinity: FoldingOffsetAffinity) -> Int {
-        var sourceOffset = max(0, min(offset, (displayText as NSString).length))
-
-        for section in sections {
-            let hiddenLength = section.hiddenRange.length - section.placeholderLength
-            if sourceOffset < section.displayRange.location {
-                break
+        let displayedOffset = max(0, min(offset, (displayText as NSString).length))
+        let sectionIndex = firstSectionIndexWithDisplayEnd(after: displayedOffset)
+        if sections.indices.contains(sectionIndex) {
+            let section = sections[sectionIndex]
+            if displayedOffset >= section.displayRange.location {
+                return affinity == .leading
+                    ? section.hiddenRange.location
+                    : section.hiddenRange.upperBound
             }
-            if sourceOffset < section.displayRange.upperBound {
-                return affinity == .leading ? section.hiddenRange.location : section.hiddenRange.upperBound
-            }
-            sourceOffset += hiddenLength
         }
 
-        return min(sourceOffset, sourceLength)
+        let cumulativeDelta = sectionIndex > 0
+            ? sections[sectionIndex - 1].hiddenRange.upperBound
+                - sections[sectionIndex - 1].displayRange.upperBound
+            : 0
+        return min(displayedOffset + cumulativeDelta, sourceLength)
     }
 
     private func displayOffset(forSourceOffset offset: Int, affinity: FoldingOffsetAffinity) -> Int {
-        var displayOffset = max(0, min(offset, sourceLength))
-
-        for section in sections {
-            let hiddenLength = section.hiddenRange.length - section.placeholderLength
-            if displayOffset < section.hiddenRange.location {
-                break
+        let sourceOffset = max(0, min(offset, sourceLength))
+        let sectionIndex = firstSectionIndexWithSourceEnd(after: sourceOffset)
+        if sections.indices.contains(sectionIndex) {
+            let section = sections[sectionIndex]
+            if sourceOffset >= section.hiddenRange.location {
+                return affinity == .leading
+                    ? section.displayRange.location
+                    : section.displayRange.upperBound
             }
-            if displayOffset < section.hiddenRange.upperBound {
-                return affinity == .leading ? section.displayRange.location : section.displayRange.upperBound
-            }
-            displayOffset -= hiddenLength
         }
 
-        return min(displayOffset, (displayText as NSString).length)
+        let cumulativeDelta = sectionIndex > 0
+            ? sections[sectionIndex - 1].hiddenRange.upperBound
+                - sections[sectionIndex - 1].displayRange.upperBound
+            : 0
+        return min(sourceOffset - cumulativeDelta, (displayText as NSString).length)
+    }
+
+    private func firstSectionIndexWithDisplayEnd(after offset: Int) -> Int {
+        firstSectionIndex { $0.displayRange.upperBound > offset }
+    }
+
+    private func firstSectionIndexWithSourceEnd(after offset: Int) -> Int {
+        firstSectionIndex { $0.hiddenRange.upperBound > offset }
+    }
+
+    private func firstSectionIndex(matching predicate: (CollapsedSection) -> Bool) -> Int {
+        var lowerBound = 0
+        var upperBound = sections.count
+        while lowerBound < upperBound {
+            let midpoint = lowerBound + (upperBound - lowerBound) / 2
+            if predicate(sections[midpoint]) {
+                upperBound = midpoint
+            } else {
+                lowerBound = midpoint + 1
+            }
+        }
+        return lowerBound
     }
 
     private static func makeCollapsedSections(from acceptedRegions: [FoldRegion]) -> [CollapsedSection] {
@@ -2914,42 +3403,18 @@ struct LineInfo {
 
     private static func computeParse(_ text: String) -> [LineInfo] {
         let nsText = text as NSString
-        let length = nsText.length
-
-        if length == 0 {
-            return [
-                LineInfo(
-                    number: 1,
-                    startUTF16: 0,
-                    lineEndUTF16: 0,
-                    fullEndUTF16: 0,
-                    indent: 0,
-                    trimmedText: "",
-                    hasTrailingNewline: false
-                )
-            ]
-        }
-
+        let documentIndex = EditorDocumentIndex(text: text, lineBreakMode: .visual)
         var infos: [LineInfo] = []
+        infos.reserveCapacity(documentIndex.lineCount)
         var location = 0
-        var lineNumber = 1
 
-        while location < length {
-            let lineRange = nsText.lineRange(for: NSRange(location: location, length: 0))
-            var lineEnd = lineRange.upperBound
-            var hasTrailingNewline = false
-
-            while lineEnd > lineRange.location {
-                let char = nsText.character(at: lineEnd - 1)
-                if char == 10 || char == 13 {
-                    hasTrailingNewline = true
-                    lineEnd -= 1
-                } else {
-                    break
-                }
-            }
-
-            let lineString = nsText.substring(with: NSRange(location: lineRange.location, length: lineEnd - lineRange.location))
+        for (lineOffset, line) in documentIndex.lines.enumerated() {
+            let lineEnd = location + line.contentLength
+            let fullEnd = lineEnd + line.terminatorLength
+            let lineString = nsText.substring(with: NSRange(
+                location: location,
+                length: line.contentLength
+            ))
             let indent = lineString.reduce(into: 0) { count, character in
                 if character == " " {
                     count += 1
@@ -2962,32 +3427,16 @@ struct LineInfo {
 
             infos.append(
                 LineInfo(
-                    number: lineNumber,
-                    startUTF16: lineRange.location,
+                    number: lineOffset + 1,
+                    startUTF16: location,
                     lineEndUTF16: lineEnd,
-                    fullEndUTF16: lineRange.upperBound,
+                    fullEndUTF16: fullEnd,
                     indent: indent,
                     trimmedText: lineString.trimmingCharacters(in: .whitespaces),
-                    hasTrailingNewline: hasTrailingNewline
+                    hasTrailingNewline: line.terminatorLength > 0
                 )
             )
-
-            lineNumber += 1
-            location = lineRange.upperBound
-        }
-
-        if text.hasSuffix("\n") {
-            infos.append(
-                LineInfo(
-                    number: lineNumber,
-                    startUTF16: length,
-                    lineEndUTF16: length,
-                    fullEndUTF16: length,
-                    indent: 0,
-                    trimmedText: "",
-                    hasTrailingNewline: false
-                )
-            )
+            location = fullEnd
         }
 
         return infos
@@ -3001,11 +3450,21 @@ private extension NSRange {
 }
 
 enum BracketMatcher {
-    static func matchingRanges(in text: NSString, caretLocation: Int) -> [NSRange] {
-        guard text.length > 0 else { return [] }
+    static let defaultMaximumScanDistance = 100_000
+
+    static func matchingRanges(
+        in text: NSString,
+        caretLocation: Int,
+        maximumScanDistance: Int = defaultMaximumScanDistance
+    ) -> [NSRange] {
+        guard text.length > 0, maximumScanDistance > 0 else { return [] }
 
         if let openingIndex = bracketIndex(in: text, preferredLocation: caretLocation),
-           let matchIndex = matchingIndex(in: text, from: openingIndex) {
+           let matchIndex = matchingIndex(
+               in: text,
+               from: openingIndex,
+               maximumScanDistance: maximumScanDistance
+           ) {
             return [
                 NSRange(location: openingIndex, length: 1),
                 NSRange(location: matchIndex, length: 1)
@@ -3027,12 +3486,17 @@ enum BracketMatcher {
         return nil
     }
 
-    private static func matchingIndex(in text: NSString, from index: Int) -> Int? {
+    private static func matchingIndex(
+        in text: NSString,
+        from index: Int,
+        maximumScanDistance: Int
+    ) -> Int? {
         let character = text.character(at: index)
 
         if let closing = bracketPairs[character] {
             var depth = 0
-            for scanIndex in index..<text.length {
+            let scanEnd = min(text.length, index + maximumScanDistance)
+            for scanIndex in index..<scanEnd {
                 let scanCharacter = text.character(at: scanIndex)
                 if scanCharacter == character {
                     depth += 1
@@ -3048,7 +3512,8 @@ enum BracketMatcher {
 
         if let opening = reverseBracketPairs[character] {
             var depth = 0
-            for scanIndex in stride(from: index, through: 0, by: -1) {
+            let scanStart = max(0, index - maximumScanDistance + 1)
+            for scanIndex in stride(from: index, through: scanStart, by: -1) {
                 let scanCharacter = text.character(at: scanIndex)
                 if scanCharacter == character {
                     depth += 1

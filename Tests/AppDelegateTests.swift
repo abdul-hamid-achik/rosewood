@@ -85,6 +85,53 @@ struct AppDelegateTests {
     }
 
     @Test
+    func crashWindowRegistryKeepsStableRosewoodSessionIDsAndClearsOnCleanQuit() {
+        let defaults = makeDefaults()
+        let key = AppDelegate.crashWindowSessionKeysDefaultsKeyForTesting
+        defaults.set(
+            [
+                "rosewood.session",
+                "unrelated.window",
+                "rosewood.session.window.stable-id",
+                "rosewood.session.window.stable-id"
+            ],
+            forKey: key
+        )
+        let delegate = AppDelegate(
+            notificationCenter: NotificationCenter(),
+            recentDocumentsStore: defaults
+        )
+
+        #expect(delegate.crashWindowSessionKeysForTesting == [
+            "rosewood.session",
+            "rosewood.session.window.stable-id"
+        ])
+
+        delegate.applicationWillTerminate(Notification(name: NSApplication.willTerminateNotification))
+        #expect(defaults.object(forKey: key) == nil)
+    }
+
+    @Test
+    func pendingWindowRestorationKeepsEverySessionDiscoverable() {
+        let defaults = makeDefaults()
+        let key = AppDelegate.crashWindowSessionKeysDefaultsKeyForTesting
+        let delegate = AppDelegate(
+            notificationCenter: NotificationCenter(),
+            recentDocumentsStore: defaults
+        )
+        let sessionKeys = [
+            "rosewood.session",
+            "rosewood.session.window.alpha",
+            "rosewood.session.window.beta"
+        ]
+
+        delegate.preservePendingCrashWindowSessionKeysForTesting(sessionKeys)
+
+        #expect(defaults.stringArray(forKey: key) == sessionKeys.sorted())
+        #expect(delegate.crashWindowSessionKeysForTesting == sessionKeys.sorted())
+    }
+
+    @Test
     func findReferencesMenuValidationTracksProjectState() throws {
         let rootURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         let fileURL = rootURL.appendingPathComponent("Alpha.swift")

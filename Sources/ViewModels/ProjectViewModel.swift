@@ -196,6 +196,13 @@ final class ProjectViewModel: ObservableObject {
     }
     private var activeCursorBuffer: ActiveCursorBuffer?
 
+    private struct RecoveryCandidate: Sendable {
+        let state: RecoveryTabState
+        let diskContent: String?
+        let diskMetadata: FileDocumentMetadata?
+        let diskChangedSinceEdit: Bool
+    }
+
     @Published var selectedTabIndex: Int? {
         willSet {
             // Flush the outgoing tab's live edits into its struct before the selection changes.
@@ -676,6 +683,7 @@ final class ProjectViewModel: ObservableObject {
     let fileService: FileService
     let sessionStore: UserDefaults
     private let sessionKey: String
+    private let recoveryStore: RecoveryStore
     private let projectConfigPromptedRootsKey: String
     let debugSelectedConfigurationsKey: String
     let debugPanelVisibilityKey: String
@@ -685,6 +693,8 @@ final class ProjectViewModel: ObservableObject {
     private var reloadFileTreeTask: Task<Void, Never>?
     private var reloadWorkspaceFilesTask: Task<Void, Never>?
     private var sessionPersistenceTask: Task<Void, Never>?
+    private var recoveryPersistenceTask: Task<Void, Never>?
+    private var recoveryRestoreTask: Task<Void, Never>?
     private var editorNavigationChromeTask: Task<Void, Never>?
     private var outlineSidebarDataTask: Task<Void, Never>?
     private var statusBarDetailTask: Task<Void, Never>?
@@ -753,6 +763,9 @@ final class ProjectViewModel: ObservableObject {
     private var cachedCurrentTabBreakpointLinesPath: String?
     private var cachedCurrentTabBreakpointLines: Set<Int> = []
     private let sessionPersistenceDebounceNanoseconds: UInt64
+    private let recoveryPersistenceDebounceNanoseconds: UInt64
+    private var presentedRecoveryPersistenceWarning = false
+    private var isRecoveryRestorePending = false
     private let editorNavigationChromeDebounceNanoseconds: UInt64
     private let outlineSidebarDataDebounceNanoseconds: UInt64
     private let statusBarDetailDebounceNanoseconds: UInt64
@@ -761,6 +774,7 @@ final class ProjectViewModel: ObservableObject {
             fileService: .shared,
             sessionStore: .standard,
             sessionKey: "rosewood.session",
+            recoveryStore: .live(identifier: "rosewood.session"),
             configService: .shared,
             fileWatcher: .shared,
             notificationCenter: .default,
@@ -772,6 +786,7 @@ final class ProjectViewModel: ObservableObject {
             debugSessionService: DebugSessionService.shared,
             gitService: GitService.shared,
             sessionPersistenceDebounceNanoseconds: 1_000_000_000,
+            recoveryPersistenceDebounceNanoseconds: 350_000_000,
             editorNavigationChromeDebounceNanoseconds: 650_000_000,
             outlineSidebarDataDebounceNanoseconds: 1_100_000_000,
             statusBarDetailDebounceNanoseconds: 1_100_000_000
@@ -782,6 +797,7 @@ final class ProjectViewModel: ObservableObject {
         fileService: FileService,
         sessionStore: UserDefaults,
         sessionKey: String,
+        recoveryStore: RecoveryStore = .disabled,
         configService: ConfigurationService,
         fileWatcher: FileWatcherService,
         notificationCenter: NotificationCenter,
@@ -794,6 +810,7 @@ final class ProjectViewModel: ObservableObject {
         gitService: GitServiceProtocol = GitService.shared,
         projectSearchDebounceNanoseconds: UInt64 = 250_000_000,
         sessionPersistenceDebounceNanoseconds: UInt64 = 1_000_000_000,
+        recoveryPersistenceDebounceNanoseconds: UInt64 = 350_000_000,
         editorNavigationChromeDebounceNanoseconds: UInt64 = 650_000_000,
         outlineSidebarDataDebounceNanoseconds: UInt64 = 1_100_000_000,
         statusBarDetailDebounceNanoseconds: UInt64 = 1_100_000_000
@@ -801,6 +818,7 @@ final class ProjectViewModel: ObservableObject {
         self.fileService = fileService
         self.sessionStore = sessionStore
         self.sessionKey = sessionKey
+        self.recoveryStore = recoveryStore
         self.projectConfigPromptedRootsKey = "\(sessionKey).projectConfigPromptedRoots"
         self.debugSelectedConfigurationsKey = "\(sessionKey).debugSelectedConfigurations"
         self.debugPanelVisibilityKey = "\(sessionKey).debugPanelVisible"
@@ -816,9 +834,11 @@ final class ProjectViewModel: ObservableObject {
         self.gitService = gitService
         self.projectSearchDebounceNanoseconds = projectSearchDebounceNanoseconds
         self.sessionPersistenceDebounceNanoseconds = sessionPersistenceDebounceNanoseconds
+        self.recoveryPersistenceDebounceNanoseconds = recoveryPersistenceDebounceNanoseconds
         self.editorNavigationChromeDebounceNanoseconds = editorNavigationChromeDebounceNanoseconds
         self.outlineSidebarDataDebounceNanoseconds = outlineSidebarDataDebounceNanoseconds
         self.statusBarDetailDebounceNanoseconds = statusBarDetailDebounceNanoseconds
+        self.isRecoveryRestorePending = recoveryStore.isEnabled
         self.commandPaletteViewModel = CommandPaletteViewModel(commandDispatcher: commandDispatcher)
         self.dockerModel = DockerModel()
         self.terminalModel = TerminalModel(configService: configService)
@@ -842,9 +862,11 @@ final class ProjectViewModel: ObservableObject {
             sessionStore.removeObject(forKey: projectConfigPromptedRootsKey)
             sessionStore.removeObject(forKey: debugSelectedConfigurationsKey)
             sessionStore.removeObject(forKey: debugPanelVisibilityKey)
+            recoveryStore.clear()
         }
         setupFileWatcher()
         restoreSession()
+        scheduleRecoveryRestore()
         reloadDebuggerState(resetConsole: false)
         installUITestEditorFixturesIfNeeded()
         refreshGitState()
@@ -860,6 +882,8 @@ final class ProjectViewModel: ObservableObject {
         reloadWorkspaceFilesTask?.cancel()
         workspaceSymbolIndexTask?.cancel()
         sessionPersistenceTask?.cancel()
+        recoveryPersistenceTask?.cancel()
+        recoveryRestoreTask?.cancel()
         editorNavigationChromeTask?.cancel()
         outlineSidebarDataTask?.cancel()
         statusBarDetailTask?.cancel()
@@ -2470,11 +2494,11 @@ final class ProjectViewModel: ObservableObject {
     }
 
     func openFolder() {
+        guard let url = ui.openPanel(true, false, false) else { return }
         guard prepareForSessionTransition(title: "Open Folder", message: "Do you want to save changes before opening a different folder?") else {
             return
         }
 
-        guard let url = ui.openPanel(true, false, false) else { return }
         openFolder(at: url)
     }
 
@@ -2923,7 +2947,11 @@ final class ProjectViewModel: ObservableObject {
     }
 
     @discardableResult
-    func closeTab(at index: Int, confirmUnsavedChanges: Bool = true) -> Bool {
+    func closeTab(
+        at index: Int,
+        confirmUnsavedChanges: Bool = true,
+        reconcileRecoveryImmediately: Bool = true
+    ) -> Bool {
         guard openTabs.indices.contains(index) else { return false }
         // Flush + drop the live buffer so the dirty check, any save-on-close, and the
         // recently-closed snapshot all see the latest typed text.
@@ -2942,7 +2970,7 @@ final class ProjectViewModel: ObservableObject {
             switch response {
             case .alertFirstButtonReturn:
                 guard saveTab(at: index) else { return false }
-                case .alertSecondButtonReturn:
+            case .alertSecondButtonReturn:
                 discardedUnsavedChanges = true
             default:
                 return false
@@ -2974,6 +3002,9 @@ final class ProjectViewModel: ObservableObject {
             }
 
             persistSession()
+            if discardedUnsavedChanges, reconcileRecoveryImmediately {
+                persistRecoveryJournalImmediately()
+            }
             return true
         }
 
@@ -3008,6 +3039,9 @@ final class ProjectViewModel: ObservableObject {
         }
 
         persistSession()
+        if discardedUnsavedChanges, reconcileRecoveryImmediately {
+            persistRecoveryJournalImmediately()
+        }
         return true
     }
 
@@ -3048,7 +3082,11 @@ final class ProjectViewModel: ObservableObject {
     }
 
     func saveCurrentFile() {
-        guard let selectedTabIndex else { return }
+        guard let selectedTabIndex, openTabs.indices.contains(selectedTabIndex) else { return }
+        guard openTabs[selectedTabIndex].filePath != nil else {
+            saveCurrentFileAs()
+            return
+        }
         _ = saveTab(at: selectedTabIndex)
     }
 
@@ -3239,6 +3277,7 @@ final class ProjectViewModel: ObservableObject {
             scheduleAutoSave()
         }
 
+        scheduleRecoveryPersistence()
         scheduleSessionPersistence()
     }
 
@@ -3602,6 +3641,9 @@ final class ProjectViewModel: ObservableObject {
             invalidateWorkspaceDiagnosticsCache()
             invalidateEditorNavigationCaches()
             persistSession()
+            // Reload is an explicit discard boundary. Remove the previous dirty snapshot before
+            // returning so an immediate crash cannot offer text the user chose to replace.
+            persistRecoveryJournalImmediately()
             refreshGitState()
             refreshCurrentLineBlame()
         } catch {
@@ -4456,6 +4498,11 @@ final class ProjectViewModel: ObservableObject {
             }
 
             persistSession()
+            if didChangeURL {
+                // Save As changes the journal identity as well as the disk bytes. Reconcile it
+                // synchronously so a crash cannot resurrect the old path during the edit debounce.
+                persistRecoveryJournalImmediately()
+            }
             refreshGitState()
             refreshCurrentLineBlame()
 
@@ -4479,6 +4526,15 @@ final class ProjectViewModel: ObservableObject {
     }
 
     func prepareForSessionTransition(title: String, message: String) -> Bool {
+        guard !isRecoveryRestorePending else {
+            ui.alert(
+                "Recovery in Progress",
+                "Rosewood is still checking for unsaved buffers from the previous session. Try closing again after the recovery prompt is resolved.",
+                .warning
+            )
+            return false
+        }
+
         // We're about to resolve unsaved changes explicitly via the dialog, so suspend any pending
         // debounced autosave (it would otherwise fire mid-dialog).
         autoSaveTask?.cancel()
@@ -4486,7 +4542,9 @@ final class ProjectViewModel: ObservableObject {
         // skip a tab whose unsaved edits are still only in the buffer).
         commitActiveEditBuffer()
         let dirtyIndices = openTabs.indices.filter { openTabs[$0].isDirty }
-        guard !dirtyIndices.isEmpty else { return true }
+        guard !dirtyIndices.isEmpty else {
+            return clearRecoveryJournal()
+        }
 
         let response = ui.confirm(
             title,
@@ -4497,12 +4555,27 @@ final class ProjectViewModel: ObservableObject {
 
         switch response {
         case .alertFirstButtonReturn:
-            return saveAllTabs(indices: dirtyIndices)
+            let didSave = saveAllTabs(indices: dirtyIndices)
+            if didSave {
+                return clearRecoveryJournal()
+            }
+            return false
         case .alertSecondButtonReturn:
-            return true
+            return clearRecoveryJournal()
         default:
             return false
         }
+    }
+
+    /// Re-arms durability when a multi-window app termination is canceled after this window had
+    /// already approved its own Save/Discard decision. The window remains open, so any dirty
+    /// buffers it still holds must immediately become recoverable again.
+    func resumeAfterCancelledSessionTransition() {
+        if configService.settings.editor.autoSaveEnabled,
+           openTabs.contains(where: \.isDirty) {
+            scheduleAutoSave()
+        }
+        persistRecoveryJournalImmediately()
     }
 
     func resolveUnsavedChanges(for indices: [Int], title: String, message: String) -> Bool {
@@ -4546,8 +4619,15 @@ final class ProjectViewModel: ObservableObject {
 
     private func closeTabs(at indices: [Int], confirmUnsavedChanges: Bool) {
         for index in indices.sorted(by: >) {
-            _ = closeTab(at: index, confirmUnsavedChanges: confirmUnsavedChanges)
+            _ = closeTab(
+                at: index,
+                confirmUnsavedChanges: confirmUnsavedChanges,
+                reconcileRecoveryImmediately: false
+            )
         }
+        // Batch close/discard operations reconcile once after all tab mutations, avoiding one
+        // potentially large synchronous journal rewrite per tab while retaining crash durability.
+        persistRecoveryJournalImmediately()
     }
 
     func closeOtherTabs(except index: Int) {
@@ -4766,7 +4846,334 @@ final class ProjectViewModel: ObservableObject {
         reloadFileTree()
     }
 
-    func persistSession() {
+    private func scheduleRecoveryRestore() {
+        guard recoveryStore.isEnabled else {
+            isRecoveryRestorePending = false
+            return
+        }
+        isRecoveryRestorePending = true
+        recoveryRestoreTask?.cancel()
+        let recoveryStore = recoveryStore
+        let fileService = fileService
+        recoveryRestoreTask = Task { @MainActor [weak self] in
+            let result = await Task.detached(priority: .utility) {
+                guard let journal = recoveryStore.load() else {
+                    return (journal: Optional<RecoveryJournal>.none, candidates: [RecoveryCandidate]())
+                }
+                let candidates = journal.tabs.compactMap {
+                    ProjectViewModel.makeRecoveryCandidate(for: $0, fileService: fileService)
+                }
+                return (journal: Optional(journal), candidates: candidates)
+            }.value
+
+            guard let self, !Task.isCancelled else { return }
+            guard let journal = result.journal else {
+                self.finishRecoveryRestore()
+                return
+            }
+            await self.presentRecoveryJournal(journal, candidates: result.candidates)
+        }
+    }
+
+    private func presentRecoveryJournal(
+        _ journal: RecoveryJournal,
+        candidates: [RecoveryCandidate]
+    ) async {
+        guard !candidates.isEmpty else {
+            clearRecoveryJournal()
+            finishRecoveryRestore()
+            return
+        }
+
+        let changedOnDiskCount = candidates.filter(\.diskChangedSinceEdit).count
+        let bufferDescription = "\(candidates.count) unsaved buffer\(candidates.count == 1 ? "" : "s")"
+        var message = "Rosewood found \(bufferDescription) from an interrupted session. Restored buffers will remain unsaved, and autosave will stay paused until you explicitly save them."
+        if changedOnDiskCount > 0 {
+            message += " \(changedOnDiskCount) corresponding file\(changedOnDiskCount == 1 ? " has" : "s have") also changed on disk; restoring will not overwrite those files."
+        }
+
+        let response = ui.confirm(
+            "Restore Unsaved Changes?",
+            message,
+            .warning,
+            ["Restore", "Discard"]
+        )
+
+        switch response {
+        case .alertFirstButtonReturn:
+            // The modal recovery prompt can remain open while external tools modify the files.
+            // Re-read every path after the user's decision so Restore never binds a stale baseline
+            // or recreates a file that disappeared while the alert was visible.
+            let states = candidates.map(\.state)
+            let fileService = fileService
+            let refreshedCandidates = await Task.detached(priority: .utility) {
+                states.compactMap {
+                    ProjectViewModel.makeRecoveryCandidate(for: $0, fileService: fileService)
+                }
+            }.value
+            guard !Task.isCancelled else { return }
+            guard !refreshedCandidates.isEmpty else {
+                clearRecoveryJournal()
+                finishRecoveryRestore()
+                return
+            }
+            applyRecoveryCandidates(refreshedCandidates, journal: journal)
+            finishRecoveryRestore()
+        case .alertSecondButtonReturn:
+            clearRecoveryJournal()
+            finishRecoveryRestore()
+        default:
+            // A real two-button NSAlert cannot reach this path. If an injected UI cancels the
+            // decision, keep the startup barrier and source journal intact rather than risking an
+            // overwrite from ordinary session persistence.
+            break
+        }
+    }
+
+    private nonisolated static func makeRecoveryCandidate(
+        for state: RecoveryTabState,
+        fileService: FileService
+    ) -> RecoveryCandidate? {
+        let fileURL = state.filePath.map { URL(fileURLWithPath: $0).standardizedFileURL }
+        let diskDocument = fileURL.flatMap { try? fileService.readDocument(at: $0) }
+        let diskContent = diskDocument?.content
+        let recoveredFingerprint = RecoveryContentFingerprint.make(for: state.content)
+        let diskFingerprint = diskContent.map(RecoveryContentFingerprint.make(for:))
+
+        // A save may have completed just before a crash while an older journal was still on disk.
+        // If disk already contains the recovered bytes, the journal is stale and needs no prompt.
+        if diskFingerprint == recoveredFingerprint {
+            return nil
+        }
+
+        let diskChangedSinceEdit = fileURL != nil && diskFingerprint != state.originalContentFingerprint
+        return RecoveryCandidate(
+            state: state,
+            diskContent: diskContent,
+            diskMetadata: diskDocument?.metadata,
+            diskChangedSinceEdit: diskChangedSinceEdit
+        )
+    }
+
+    private func finishRecoveryRestore() {
+        isRecoveryRestorePending = false
+        recoveryRestoreTask = nil
+        scheduleRecoveryPersistence()
+    }
+
+    private func applyRecoveryCandidates(_ candidates: [RecoveryCandidate], journal: RecoveryJournal) {
+        commitAndClearActiveEditBuffer()
+
+        if rootDirectory == nil,
+           let rootPath = journal.rootDirectoryPath {
+            let recoveredRoot = URL(fileURLWithPath: rootPath).standardizedFileURL
+            var isDirectory = ObjCBool(false)
+            if FileManager.default.fileExists(atPath: recoveredRoot.path, isDirectory: &isDirectory),
+               isDirectory.boolValue {
+                rootDirectory = recoveredRoot
+                configService.setProjectRoot(recoveredRoot)
+                lspService.setProjectRoot(recoveredRoot)
+                reloadFileTree()
+            }
+        }
+
+        var firstRecoveredIndex: Int?
+        var selectedRecoveredIndex: Int?
+
+        for candidate in candidates {
+            let state = candidate.state
+            let requestedFileURL = state.filePath.map {
+                URL(fileURLWithPath: $0).standardizedFileURL
+            }
+            // A missing, renamed, or unreadable path must go through Save As. Keeping the stale
+            // URL would let Cmd-S silently recreate or overwrite a path the user no longer owns.
+            let readableFileURL = candidate.diskContent == nil ? nil : requestedFileURL
+            let existingIndex = readableFileURL.flatMap { recoveredURL in
+                openTabs.firstIndex {
+                    $0.filePath.map(normalizedPath(for:)) == normalizedPath(for: recoveredURL)
+                }
+            }
+            let hasNewLiveEdits = existingIndex.map {
+                openTabs[$0].isDirty && openTabs[$0].content != state.content
+            } ?? false
+            // Never overwrite text typed while the asynchronous startup check was running. Put
+            // the interrupted-session version in a separate untitled recovered tab instead.
+            let recoverAsUntitled = readableFileURL == nil || hasNewLiveEdits
+            let fileURL = recoverAsUntitled ? nil : readableFileURL
+            let originalContent = fileURL == nil ? "" : (candidate.diskContent ?? "")
+            let fileName = hasNewLiveEdits ? "Recovered \(state.fileName)" : state.fileName
+            let isLarge = state.content.utf8.count
+                >= configService.settings.fileHandling.textSizeWarningKB * 1024
+            let cursorPosition = CursorPosition(
+                line: max(state.cursorLine, 1),
+                column: max(state.cursorColumn, 1)
+            )
+
+            let recoveredIndex: Int
+            if let existingIndex, !hasNewLiveEdits {
+                openTabs[existingIndex].content = state.content
+                openTabs[existingIndex].originalContent = originalContent
+                openTabs[existingIndex].isDirty = true
+                openTabs[existingIndex].requiresExplicitSave = true
+                openTabs[existingIndex].cursorPosition = cursorPosition
+                openTabs[existingIndex].pendingLineJump = cursorPosition.line
+                openTabs[existingIndex].documentVersion += 1
+                openTabs[existingIndex].documentMetadata = candidate.diskMetadata ?? state.documentMetadata
+                openTabs[existingIndex].contentType = .text(isLarge: isLarge)
+                openTabs[existingIndex].fileData = nil
+                recoveredIndex = existingIndex
+            } else {
+                let recoveredTab = EditorTab(
+                    filePath: fileURL,
+                    fileName: fileName,
+                    content: state.content,
+                    originalContent: originalContent,
+                    isDirty: true,
+                    requiresExplicitSave: true,
+                    cursorPosition: cursorPosition,
+                    pendingLineJump: cursorPosition.line,
+                    documentVersion: 1,
+                    documentMetadata: candidate.diskMetadata ?? state.documentMetadata,
+                    contentType: .text(isLarge: isLarge)
+                )
+                openTabs.append(recoveredTab)
+                recoveredIndex = openTabs.count - 1
+            }
+
+            firstRecoveredIndex = firstRecoveredIndex ?? recoveredIndex
+            if state.wasSelected {
+                selectedRecoveredIndex = recoveredIndex
+            }
+
+            if let fileURL {
+                fileWatcher.watch(url: fileURL)
+                lspService.documentOpened(
+                    uri: fileURL.absoluteString,
+                    language: openTabs[recoveredIndex].language,
+                    text: state.content
+                )
+                invalidateCachedFileContent(for: fileURL)
+                scheduleWorkspaceSymbolCacheUpdate(for: fileURL, contents: state.content)
+            }
+        }
+
+        if let recoveredIndex = selectedRecoveredIndex ?? firstRecoveredIndex {
+            selectedTabIndex = recoveredIndex
+            cursorDisplayModel.position = openTabs[recoveredIndex].cursorPosition
+        }
+
+        invalidateWorkspaceDiagnosticsCache()
+        invalidateEditorNavigationCaches()
+        persistSession()
+        refreshGitState()
+    }
+
+    private func scheduleRecoveryPersistence() {
+        guard recoveryStore.isEnabled, !isRecoveryRestorePending else { return }
+        recoveryPersistenceTask?.cancel()
+        let operationID = recoveryStore.reserveSaveOperation()
+        recoveryPersistenceTask = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(
+                    nanoseconds: self?.recoveryPersistenceDebounceNanoseconds ?? 0
+                )
+            } catch {
+                return
+            }
+
+            guard let self, !Task.isCancelled else { return }
+            let journal = self.makeRecoveryJournal()
+            let recoveryStore = self.recoveryStore
+            let report = await Task.detached(priority: .utility) {
+                recoveryStore.save(journal, operationID: operationID)
+            }.value
+
+            guard !Task.isCancelled else { return }
+            self.handleRecoverySaveReport(report)
+        }
+    }
+
+    private func persistRecoveryJournalImmediately() {
+        guard recoveryStore.isEnabled, !isRecoveryRestorePending else { return }
+        recoveryPersistenceTask?.cancel()
+        recoveryPersistenceTask = nil
+        let operationID = recoveryStore.reserveSaveOperation()
+        let report = recoveryStore.save(makeRecoveryJournal(), operationID: operationID)
+        handleRecoverySaveReport(report)
+    }
+
+    private func handleRecoverySaveReport(_ report: RecoverySaveReport) {
+        guard !presentedRecoveryPersistenceWarning else { return }
+
+        if let writeErrorDescription = report.writeErrorDescription {
+            presentedRecoveryPersistenceWarning = true
+            ui.alert(
+                "Recovery Write Failed",
+                "Rosewood could not update its crash-recovery journal: \(writeErrorDescription). Save your files explicitly before closing the app.",
+                .warning
+            )
+            return
+        }
+
+        guard !report.skippedFileNames.isEmpty else { return }
+        presentedRecoveryPersistenceWarning = true
+        let names = report.skippedFileNames.prefix(3).joined(separator: ", ")
+        let remainder = max(report.skippedFileNames.count - 3, 0)
+        let suffix = remainder > 0 ? " and \(remainder) more" : ""
+        ui.alert(
+            "Recovery Limit Reached",
+            "Rosewood could not journal \(names)\(suffix) because the recovery size limit was reached. Save those files explicitly to protect their latest changes.",
+            .warning
+        )
+    }
+
+    private func makeRecoveryJournal() -> RecoveryJournal {
+        let prioritizedIndices = openTabs.indices.sorted { lhs, rhs in
+            if lhs == selectedTabIndex { return true }
+            if rhs == selectedTabIndex { return false }
+            return lhs < rhs
+        }
+        let states = prioritizedIndices.compactMap { index -> RecoveryTabState? in
+            let tab = openTabs[index]
+            guard tab.contentType.isText else { return nil }
+            let content = liveContent(at: index)
+            guard tab.isDirty || content != tab.originalContent else { return nil }
+            let cursor = liveCursorPosition(at: index)
+            return RecoveryTabState(
+                filePath: tab.filePath.map(normalizedPath(for:)),
+                fileName: tab.fileName,
+                content: content,
+                originalContentFingerprint: RecoveryContentFingerprint.make(for: tab.originalContent),
+                cursorLine: cursor.line,
+                cursorColumn: cursor.column,
+                documentMetadata: tab.documentMetadata,
+                requiresExplicitSave: tab.requiresExplicitSave,
+                wasSelected: index == selectedTabIndex
+            )
+        }
+
+        return RecoveryJournal(
+            rootDirectoryPath: rootDirectory.map(normalizedPath(for:)),
+            tabs: states
+        )
+    }
+
+    @discardableResult
+    private func clearRecoveryJournal() -> Bool {
+        recoveryPersistenceTask?.cancel()
+        recoveryPersistenceTask = nil
+        presentedRecoveryPersistenceWarning = false
+        guard !recoveryStore.clear() else { return true }
+        presentedRecoveryPersistenceWarning = true
+        ui.alert(
+            "Recovery Cleanup Failed",
+            "Rosewood could not remove its crash-recovery journal. Save your files explicitly before closing the app.",
+            .warning
+        )
+        return false
+    }
+
+    func persistSession(scheduleRecovery: Bool = true) {
         sessionPersistenceTask?.cancel()
         sessionPersistenceTask = nil
         let session = ProjectSessionState(
@@ -4792,6 +5199,9 @@ final class ProjectViewModel: ObservableObject {
 
         guard let data = try? JSONEncoder().encode(session) else { return }
         sessionStore.set(data, forKey: sessionKey)
+        if scheduleRecovery {
+            scheduleRecoveryPersistence()
+        }
     }
 
     private func scheduleSessionPersistence() {
@@ -4804,7 +5214,7 @@ final class ProjectViewModel: ObservableObject {
             }
 
             guard let self, !Task.isCancelled else { return }
-            self.persistSession()
+            self.persistSession(scheduleRecovery: false)
         }
     }
 

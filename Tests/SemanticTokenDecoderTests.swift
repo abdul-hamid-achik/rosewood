@@ -42,6 +42,19 @@ struct SemanticTokenDecoderTests {
     }
 
     @Test
+    func unicodeVisualSeparatorsRemainCharactersForLSPPositions() {
+        let decoder = SemanticTokenDecoder(legend: Self.legend)
+
+        for separator in ["\u{0085}", "\u{2028}", "\u{2029}"] {
+            let text = "a\(separator)b"
+            let token = decoder.decode([0, 2, 1, 2, 0], text: text)
+
+            #expect(token.first?.range == NSRange(location: 2, length: 1))
+            #expect(decoder.decode([1, 0, 1, 2, 0], text: text).isEmpty)
+        }
+    }
+
+    @Test
     func decodeIgnoresTokensPastEndOfText() {
         let decoder = SemanticTokenDecoder(legend: Self.legend)
         let text = "abc"

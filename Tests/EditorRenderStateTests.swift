@@ -50,4 +50,26 @@ struct EditorRenderStateTests {
             )
         )
     }
+
+    @Test
+    func sameTextFromDifferentDocumentForcesRefresh() {
+        var state = EditorRenderState()
+
+        state.recordRender(
+            text: "same text",
+            language: "plaintext",
+            documentIdentity: "tab-a",
+            isViewReadyForDisplay: true
+        )
+
+        #expect(
+            state.needsTextApplication(
+                for: "same text",
+                language: "plaintext",
+                documentIdentity: "tab-b",
+                renderedText: "same text",
+                isViewReadyForDisplay: true
+            )
+        )
+    }
 }

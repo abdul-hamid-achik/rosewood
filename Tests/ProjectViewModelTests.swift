@@ -8,6 +8,32 @@ import Testing
 @MainActor
 struct ProjectViewModelTests {
     @Test
+    func diagnosticsPublicationGenerationAdvancesForIdenticalRepublish() {
+        let lspService = MockLSPService()
+        let model = DiagnosticsModel(
+            lspService: lspService,
+            normalize: { $0.standardizedFileURL.path },
+            displayPathProvider: { $0.lastPathComponent },
+            lineProvider: { _, _ in "" }
+        )
+        let diagnostic = LSPDiagnostic(
+            range: LSPRange(
+                start: LSPPosition(line: 0, character: 0),
+                end: LSPPosition(line: 0, character: 1)
+            ),
+            severity: .error,
+            message: "Still broken"
+        )
+
+        lspService.setDiagnostics(uri: "file:///same.swift", diagnostics: [diagnostic])
+        let firstGeneration = model.publicationGeneration
+        lspService.setDiagnostics(uri: "file:///same.swift", diagnostics: [diagnostic])
+
+        #expect(firstGeneration == 1)
+        #expect(model.publicationGeneration == 2)
+    }
+
+    @Test
     func autoSavePersistsDirtyTabAfterDelay() async throws {
         let fileURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
@@ -450,6 +476,557 @@ struct ProjectViewModelTests {
         #expect(session.openTabs.first?.cursorColumn == 1)
         #expect(encodedSessionText.contains("let value = 1") == false)
         #expect(encodedSessionText.contains("let value = 2") == false)
+    }
+
+    @Test
+    func recoveryJournalCapturesLatestLiveBufferAndCursor() async throws {
+        let directoryURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let fileURL = directoryURL.appendingPathComponent("Sample.swift")
+        let recoveryURL = directoryURL.appendingPathComponent("recovery.json")
+        try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+        try "let value = 1\n".write(to: fileURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: directoryURL) }
+
+        let configURL = tempConfigURL()
+        try configuration(fontSize: 13, autoSaveDelay: 2, autoSaveEnabled: false)
+            .write(to: configURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: configURL) }
+
+        let recoveryStore = RecoveryStore(fileURL: recoveryURL)
+        let viewModel = makeViewModel(
+            sessionStore: makeDefaults(),
+            sessionKey: "recovery-live-buffer-test",
+            recoveryStore: recoveryStore,
+            configService: ConfigurationService(userConfigURL: configURL),
+            fileWatcher: FileWatcherService(),
+            ui: TestProjectUI(),
+            recoveryPersistenceDebounceNanoseconds: 10_000_000
+        )
+
+        viewModel.openFile(at: fileURL)
+        viewModel.updateTabContent("let value = 2\n")
+        viewModel.updateCursorPosition(line: 1, column: 12)
+
+        try await waitUntil {
+            recoveryStore.load()?.tabs.first?.content == "let value = 2\n"
+        }
+        let recovered = try #require(recoveryStore.load()?.tabs.first)
+
+        #expect(recovered.filePath == fileURL.path)
+        #expect(recovered.cursorLine == 1)
+        #expect(recovered.cursorColumn == 12)
+        #expect(recovered.wasSelected)
+        #expect(
+            recovered.originalContentFingerprint
+                == RecoveryContentFingerprint.make(for: "let value = 1\n")
+        )
+    }
+
+    @Test
+    func recoveryRestoreProtectsDiskChangesUntilExplicitSave() async throws {
+        let directoryURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let fileURL = directoryURL.appendingPathComponent("Sample.swift")
+        let recoveryURL = directoryURL.appendingPathComponent("recovery.json")
+        try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+        try "let value = 3\n".write(to: fileURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: directoryURL) }
+
+        let configURL = tempConfigURL()
+        try configuration(fontSize: 13, autoSaveDelay: 0.02, autoSaveEnabled: true)
+            .write(to: configURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: configURL) }
+
+        let defaults = makeDefaults()
+        let session = ProjectSessionState(
+            rootDirectoryPath: directoryURL.path,
+            expandedDirectoryPaths: [],
+            openTabs: [ProjectSessionTabState(filePath: fileURL.path, fileName: fileURL.lastPathComponent)],
+            selectedTabPath: fileURL.path
+        )
+        defaults.set(try JSONEncoder().encode(session), forKey: "recovery-disk-conflict-test")
+
+        let recoveryStore = RecoveryStore(fileURL: recoveryURL)
+        let recoveredContent = "let value = 2\n"
+        recoveryStore.save(RecoveryJournal(
+            rootDirectoryPath: directoryURL.path,
+            tabs: [
+                RecoveryTabState(
+                    filePath: fileURL.path,
+                    fileName: fileURL.lastPathComponent,
+                    content: recoveredContent,
+                    originalContentFingerprint: RecoveryContentFingerprint.make(for: "let value = 1\n"),
+                    cursorLine: 1,
+                    cursorColumn: 8,
+                    documentMetadata: .utf8LF,
+                    requiresExplicitSave: false,
+                    wasSelected: true
+                )
+            ]
+        ))
+        let ui = TestProjectUI(confirmResponses: [.alertFirstButtonReturn])
+        let viewModel = makeViewModel(
+            sessionStore: defaults,
+            sessionKey: "recovery-disk-conflict-test",
+            recoveryStore: recoveryStore,
+            configService: ConfigurationService(userConfigURL: configURL),
+            fileWatcher: FileWatcherService(),
+            ui: ui,
+            recoveryPersistenceDebounceNanoseconds: 10_000_000
+        )
+
+        try await waitUntil {
+            viewModel.selectedTab?.content == recoveredContent
+                && ui.confirms.count == 1
+        }
+
+        #expect(viewModel.selectedTab?.originalContent == "let value = 3\n")
+        #expect(viewModel.selectedTab?.isDirty == true)
+        #expect(viewModel.selectedTab?.requiresExplicitSave == true)
+        #expect(ui.confirms.first?.message.contains("changed on disk") == true)
+        #expect(try String(contentsOf: fileURL, encoding: .utf8) == "let value = 3\n")
+
+        viewModel.updateTabContent("let value = 2\n// recovered\n")
+        try await Task.sleep(nanoseconds: 150_000_000)
+
+        #expect(viewModel.selectedTab?.requiresExplicitSave == true)
+        #expect(try String(contentsOf: fileURL, encoding: .utf8) == "let value = 3\n")
+
+        viewModel.saveCurrentFile()
+        try await waitUntil {
+            recoveryStore.load() == nil
+        }
+
+        #expect(try String(contentsOf: fileURL, encoding: .utf8) == "let value = 2\n// recovered\n")
+        #expect(viewModel.selectedTab?.isDirty == false)
+        #expect(viewModel.selectedTab?.requiresExplicitSave == false)
+    }
+
+    @Test
+    func recoveryRestoreIncludesUntitledBuffer() async throws {
+        let directoryURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let recoveryURL = directoryURL.appendingPathComponent("recovery.json")
+        defer { try? FileManager.default.removeItem(at: directoryURL) }
+
+        let recoveryStore = RecoveryStore(fileURL: recoveryURL)
+        recoveryStore.save(RecoveryJournal(
+            rootDirectoryPath: nil,
+            tabs: [
+                RecoveryTabState(
+                    filePath: nil,
+                    fileName: "Untitled",
+                    content: "notes from before the crash",
+                    originalContentFingerprint: RecoveryContentFingerprint.make(for: ""),
+                    cursorLine: 1,
+                    cursorColumn: 10,
+                    documentMetadata: .utf8LF,
+                    requiresExplicitSave: false,
+                    wasSelected: true
+                )
+            ]
+        ))
+        let ui = TestProjectUI(confirmResponses: [.alertFirstButtonReturn])
+        let configURL = tempConfigURL()
+        defer { try? FileManager.default.removeItem(at: configURL) }
+        let viewModel = makeViewModel(
+            sessionStore: makeDefaults(),
+            sessionKey: "recovery-untitled-test",
+            recoveryStore: recoveryStore,
+            configService: ConfigurationService(userConfigURL: configURL),
+            fileWatcher: FileWatcherService(),
+            ui: ui,
+            recoveryPersistenceDebounceNanoseconds: 10_000_000
+        )
+
+        try await waitUntil {
+            viewModel.selectedTab?.content == "notes from before the crash"
+        }
+
+        #expect(viewModel.selectedTab?.filePath == nil)
+        #expect(viewModel.selectedTab?.fileName == "Untitled")
+        #expect(viewModel.selectedTab?.isDirty == true)
+        #expect(viewModel.selectedTab?.requiresExplicitSave == true)
+        #expect(viewModel.selectedTab?.cursorPosition == CursorPosition(line: 1, column: 10))
+    }
+
+    @Test
+    func discardingRecoveryKeepsDiskSessionAndClearsJournal() async throws {
+        let directoryURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let fileURL = directoryURL.appendingPathComponent("Sample.swift")
+        let recoveryURL = directoryURL.appendingPathComponent("recovery.json")
+        try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+        try "let disk = true\n".write(to: fileURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: directoryURL) }
+
+        let defaults = makeDefaults()
+        let session = ProjectSessionState(
+            rootDirectoryPath: directoryURL.path,
+            expandedDirectoryPaths: [],
+            openTabs: [ProjectSessionTabState(filePath: fileURL.path, fileName: fileURL.lastPathComponent)],
+            selectedTabPath: fileURL.path
+        )
+        defaults.set(try JSONEncoder().encode(session), forKey: "recovery-discard-test")
+
+        let recoveryStore = RecoveryStore(fileURL: recoveryURL)
+        recoveryStore.save(RecoveryJournal(
+            rootDirectoryPath: directoryURL.path,
+            tabs: [
+                RecoveryTabState(
+                    filePath: fileURL.path,
+                    fileName: fileURL.lastPathComponent,
+                    content: "let recovered = true\n",
+                    originalContentFingerprint: RecoveryContentFingerprint.make(for: "let disk = true\n"),
+                    cursorLine: 1,
+                    cursorColumn: 1,
+                    documentMetadata: .utf8LF,
+                    requiresExplicitSave: false,
+                    wasSelected: true
+                )
+            ]
+        ))
+        let ui = TestProjectUI(confirmResponses: [.alertSecondButtonReturn])
+        let configURL = tempConfigURL()
+        defer { try? FileManager.default.removeItem(at: configURL) }
+        let viewModel = makeViewModel(
+            sessionStore: defaults,
+            sessionKey: "recovery-discard-test",
+            recoveryStore: recoveryStore,
+            configService: ConfigurationService(userConfigURL: configURL),
+            fileWatcher: FileWatcherService(),
+            ui: ui
+        )
+
+        try await waitUntil {
+            ui.confirms.count == 1 && recoveryStore.load() == nil
+        }
+
+        #expect(viewModel.selectedTab?.content == "let disk = true\n")
+        #expect(viewModel.selectedTab?.isDirty == false)
+        #expect(try String(contentsOf: fileURL, encoding: .utf8) == "let disk = true\n")
+    }
+
+    @Test
+    func staleRecoveryMatchingDiskIsClearedWithoutPrompt() async throws {
+        let directoryURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let fileURL = directoryURL.appendingPathComponent("Sample.swift")
+        let recoveryURL = directoryURL.appendingPathComponent("recovery.json")
+        let content = "let alreadySaved = true\n"
+        try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+        try content.write(to: fileURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: directoryURL) }
+
+        let defaults = makeDefaults()
+        let session = ProjectSessionState(
+            rootDirectoryPath: directoryURL.path,
+            expandedDirectoryPaths: [],
+            openTabs: [ProjectSessionTabState(filePath: fileURL.path, fileName: fileURL.lastPathComponent)],
+            selectedTabPath: fileURL.path
+        )
+        defaults.set(try JSONEncoder().encode(session), forKey: "recovery-stale-test")
+
+        let recoveryStore = RecoveryStore(fileURL: recoveryURL)
+        recoveryStore.save(RecoveryJournal(
+            rootDirectoryPath: directoryURL.path,
+            tabs: [
+                RecoveryTabState(
+                    filePath: fileURL.path,
+                    fileName: fileURL.lastPathComponent,
+                    content: content,
+                    originalContentFingerprint: RecoveryContentFingerprint.make(for: "let old = true\n"),
+                    cursorLine: 1,
+                    cursorColumn: 1,
+                    documentMetadata: .utf8LF,
+                    requiresExplicitSave: false,
+                    wasSelected: true
+                )
+            ]
+        ))
+        let ui = TestProjectUI()
+        let configURL = tempConfigURL()
+        defer { try? FileManager.default.removeItem(at: configURL) }
+        let viewModel = makeViewModel(
+            sessionStore: defaults,
+            sessionKey: "recovery-stale-test",
+            recoveryStore: recoveryStore,
+            configService: ConfigurationService(userConfigURL: configURL),
+            fileWatcher: FileWatcherService(),
+            ui: ui
+        )
+
+        try await waitUntil {
+            FileManager.default.fileExists(atPath: recoveryURL.path) == false
+        }
+
+        #expect(ui.confirms.isEmpty)
+        #expect(viewModel.selectedTab?.content == content)
+        #expect(viewModel.selectedTab?.isDirty == false)
+    }
+
+    @Test
+    func delayedStartupRecoveryNeverOverwritesNewTyping() async throws {
+        let directoryURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let fileURL = directoryURL.appendingPathComponent("Sample.swift")
+        let recoveryURL = directoryURL.appendingPathComponent("recovery.json")
+        try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+        try "let value = 1\n".write(to: fileURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: directoryURL) }
+
+        let defaults = makeDefaults()
+        defaults.set(
+            try JSONEncoder().encode(ProjectSessionState(
+                rootDirectoryPath: directoryURL.path,
+                expandedDirectoryPaths: [],
+                openTabs: [ProjectSessionTabState(filePath: fileURL.path, fileName: fileURL.lastPathComponent)],
+                selectedTabPath: fileURL.path
+            )),
+            forKey: "recovery-startup-race-test"
+        )
+        let recoveryStore = RecoveryStore(
+            fileURL: recoveryURL,
+            loadDelayNanoseconds: 150_000_000
+        )
+        recoveryStore.save(RecoveryJournal(
+            rootDirectoryPath: directoryURL.path,
+            tabs: [
+                RecoveryTabState(
+                    filePath: fileURL.path,
+                    fileName: fileURL.lastPathComponent,
+                    content: "let value = 2\n",
+                    originalContentFingerprint: RecoveryContentFingerprint.make(for: "let value = 1\n"),
+                    cursorLine: 1,
+                    cursorColumn: 8,
+                    documentMetadata: .utf8LF,
+                    requiresExplicitSave: false,
+                    wasSelected: true
+                )
+            ]
+        ))
+        let ui = TestProjectUI(confirmResponses: [.alertFirstButtonReturn])
+        let configURL = tempConfigURL()
+        defer { try? FileManager.default.removeItem(at: configURL) }
+        let viewModel = makeViewModel(
+            sessionStore: defaults,
+            sessionKey: "recovery-startup-race-test",
+            recoveryStore: recoveryStore,
+            configService: ConfigurationService(userConfigURL: configURL),
+            fileWatcher: FileWatcherService(),
+            ui: ui,
+            recoveryPersistenceDebounceNanoseconds: 10_000_000
+        )
+
+        viewModel.updateTabContent("let value = 3\n")
+        let canCloseWhileLoading = viewModel.prepareForSessionTransition(
+            title: "Quit Rosewood?",
+            message: "Save changes?"
+        )
+
+        #expect(canCloseWhileLoading == false)
+        #expect(ui.alerts.contains { $0.title == "Recovery in Progress" })
+        #expect(FileManager.default.fileExists(atPath: recoveryURL.path))
+
+        try await waitUntil {
+            viewModel.openTabs.count == 2
+                && viewModel.openTabs.contains { $0.fileName == "Recovered Sample.swift" }
+        }
+
+        let liveTab = try #require(viewModel.openTabs.first { $0.filePath == fileURL })
+        let recoveredTab = try #require(viewModel.openTabs.first { $0.fileName == "Recovered Sample.swift" })
+        #expect(liveTab.content == "let value = 3\n")
+        #expect(liveTab.isDirty)
+        #expect(recoveredTab.filePath == nil)
+        #expect(recoveredTab.content == "let value = 2\n")
+        #expect(recoveredTab.isDirty)
+
+        try await waitUntil {
+            recoveryStore.load()?.tabs.count == 2
+        }
+    }
+
+    @Test
+    func missingFileRecoveryRequiresSaveAsAndKeepsEmptyBufferDirty() async throws {
+        let directoryURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let missingFileURL = directoryURL.appendingPathComponent("Renamed.swift")
+        let recoveryURL = directoryURL.appendingPathComponent("recovery.json")
+        defer { try? FileManager.default.removeItem(at: directoryURL) }
+
+        let recoveryStore = RecoveryStore(fileURL: recoveryURL)
+        recoveryStore.save(RecoveryJournal(
+            rootDirectoryPath: nil,
+            tabs: [
+                RecoveryTabState(
+                    filePath: missingFileURL.path,
+                    fileName: missingFileURL.lastPathComponent,
+                    content: "",
+                    originalContentFingerprint: RecoveryContentFingerprint.make(for: "previous text\n"),
+                    cursorLine: 1,
+                    cursorColumn: 1,
+                    documentMetadata: .utf8LF,
+                    requiresExplicitSave: false,
+                    wasSelected: true
+                )
+            ]
+        ))
+        let ui = TestProjectUI(confirmResponses: [.alertFirstButtonReturn])
+        let configURL = tempConfigURL()
+        defer { try? FileManager.default.removeItem(at: configURL) }
+        let viewModel = makeViewModel(
+            sessionStore: makeDefaults(),
+            sessionKey: "recovery-missing-file-test",
+            recoveryStore: recoveryStore,
+            configService: ConfigurationService(userConfigURL: configURL),
+            fileWatcher: FileWatcherService(),
+            ui: ui,
+            recoveryPersistenceDebounceNanoseconds: 10_000_000
+        )
+
+        try await waitUntil {
+            viewModel.selectedTab?.fileName == "Renamed.swift"
+        }
+
+        #expect(viewModel.selectedTab?.filePath == nil)
+        #expect(viewModel.selectedTab?.content == "")
+        #expect(viewModel.selectedTab?.isDirty == true)
+        #expect(viewModel.selectedTab?.requiresExplicitSave == true)
+
+        viewModel.saveCurrentFile()
+        #expect(FileManager.default.fileExists(atPath: missingFileURL.path) == false)
+        try await waitUntil {
+            recoveryStore.load()?.tabs.first?.content == ""
+        }
+    }
+
+    @Test
+    func recoveryRevalidatesFileDeletedWhilePromptIsVisible() async throws {
+        let directoryURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let fileURL = directoryURL.appendingPathComponent("DeletedDuringPrompt.swift")
+        let recoveryURL = directoryURL.appendingPathComponent("recovery.json")
+        try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+        try "let disk = 1\n".write(to: fileURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: directoryURL) }
+
+        let recoveryStore = RecoveryStore(fileURL: recoveryURL)
+        recoveryStore.save(RecoveryJournal(
+            rootDirectoryPath: nil,
+            tabs: [
+                RecoveryTabState(
+                    filePath: fileURL.path,
+                    fileName: fileURL.lastPathComponent,
+                    content: "let recovered = 2\n",
+                    originalContentFingerprint: RecoveryContentFingerprint.make(for: "let disk = 1\n"),
+                    cursorLine: 1,
+                    cursorColumn: 1,
+                    documentMetadata: .utf8LF,
+                    requiresExplicitSave: false,
+                    wasSelected: true
+                )
+            ]
+        ))
+        let ui = TestProjectUI(
+            confirmResponses: [.alertFirstButtonReturn],
+            onConfirm: { record in
+                if record.title == "Restore Unsaved Changes?" {
+                    try? FileManager.default.removeItem(at: fileURL)
+                }
+            }
+        )
+        let configURL = tempConfigURL()
+        defer { try? FileManager.default.removeItem(at: configURL) }
+        let viewModel = makeViewModel(
+            sessionStore: makeDefaults(),
+            sessionKey: "recovery-delete-during-prompt-test",
+            recoveryStore: recoveryStore,
+            configService: ConfigurationService(userConfigURL: configURL),
+            fileWatcher: FileWatcherService(),
+            ui: ui,
+            recoveryPersistenceDebounceNanoseconds: 10_000_000
+        )
+
+        try await waitUntil {
+            viewModel.selectedTab?.fileName == "DeletedDuringPrompt.swift"
+        }
+
+        #expect(viewModel.selectedTab?.filePath == nil)
+        #expect(viewModel.selectedTab?.content == "let recovered = 2\n")
+        #expect(viewModel.selectedTab?.requiresExplicitSave == true)
+        viewModel.saveCurrentFile()
+        #expect(FileManager.default.fileExists(atPath: fileURL.path) == false)
+    }
+
+    @Test
+    func closeDiscardRemovesRecoveryCheckpointImmediately() async throws {
+        let directoryURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let fileURL = directoryURL.appendingPathComponent("Sample.swift")
+        let recoveryURL = directoryURL.appendingPathComponent("recovery.json")
+        try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+        try "let value = 1\n".write(to: fileURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: directoryURL) }
+
+        let recoveryStore = RecoveryStore(fileURL: recoveryURL)
+        let ui = TestProjectUI(confirmResponses: [.alertSecondButtonReturn])
+        let configURL = tempConfigURL()
+        defer { try? FileManager.default.removeItem(at: configURL) }
+        let viewModel = makeViewModel(
+            sessionStore: makeDefaults(),
+            sessionKey: "recovery-close-discard-test",
+            recoveryStore: recoveryStore,
+            configService: ConfigurationService(userConfigURL: configURL),
+            fileWatcher: FileWatcherService(),
+            ui: ui,
+            recoveryPersistenceDebounceNanoseconds: 10_000_000
+        )
+
+        viewModel.openFile(at: fileURL)
+        viewModel.updateTabContent("let value = 2\n")
+        try await waitUntil { recoveryStore.load()?.tabs.first?.content == "let value = 2\n" }
+
+        #expect(viewModel.closeTab(at: 0))
+        #expect(recoveryStore.load() == nil)
+        #expect(try String(contentsOf: fileURL, encoding: .utf8) == "let value = 1\n")
+    }
+
+    @Test
+    func saveAsReconcilesOldRecoveryPathImmediately() async throws {
+        let directoryURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let oldFileURL = directoryURL.appendingPathComponent("Old.swift")
+        let newFileURL = directoryURL.appendingPathComponent("New.swift")
+        let recoveryURL = directoryURL.appendingPathComponent("recovery.json")
+        try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+        try "let value = 1\n".write(to: oldFileURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: directoryURL) }
+
+        let recoveryStore = RecoveryStore(fileURL: recoveryURL)
+        let ui = TestProjectUI(savePanelURLs: [newFileURL])
+        let configURL = tempConfigURL()
+        defer { try? FileManager.default.removeItem(at: configURL) }
+        let viewModel = makeViewModel(
+            sessionStore: makeDefaults(),
+            sessionKey: "recovery-save-as-test",
+            recoveryStore: recoveryStore,
+            configService: ConfigurationService(userConfigURL: configURL),
+            fileWatcher: FileWatcherService(),
+            ui: ui,
+            recoveryPersistenceDebounceNanoseconds: 10_000_000
+        )
+
+        viewModel.openFile(at: oldFileURL)
+        viewModel.updateTabContent("let value = 2\n")
+        try await waitUntil { recoveryStore.load()?.tabs.first?.filePath == oldFileURL.path }
+
+        viewModel.saveCurrentFileAs()
+
+        #expect(viewModel.selectedTab?.filePath == newFileURL)
+        #expect(recoveryStore.load() == nil)
+        #expect(try String(contentsOf: oldFileURL, encoding: .utf8) == "let value = 1\n")
+        #expect(try String(contentsOf: newFileURL, encoding: .utf8) == "let value = 2\n")
     }
 
     @Test
@@ -4559,6 +5136,7 @@ struct ProjectViewModelTests {
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let groupURL = rootURL.appendingPathComponent("Group", isDirectory: true)
         let fileURL = groupURL.appendingPathComponent("Nested.swift")
+        let recoveryURL = rootURL.appendingPathComponent("recovery.json")
 
         try FileManager.default.createDirectory(at: groupURL, withIntermediateDirectories: true)
         try "print(\"nested\")".write(to: fileURL, atomically: true, encoding: .utf8)
@@ -4568,13 +5146,16 @@ struct ProjectViewModelTests {
         defer { try? FileManager.default.removeItem(at: configURL) }
 
         let fileWatcher = FileWatcherService()
-        // Deleting now requires an explicit confirmation; approve it ("Move to Trash").
+        let recoveryStore = RecoveryStore(fileURL: recoveryURL)
+        // Approve Move to Trash, then explicitly discard the open tab's dirty changes.
         let viewModel = makeViewModel(
             sessionStore: makeDefaults(),
             sessionKey: "delete-item-test",
+            recoveryStore: recoveryStore,
             configService: ConfigurationService(userConfigURL: configURL),
             fileWatcher: fileWatcher,
-            ui: TestProjectUI(confirmResponses: [.alertFirstButtonReturn])
+            ui: TestProjectUI(confirmResponses: [.alertFirstButtonReturn, .alertSecondButtonReturn]),
+            recoveryPersistenceDebounceNanoseconds: 10_000_000
         )
 
         viewModel.rootDirectory = rootURL
@@ -4586,6 +5167,8 @@ struct ProjectViewModelTests {
         let groupItem = try #require(viewModel.fileTree.first)
         viewModel.toggleExpand(groupItem)
         viewModel.openFile(at: fileURL)
+        viewModel.updateTabContent("print(\"unsaved\")")
+        try await waitUntil { recoveryStore.load()?.tabs.first?.content == "print(\"unsaved\")" }
 
         viewModel.deleteItem(groupItem)
 
@@ -4597,6 +5180,7 @@ struct ProjectViewModelTests {
         }
 
         #expect(FileManager.default.fileExists(atPath: groupURL.path) == false)
+        #expect(recoveryStore.load() == nil)
     }
 
     @Test
@@ -6114,6 +6698,7 @@ private final class TestProjectUI {
     var openPanelSelections: [[URL]]
     var savePanelURLs: [URL?]
     var confirmResponses: [NSApplication.ModalResponse]
+    var onConfirm: ((ConfirmRecord) -> Void)?
     private(set) var alerts: [AlertRecord] = []
     private(set) var confirms: [ConfirmRecord] = []
 
@@ -6121,12 +6706,14 @@ private final class TestProjectUI {
         openPanelURLs: [URL?] = [],
         openPanelSelections: [[URL]] = [],
         savePanelURLs: [URL?] = [],
-        confirmResponses: [NSApplication.ModalResponse] = []
+        confirmResponses: [NSApplication.ModalResponse] = [],
+        onConfirm: ((ConfirmRecord) -> Void)? = nil
     ) {
         self.openPanelURLs = openPanelURLs
         self.openPanelSelections = openPanelSelections
         self.savePanelURLs = savePanelURLs
         self.confirmResponses = confirmResponses
+        self.onConfirm = onConfirm
     }
 
     var handlers: ProjectViewModelUI {
@@ -6147,7 +6734,9 @@ private final class TestProjectUI {
                 self.alerts.append(AlertRecord(title: title, message: message, style: style))
             },
             confirm: { title, message, style, buttons in
-                self.confirms.append(ConfirmRecord(title: title, message: message, style: style, buttons: buttons))
+                let record = ConfirmRecord(title: title, message: message, style: style, buttons: buttons)
+                self.confirms.append(record)
+                self.onConfirm?(record)
                 guard !self.confirmResponses.isEmpty else {
                     return .alertSecondButtonReturn
                 }
@@ -6162,6 +6751,7 @@ private func makeViewModel(
     fileService: FileService = FileService(),
     sessionStore: UserDefaults,
     sessionKey: String,
+    recoveryStore: RecoveryStore = .disabled,
     configService: ConfigurationService,
     fileWatcher: FileWatcherService,
     ui: TestProjectUI,
@@ -6170,6 +6760,7 @@ private func makeViewModel(
     gitService: GitServiceProtocol = MockGitService(),
     projectSearchDebounceNanoseconds: UInt64 = 250_000_000,
     sessionPersistenceDebounceNanoseconds: UInt64 = 1_000_000_000,
+    recoveryPersistenceDebounceNanoseconds: UInt64 = 350_000_000,
     editorNavigationChromeDebounceNanoseconds: UInt64 = 400_000_000,
     outlineSidebarDataDebounceNanoseconds: UInt64 = 350_000_000,
     statusBarDetailDebounceNanoseconds: UInt64 = 850_000_000
@@ -6178,6 +6769,7 @@ private func makeViewModel(
         fileService: fileService,
         sessionStore: sessionStore,
         sessionKey: sessionKey,
+        recoveryStore: recoveryStore,
         configService: configService,
         fileWatcher: fileWatcher,
         notificationCenter: NotificationCenter(),
@@ -6187,6 +6779,7 @@ private func makeViewModel(
         gitService: gitService,
         projectSearchDebounceNanoseconds: projectSearchDebounceNanoseconds,
         sessionPersistenceDebounceNanoseconds: sessionPersistenceDebounceNanoseconds,
+        recoveryPersistenceDebounceNanoseconds: recoveryPersistenceDebounceNanoseconds,
         editorNavigationChromeDebounceNanoseconds: editorNavigationChromeDebounceNanoseconds,
         outlineSidebarDataDebounceNanoseconds: outlineSidebarDataDebounceNanoseconds,
         statusBarDetailDebounceNanoseconds: statusBarDetailDebounceNanoseconds
