@@ -1,0 +1,56 @@
+---
+title: FAQ
+description: Frequently asked questions about Rosewood
+---
+
+## General
+
+### Why build another code editor?
+
+Most editors are Electron apps — web technologies wrapped in a browser shell. Rosewood is built natively in Swift and SwiftUI/AppKit, which means instant launch, minimal memory, and an interface that follows macOS conventions exactly. If you want a lightweight editor that feels like a first-party Mac app, Rosewood is for you.
+
+### Is Rosewood free?
+
+Yes. Rosewood is open source under the MIT license. You can use it, modify it, and distribute it freely.
+
+### What macOS versions are supported?
+
+macOS 14.0 (Sonoma) and later.
+
+### How does it compare to VS Code?
+
+VS Code is a full-featured, extensible platform with a massive ecosystem. Rosewood is deliberately smaller: a focused, native editing experience with the essentials done well — LSP, debugging, git, terminal, and search. Choose Rosewood for speed and native feel; choose VS Code for breadth of extensions.
+
+## Features
+
+### Which languages are supported?
+
+Syntax highlighting covers 20+ languages including Swift, Python, Go, Rust, TypeScript, JavaScript, Ruby, YAML, JSON, and Markdown. Language *intelligence* (completions, diagnostics) works with any language that has an LSP server — configure one in `.rosewood.toml`.
+
+### Does it support extensions/plugins?
+
+Not currently. Rosewood focuses on built-in capabilities rather than a plugin system. LSP servers give you language support without needing editor-specific extensions.
+
+### Can I use my own theme?
+
+Rosewood ships with the Nord theme applied consistently. Custom theme support is on the roadmap — the theming layer (`HighlightService.themeColors`) is already centralized.
+
+### Does it have vim mode?
+
+Not yet. Native `NSTextView` editing with standard macOS keybindings is the current model.
+
+## Troubleshooting
+
+### The editor is slow on a huge file. Is that normal?
+
+Rosewood defers full syntax highlighting on files above a configurable threshold and highlights the viewport first. If a file still feels heavy, check the `textSizeLimitKB` setting.
+
+### My LSP server isn't providing completions. What do I check?
+
+1. Verify the server binary is on your `PATH` (or set an absolute path in `.rosewood.toml`).
+2. Check the LSP status indicator in the status bar.
+3. See [Troubleshooting](/docs/guides/troubleshooting/) for detailed diagnostics.
+
+### Where is my session data stored?
+
+Session state (open tabs, expanded directories, cursor positions) lives in `UserDefaults` under the key `rosewood.session`. Crash-recovery journals are written to Application Support.

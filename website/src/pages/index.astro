@@ -1,0 +1,323 @@
+---
+import '../styles/landing.css';
+---
+
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Rosewood — Native macOS Code Editor</title>
+    <meta name="description" content="A lightweight, native macOS code editor built with Swift and SwiftUI. LSP intelligence, integrated debugging, built-in terminal, and the Nord theme. No Electron." />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  </head>
+  <body>
+    <!-- Navigation -->
+    <nav class="nav">
+      <div class="nav-inner">
+        <a href="/" class="nav-logo">
+          <span class="logo-mark">RW</span>
+          <span class="logo-text">Rosewood</span>
+        </a>
+        <div class="nav-links">
+          <a href="#features">Features</a>
+          <a href="#editor">The Editor</a>
+          <a href="#shortcuts">Shortcuts</a>
+          <a href="/docs/">Docs</a>
+        </div>
+        <a href="https://github.com/abdul-hamid-achik/rosewood" class="nav-cta" target="_blank" rel="noopener">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+          GitHub
+        </a>
+      </div>
+    </nav>
+
+    <!-- Opening: the editor IS the hero -->
+    <section class="opening">
+      <div class="opening-grid">
+        <div class="opening-copy">
+          <p class="opening-eyebrow">
+            <span class="eyebrow-line"></span>
+            Native macOS · Swift · Zero Electron
+          </p>
+          <h1 class="opening-title">
+            An editor that<br />
+            <em>feels</em> like Mac.
+          </h1>
+          <p class="opening-lede">
+            Rosewood is a code editor written from scratch in Swift and SwiftUI.
+            LSP intelligence, a real debugger, an embedded terminal — all running
+            at native speed in the Nord palette.
+          </p>
+          <div class="opening-actions">
+            <a href="/docs/guides/getting-started/" class="btn btn-solid">
+              Get started
+              <span class="btn-arrow">→</span>
+            </a>
+            <a href="https://github.com/abdul-hamid-achik/rosewood" class="btn btn-ghost" target="_blank" rel="noopener">
+              Star on GitHub
+            </a>
+          </div>
+          <div class="opening-meta">
+            <span class="meta-item"><strong>766</strong> tests passing</span>
+            <span class="meta-sep">/</span>
+            <span class="meta-item"><strong>20+</strong> languages</span>
+            <span class="meta-sep">/</span>
+            <span class="meta-item"><strong>MIT</strong> licensed</span>
+          </div>
+        </div>
+
+        <!-- Live editor mockup with typing animation -->
+        <div class="opening-editor">
+          <div class="editor-chrome">
+            <div class="chrome-bar">
+              <div class="chrome-dots">
+                <span class="c-dot c-red"></span>
+                <span class="c-dot c-yellow"></span>
+                <span class="c-dot c-green"></span>
+              </div>
+              <div class="chrome-tabs">
+                <span class="chrome-tab chrome-tab-active">main.swift</span>
+                <span class="chrome-tab">App.swift</span>
+              </div>
+            </div>
+            <div class="editor-canvas">
+              <div class="editor-gutter">
+                <span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span><span>8</span><span>9</span><span>10</span><span>11</span>
+              </div>
+              <pre class="editor-source" is:raw><code><span class="ln"><span class="tok-kw">import</span> <span class="tok-mod">SwiftUI</span></span>
+<span class="ln">&nbsp;</span>
+<span class="ln"><span class="tok-attr">@main</span></span>
+<span class="ln"><span class="tok-kw">struct</span> <span class="tok-type">Rosewood</span>: <span class="tok-type">App</span> {</span>
+<span class="ln">    <span class="tok-kw">var</span> body: <span class="tok-kw">some</span> <span class="tok-type">Scene</span> {</span>
+<span class="ln">        <span class="tok-type">WindowGroup</span> {</span>
+<span class="ln">            <span class="tok-type">EditorView</span>()</span>
+<span class="ln">                .<span class="tok-fn">theme</span>(.<span class="tok-prop">nord</span>)</span>
+<span class="ln">        }</span>
+<span class="ln">    }</span>
+<span class="ln">}<span class="cursor"></span></span></code></pre>
+            </div>
+            <div class="editor-statusbar">
+              <span class="sb-item sb-accent"> main</span>
+              <span class="sb-item">Swift</span>
+              <span class="sb-item">UTF-8</span>
+              <span class="sb-item sb-right">Ln 11, Col 2</span>
+              <span class="sb-item sb-right">Spaces: 4</span>
+            </div>
+          </div>
+          <div class="editor-glow"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Language marquee -->
+    <div class="marquee" aria-hidden="true">
+      <div class="marquee-track">
+        <span>Swift</span><span class="m-dot">◆</span>
+        <span>Python</span><span class="m-dot">◆</span>
+        <span>TypeScript</span><span class="m-dot">◆</span>
+        <span>Go</span><span class="m-dot">◆</span>
+        <span>Rust</span><span class="m-dot">◆</span>
+        <span>Ruby</span><span class="m-dot">◆</span>
+        <span>JavaScript</span><span class="m-dot">◆</span>
+        <span>YAML</span><span class="m-dot">◆</span>
+        <span>JSON</span><span class="m-dot">◆</span>
+        <span>Markdown</span><span class="m-dot">◆</span>
+        <span>Swift</span><span class="m-dot">◆</span>
+        <span>Python</span><span class="m-dot">◆</span>
+        <span>TypeScript</span><span class="m-dot">◆</span>
+        <span>Go</span><span class="m-dot">◆</span>
+        <span>Rust</span><span class="m-dot">◆</span>
+        <span>Ruby</span><span class="m-dot">◆</span>
+        <span>JavaScript</span><span class="m-dot">◆</span>
+        <span>YAML</span><span class="m-dot">◆</span>
+        <span>JSON</span><span class="m-dot">◆</span>
+        <span>Markdown</span><span class="m-dot">◆</span>
+      </div>
+    </div>
+
+    <!-- Features: bento grid -->
+    <section id="features" class="features">
+      <div class="wrap">
+        <div class="section-head">
+          <span class="section-kicker">Capabilities</span>
+          <h2 class="section-title">Built like an IDE.<br />Weighs like a text editor.</h2>
+        </div>
+
+        <div class="bento">
+          <article class="bento-card bento-wide bento-lsp">
+            <div class="bento-tag">Language Server Protocol</div>
+            <h3>Intelligence that keeps up</h3>
+            <p>Completions, hover docs, go-to-definition, references, and live diagnostics — streamed from any LSP server, rendered inline.</p>
+            <div class="bento-visual">
+              <div class="completion-popup">
+                <div class="cp-row cp-active"><span class="cp-icon">ƒ</span> highlightedAttributedString</div>
+                <div class="cp-row"><span class="cp-icon">ƒ</span> themeColors()</div>
+                <div class="cp-row"><span class="cp-icon">τ</span> ThemeColors</div>
+              </div>
+            </div>
+          </article>
+
+          <article class="bento-card bento-debug">
+            <div class="bento-tag">DAP Debugger</div>
+            <h3>Breakpoints, not guesswork</h3>
+            <p>Step through code, inspect variables, walk the call stack — without leaving the window.</p>
+            <div class="bento-visual">
+              <div class="bp-line"><span class="bp-dot"></span> let result = parse(input)</div>
+              <div class="bp-vars">
+                <span class="bp-var">input <em>= "rosewood"</em></span>
+                <span class="bp-var">result <em>= nil</em></span>
+              </div>
+            </div>
+          </article>
+
+          <article class="bento-card bento-search">
+            <div class="bento-tag">ripgrep Search</div>
+            <h3>Find anything, instantly</h3>
+            <p>Project-wide search with regex, glob filters, and inline replace. Powered by ripgrep.</p>
+            <div class="bento-visual">
+              <div class="search-pill">⌘⇧F <span>func save</span></div>
+              <div class="search-count">128 results in 0.04s</div>
+            </div>
+          </article>
+
+          <article class="bento-card bento-terminal">
+            <div class="bento-tag">Integrated Terminal</div>
+            <h3>A real shell, embedded</h3>
+            <p>Full terminal emulator in a bottom panel. Build, test, ship — never alt-tab away.</p>
+            <div class="bento-visual">
+              <div class="term-line"><span class="term-prompt">❯</span> swift test</div>
+              <div class="term-line term-ok">✓ 766 tests passed</div>
+            </div>
+          </article>
+
+          <article class="bento-card bento-git">
+            <div class="bento-tag">Source Control</div>
+            <h3>Git, visualized</h3>
+            <p>Diff viewer, inline blame, stage &amp; discard — a git sidebar that stays out of the CLI's way.</p>
+            <div class="bento-visual">
+              <div class="git-row"><span class="git-badge git-m">M</span> EditorView.swift</div>
+              <div class="git-row"><span class="git-badge git-a">A</span> Theme.swift</div>
+            </div>
+          </article>
+
+          <article class="bento-card bento-wide bento-recovery">
+            <div class="bento-tag">Crash Recovery</div>
+            <h3>Your work survives everything</h3>
+            <p>A journaled recovery store snapshots every dirty buffer. Power failure, kernel panic, forced quit — reopen and it's all there, cursor position included.</p>
+            <div class="bento-visual">
+              <div class="recovery-chip">↺ Session restored — 4 tabs, 2 unsaved</div>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- Editor deep-dive -->
+    <section id="editor" class="deepdive">
+      <div class="wrap">
+        <div class="section-head section-head-right">
+          <span class="section-kicker">The editing experience</span>
+          <h2 class="section-title">Small details,<br />obsessed over.</h2>
+        </div>
+        <div class="deepdive-grid">
+          <div class="dd-item">
+            <span class="dd-num">01</span>
+            <h3>Folding &amp; minimap</h3>
+            <p>Code folding from the gutter, a navigable minimap, and sticky scroll that keeps your bearings in long files.</p>
+          </div>
+          <div class="dd-item">
+            <span class="dd-num">02</span>
+            <h3>Command palette</h3>
+            <p>⌘⇧P opens a fuzzy-searchable palette of every action, with recent items and scoped commands.</p>
+          </div>
+          <div class="dd-item">
+            <span class="dd-num">03</span>
+            <h3>Multi-window</h3>
+            <p>True multi-window workspaces, each with its own session, recovery journal, and LSP connections.</p>
+          </div>
+          <div class="dd-item">
+            <span class="dd-num">04</span>
+            <h3>Nord, everywhere</h3>
+            <p>The Arctic palette applied consistently — syntax, chrome, diagnostics, diff highlights. Easy on the eyes at 2am.</p>
+          </div>
+          <div class="dd-item">
+            <span class="dd-num">05</span>
+            <h3>Docker sidebar</h3>
+            <p>List containers, tail logs, and manage Compose services without opening a terminal.</p>
+          </div>
+          <div class="dd-item">
+            <span class="dd-num">06</span>
+            <h3>Accessible by default</h3>
+            <p>VoiceOver support, Reduce Motion &amp; Reduce Transparency respected, and WCAG-checked contrast.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Shortcuts -->
+    <section id="shortcuts" class="shortcuts">
+      <div class="wrap">
+        <div class="section-head">
+          <span class="section-kicker">Keyboard-first</span>
+          <h2 class="section-title">Hands on home row.</h2>
+        </div>
+        <div class="keys-grid">
+          <div class="key-row"><span>Command Palette</span><span class="keys"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>P</kbd></span></div>
+          <div class="key-row"><span>Quick Open</span><span class="keys"><kbd>⌘</kbd><kbd>P</kbd></span></div>
+          <div class="key-row"><span>Find in Project</span><span class="keys"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>F</kbd></span></div>
+          <div class="key-row"><span>Go to Definition</span><span class="keys"><kbd>F12</kbd></span></div>
+          <div class="key-row"><span>Find References</span><span class="keys"><kbd>⇧</kbd><kbd>F12</kbd></span></div>
+          <div class="key-row"><span>Toggle Comment</span><span class="keys"><kbd>⌘</kbd><kbd>/</kbd></span></div>
+          <div class="key-row"><span>Move Line</span><span class="keys"><kbd>⌥</kbd><kbd>↑↓</kbd></span></div>
+          <div class="key-row"><span>Zoom</span><span class="keys"><kbd>⌘</kbd><kbd>+</kbd><kbd>−</kbd></span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CTA -->
+    <section class="cta">
+      <div class="wrap">
+        <div class="cta-box">
+          <div class="cta-copy">
+            <h2>Open source.<br />Native. Free.</h2>
+            <p>Rosewood is MIT-licensed and built in the open. Read the docs, clone the repo, or just take it for a spin.</p>
+          </div>
+          <div class="cta-actions">
+            <a href="/docs/" class="btn btn-solid btn-lg">Read the docs <span class="btn-arrow">→</span></a>
+            <a href="https://github.com/abdul-hamid-achik/rosewood" class="btn btn-ghost btn-lg" target="_blank" rel="noopener">Clone the repo</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+      <div class="wrap footer-inner">
+        <div class="footer-brand">
+          <span class="logo-mark">RW</span>
+          <span>Rosewood</span>
+        </div>
+        <p class="footer-note">Built with Swift, SwiftUI &amp; AppKit · Themed with Nord · Documented with Astro Starlight</p>
+        <p class="footer-copy">© 2026 Rosewood · MIT License</p>
+      </div>
+    </footer>
+
+    <script>
+      // Scroll reveal
+      const observer = new IntersectionObserver((entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add('revealed');
+            observer.unobserve(entry.target);
+          }
+        });
+      }, { threshold: 0.1 });
+      document.querySelectorAll('.bento-card, .dd-item, .key-row, .section-head').forEach((el) => {
+        el.classList.add('reveal');
+        observer.observe(el);
+      });
+    </script>
+  </body>
+</html>
