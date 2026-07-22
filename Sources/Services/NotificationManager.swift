@@ -47,14 +47,14 @@ struct NotificationItem: Identifiable {
         message: String,
         actions: [NotificationAction] = [],
         duration: Double = 5.0,
-        autoDismiss: Bool = true
+        autoDismiss: Bool? = nil
     ) {
         self.type = type
         self.title = title
         self.message = message
         self.actions = actions
         self.duration = duration
-        self.autoDismiss = autoDismiss
+        self.autoDismiss = autoDismiss ?? (type == .info || type == .success)
     }
 }
 

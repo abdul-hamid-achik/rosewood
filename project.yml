@@ -93,7 +93,7 @@ schemes:
       config: Debug
     test:
       config: Debug
-      gatherCoverageData: false
+      gatherCoverageData: true
       targets:
         - RosewoodTests
         - RosewoodUITests
@@ -105,7 +105,7 @@ schemes:
         RosewoodTests: [test]
     test:
       config: Debug
-      gatherCoverageData: false
+      gatherCoverageData: true
       targets:
         - RosewoodTests
 
@@ -116,6 +116,6 @@ schemes:
         RosewoodUITests: [test]
     test:
       config: Debug
-      gatherCoverageData: false
+      gatherCoverageData: true
       targets:
         - RosewoodUITests

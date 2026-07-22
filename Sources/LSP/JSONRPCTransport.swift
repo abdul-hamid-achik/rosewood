@@ -23,6 +23,11 @@ protocol JSONRPCTransportProtocol: Sendable {
 /// Handles JSON-RPC 2.0 communication over stdio (stdin/stdout pipes of a child process).
 /// Messages are framed with `Content-Length: N\r\n\r\n` headers per the LSP specification.
 final class JSONRPCTransport: JSONRPCTransportProtocol, @unchecked Sendable {
+    /// Maximum allowed body size for a single JSON-RPC message (256 MB).
+    static let maxBodySize = 256 * 1024 * 1024
+    /// Maximum allowed header size before giving up (64 KB).
+    static let maxHeaderSize = 64 * 1024
+
     private let process: Process
     private let stdinPipe: Pipe
     private let stdoutPipe: Pipe
@@ -106,6 +111,12 @@ final class JSONRPCTransport: JSONRPCTransportProtocol, @unchecked Sendable {
 
             guard contentLength > 0 else { continue }
 
+            // Reject messages that exceed the maximum allowed body size to prevent
+            // unbounded memory allocation from a malicious or misbehaving server.
+            guard contentLength <= Self.maxBodySize else {
+                break
+            }
+
             var bodyData = Data()
             while bodyData.count < contentLength {
                 let remaining = contentLength - bodyData.count
@@ -146,6 +157,11 @@ final class JSONRPCTransport: JSONRPCTransportProtocol, @unchecked Sendable {
                 return nil
             }
             headerString.append(char)
+
+            // Guard against unbounded header growth from a malicious or misbehaving server.
+            if headerString.count > Self.maxHeaderSize {
+                return nil
+            }
 
             if headerString.hasSuffix("\r\n\r\n") {
                 foundEnd = true

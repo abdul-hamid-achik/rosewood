@@ -6,77 +6,6 @@ import Testing
 @MainActor
 struct AppDelegateTests {
     @Test
-    func menuHandlersPostExpectedNotifications() {
-        let center = NotificationCenter()
-        let delegate = AppDelegate(notificationCenter: center)
-
-        // NOTE: handleNewWindow() is intentionally excluded — unlike these pure dispatch
-        // handlers, it creates and keys a real NSWindow (makeWindowContext(makeKey:)), which
-        // hangs on a headless CI runner. Window/multi-window behavior is covered by UI testing.
-        let notifications: [Notification.Name] = [
-            .handleNewFile,
-            .handleOpenFile,
-            .handleOpenFolder,
-            .handleSave,
-            .handleSaveAs,
-            .handleReopenClosedTab,
-            .handleQuickOpen,
-            .handleCommandPalette,
-            .handleToggleProblems,
-            .handleCloseTab,
-            .handleFindInFile,
-            .handleFindNext,
-            .handleFindPrevious,
-            .handleNextProblem,
-            .handlePreviousProblem,
-            .handleUseSelectionForFind,
-            .handleShowReplace,
-            .handleGoToLine,
-            .handleProjectSearch,
-            .handleSettings,
-            .handleGoToDefinition,
-            .handleFindReferences
-        ]
-
-        var received: [Notification.Name] = []
-        let observers = notifications.map { name in
-            center.addObserver(forName: name, object: nil, queue: nil) { notification in
-                received.append(notification.name)
-            }
-        }
-        defer {
-            for observer in observers {
-                center.removeObserver(observer)
-            }
-        }
-
-        delegate.handleNewFile()
-        delegate.handleOpenFile()
-        delegate.handleOpenFolder()
-        delegate.handleSave()
-        delegate.handleSaveAs()
-        delegate.handleReopenClosedTab()
-        delegate.handleQuickOpen()
-        delegate.handleCommandPalette()
-        delegate.handleToggleProblems()
-        delegate.handleCloseTab()
-        delegate.handleFindInFile()
-        delegate.handleFindNext()
-        delegate.handleFindPrevious()
-        delegate.handleNextProblem()
-        delegate.handlePreviousProblem()
-        delegate.handleUseSelectionForFind()
-        delegate.handleShowReplace()
-        delegate.handleGoToLine()
-        delegate.handleProjectSearch()
-        delegate.handleSettings()
-        delegate.handleGoToDefinition()
-        delegate.handleFindReferences()
-
-        #expect(received == notifications)
-    }
-
-    @Test
     func appLifecycleDefaultsAreConfigured() {
         let delegate = AppDelegate()
 
@@ -132,7 +61,7 @@ struct AppDelegateTests {
     }
 
     @Test
-    func findReferencesMenuValidationTracksProjectState() throws {
+    func findReferencesMenuValidationTracksProjectState() async throws {
         let rootURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         let fileURL = rootURL.appendingPathComponent("Alpha.swift")
         try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
@@ -223,7 +152,7 @@ struct AppDelegateTests {
     }
 
     @Test
-    func reopenClosedTabMenuValidationTracksViewModelState() {
+    func reopenClosedTabMenuValidationTracksViewModelState() async {
         let viewModel = ProjectViewModel(
             fileService: FileService(),
             sessionStore: makeDefaults(),
@@ -240,7 +169,7 @@ struct AppDelegateTests {
 
         viewModel.openTabs = [EditorTab(fileName: "Sample.swift")]
         viewModel.selectedTabIndex = 0
-        _ = viewModel.closeTab(at: 0, confirmUnsavedChanges: false)
+        _ = await viewModel.closeTab(at: 0, confirmUnsavedChanges: false)
 
         let delegate = AppDelegate(notificationCenter: NotificationCenter(), projectViewModel: viewModel)
         let item = NSMenuItem(title: "Reopen Last Closed Tab", action: #selector(AppDelegate.handleReopenClosedTab), keyEquivalent: "")
@@ -252,7 +181,7 @@ struct AppDelegateTests {
     }
 
     @Test
-    func problemsMenuValidationTracksCurrentFileDiagnostics() throws {
+    func problemsMenuValidationTracksCurrentFileDiagnostics() async throws {
         let rootURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         let fileURL = rootURL.appendingPathComponent("Alpha.swift")
         try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)

@@ -288,7 +288,7 @@ struct ThemeColors: Equatable {
         foregroundHex: String = "#ECEFF4",
         subduedTextHex: String = "#E5E9F0",
         mutedTextHex: String = "#A7B4CC",
-        lineNumbersHex: String = "#7B88A1",
+        lineNumbersHex: String = "#9AA4B8",
         cursorHex: String = "#D8DEE9",
         selectionHex: String = "#434C5E",
         gutterBackgroundHex: String = "#3B4252",

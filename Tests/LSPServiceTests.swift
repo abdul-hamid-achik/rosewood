@@ -191,13 +191,13 @@ struct LSPServiceTests {
 
     @Test
     func realServiceDiagnosticsEmptyByDefault() {
-        let service = LSPService(forTesting: true)
+        let service = LSPService()
         #expect(service.diagnostics(for: "file:///test.swift").isEmpty)
     }
 
     @Test
     func realServiceDiagnosticCountEmpty() {
-        let service = LSPService(forTesting: true)
+        let service = LSPService()
         let count = service.diagnosticCount(for: "file:///nonexistent.swift")
         #expect(count.errors == 0)
         #expect(count.warnings == 0)
@@ -205,7 +205,7 @@ struct LSPServiceTests {
 
     @Test
     func realServiceServerNotAvailableByDefault() {
-        let service = LSPService(forTesting: true)
+        let service = LSPService()
         #expect(!service.serverAvailable(for: "swift"))
         #expect(!service.serverAvailable(for: "python"))
         #expect(!service.serverAvailable(for: "plaintext"))
@@ -213,14 +213,14 @@ struct LSPServiceTests {
 
     @Test
     func realServiceDocumentOpenedWithoutRoot() {
-        let service = LSPService(forTesting: true)
+        let service = LSPService()
         // Should not crash when no root is set
         service.documentOpened(uri: "file:///test.swift", language: "swift", text: "test")
     }
 
     @Test
     func realServiceDocumentOpenedPlaintextIgnored() {
-        let service = LSPService(forTesting: true)
+        let service = LSPService()
         service.setProjectRoot(URL(fileURLWithPath: "/test"))
         service.documentOpened(uri: "file:///test.txt", language: "plaintext", text: "test")
         // Plaintext should be ignored - no server started
@@ -229,7 +229,7 @@ struct LSPServiceTests {
 
     @Test
     func realServiceSetProjectRootSameValue() {
-        let service = LSPService(forTesting: true)
+        let service = LSPService()
         let url = URL(fileURLWithPath: "/test/project")
         service.setProjectRoot(url)
         service.setProjectRoot(url)  // Should not crash or restart servers
@@ -237,7 +237,7 @@ struct LSPServiceTests {
 
     @Test
     func realServiceSetProjectRootClearsDiagnostics() {
-        let service = LSPService(forTesting: true)
+        let service = LSPService()
         service.setProjectRoot(URL(fileURLWithPath: "/test1"))
         // Manually poke diagnostics to simulate server pushing them
         // (can't easily do this without a real server, but we can test the clear path)
@@ -247,7 +247,7 @@ struct LSPServiceTests {
 
     @Test
     func realServiceDocumentClosedClearsDiagnostics() {
-        let service = LSPService(forTesting: true)
+        let service = LSPService()
         service.setProjectRoot(URL(fileURLWithPath: "/test"))
         service.documentClosed(uri: "file:///test.swift", language: "swift")
         #expect(service.diagnostics(for: "file:///test.swift").isEmpty)
@@ -255,7 +255,7 @@ struct LSPServiceTests {
 
     @Test
     func realServiceReferencesEmptyByDefault() async {
-        let service = LSPService(forTesting: true)
+        let service = LSPService()
         let locations = await service.references(
             uri: "file:///test.swift",
             language: "swift",

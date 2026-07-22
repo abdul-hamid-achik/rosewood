@@ -81,7 +81,96 @@ struct StatusBarView: View {
     }
 
     private var wrapLabel: String {
-        configService.settings.editor.wordWrap ? "Wrap On" : "Wrap Off"
+        configService.settings.editor.wordWrap ? "Wrap: On" : "Wrap: Off"
+    }
+
+    private func toggleWordWrap() {
+        var updated = configService.settings
+        updated.editor.wordWrap.toggle()
+        configService.updateSettings(updated)
+    }
+
+    private func setTabSize(_ size: Int) {
+        var updated = configService.settings
+        updated.editor.tabSize = size
+        configService.updateSettings(updated)
+    }
+
+    private var wrapToggle: some View {
+        Button {
+            toggleWordWrap()
+        } label: {
+            Text(wrapLabel)
+                .statusBarInteractive(themeColors: themeColors)
+        }
+        .buttonStyle(.plain)
+        .help("Toggle Word Wrap")
+        .accessibilityLabel("Word Wrap")
+        .accessibilityValue(configService.settings.editor.wordWrap ? "On" : "Off")
+    }
+
+    private var indentMenu: some View {
+        let currentTabSize = configService.settings.editor.tabSize
+        return Menu {
+            Button {
+                setTabSize(2)
+            } label: {
+                indentOptionLabel("Spaces: 2", isSelected: currentTabSize == 2)
+            }
+
+            Button {
+                setTabSize(4)
+            } label: {
+                indentOptionLabel("Spaces: 4", isSelected: currentTabSize == 4)
+            }
+
+            // Tabs indentation has no backing setting yet; surfaced as a placeholder.
+            Button {} label: {
+                Text("Tabs")
+            }
+            .disabled(true)
+        } label: {
+            Text(indentLabel)
+                .statusBarInteractive(themeColors: themeColors)
+        }
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Indentation")
+        .accessibilityLabel("Indentation")
+        .accessibilityValue(indentLabel)
+    }
+
+    private func indentOptionLabel(_ title: String, isSelected: Bool) -> some View {
+        HStack {
+            Text(title)
+            if isSelected {
+                Image(systemName: "checkmark")
+            }
+        }
+    }
+
+    private func encodingButton(_ label: String) -> some View {
+        // Encoding picker is a follow-up; for now this is a clickable-styled indicator.
+        Button {} label: {
+            Text(label)
+                .statusBarInteractive(themeColors: themeColors)
+        }
+        .buttonStyle(.plain)
+        .help("File Encoding")
+        .accessibilityLabel("File Encoding")
+        .accessibilityValue(label)
+    }
+
+    private func languageButton(_ label: String) -> some View {
+        // Language mode picker is a follow-up; for now this is a clickable-styled indicator.
+        Button {} label: {
+            Text(label)
+                .statusBarInteractive(themeColors: themeColors)
+        }
+        .buttonStyle(.plain)
+        .help("Language Mode")
+        .accessibilityLabel("Language Mode")
+        .accessibilityValue(label)
     }
 
     private var shouldShowGitMetadata: Bool {
@@ -171,12 +260,12 @@ struct StatusBarView: View {
                     if !projectViewModel.isStatusBarDetailsReady {
                         EmptyView()
                     } else {
-                        statusText(indentLabel)
+                        indentMenu
                             .accessibilityIdentifier("statusbar-indent-width")
 
                         statusDivider
 
-                        statusText(wrapLabel)
+                        wrapToggle
                             .accessibilityIdentifier("statusbar-wrap-mode")
 
                         statusDivider
@@ -189,13 +278,13 @@ struct StatusBarView: View {
                         }
 
                         if let encodingLabel = projectViewModel.selectedTabEncodingLabel {
-                            statusText(encodingLabel)
+                            encodingButton(encodingLabel)
                                 .accessibilityIdentifier("statusbar-file-encoding")
 
                             statusDivider
                         }
 
-                        statusText(tab.language.capitalized)
+                        languageButton(tab.language.capitalized)
                     }
                 } else {
                     statusText(tab.fileName)
@@ -370,5 +459,34 @@ struct StatusBarView: View {
         Text(text)
             .font(RosewoodType.monoCaption)
             .foregroundColor(color ?? themeColors.subduedText)
+    }
+}
+
+/// Shared clickable styling for status bar items: caption font, subdued Nord text color,
+/// a compact hit area, and a subtle hover highlight that matches the existing panel aesthetic.
+private struct StatusBarInteractiveModifier: ViewModifier {
+    let themeColors: ThemeColors
+    @State private var isHovering = false
+
+    func body(content: Content) -> some View {
+        content
+            .font(RosewoodType.caption)
+            .foregroundColor(themeColors.subduedText)
+            .padding(.horizontal, RosewoodUI.spacing2)
+            .padding(.vertical, 2)
+            .background(
+                RoundedRectangle(cornerRadius: RosewoodUI.radiusXSmall)
+                    .fill(isHovering ? themeColors.hoverBackground.opacity(0.5) : Color.clear)
+            )
+            .contentShape(Rectangle())
+            .onHover { hovering in
+                isHovering = hovering
+            }
+    }
+}
+
+private extension View {
+    func statusBarInteractive(themeColors: ThemeColors) -> some View {
+        modifier(StatusBarInteractiveModifier(themeColors: themeColors))
     }
 }

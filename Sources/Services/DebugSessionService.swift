@@ -20,6 +20,7 @@ enum DebugSessionServiceError: LocalizedError, Equatable {
     case unsupportedAdapter(String)
     case missingProgram(String)
     case preLaunchTaskFailed(String)
+    case preLaunchTaskDeclined(String)
     case adapterUnavailable(String)
 
     var errorDescription: String? {
@@ -32,6 +33,8 @@ enum DebugSessionServiceError: LocalizedError, Equatable {
             return "The configured program does not exist at \(path)."
         case .preLaunchTaskFailed(let message):
             return message
+        case .preLaunchTaskDeclined(let command):
+            return "preLaunchTask was declined by the user: \(command)"
         case .adapterUnavailable(let message):
             return message
         }
@@ -40,6 +43,9 @@ enum DebugSessionServiceError: LocalizedError, Equatable {
 
 @MainActor
 protocol DebugSessionServiceProtocol: AnyObject {
+    /// Called before executing a preLaunchTask shell command. Return `true` to proceed.
+    /// If nil, the command is executed without confirmation (test/legacy behaviour).
+    var confirmShellCommand: ((String) async -> Bool)? { get set }
     func setEventHandler(_ handler: @escaping @Sendable (DebugSessionEvent) -> Void)
     func start(
         configuration: DebugConfiguration,
@@ -59,6 +65,8 @@ protocol DebugSessionServiceProtocol: AnyObject {
 
 final class DebugSessionService: DebugSessionServiceProtocol {
     static let shared = DebugSessionService()
+
+    var confirmShellCommand: ((String) async -> Bool)?
 
     private let adapterLocator: DAPAdapterLocator
     private var clientFactory: (String, URL) throws -> DAPClient
@@ -231,6 +239,14 @@ final class DebugSessionService: DebugSessionServiceProtocol {
         var executedPreLaunchTask = false
         if let preLaunchTask = configuration.preLaunchTask?.trimmingCharacters(in: .whitespacesAndNewlines),
            !preLaunchTask.isEmpty {
+            // Ask the user to confirm the exact command before executing it.
+            // A malicious repo can ship a .rosewood.toml that runs arbitrary commands.
+            if let confirmShellCommand {
+                let approved = await confirmShellCommand(preLaunchTask)
+                guard approved else {
+                    throw DebugSessionServiceError.preLaunchTaskDeclined(preLaunchTask)
+                }
+            }
             executedPreLaunchTask = true
             eventHandler?(.output(.info, "Running preLaunchTask..."))
             try await runShellCommand(preLaunchTask, in: workingDirectory)
@@ -287,6 +303,7 @@ final class DebugSessionService: DebugSessionServiceProtocol {
 
 @MainActor
 final class MockDebugSessionService: DebugSessionServiceProtocol {
+    var confirmShellCommand: ((String) async -> Bool)?
     var nextStartResult: Result<DebugSessionStartResult, Error> = .failure(DebugSessionServiceError.missingProjectRoot)
     private(set) var eventHandler: ((DebugSessionEvent) -> Void)?
     private(set) var startCalls: [(configuration: DebugConfiguration, projectRoot: URL?, breakpoints: [Breakpoint])] = []

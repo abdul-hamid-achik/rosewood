@@ -144,7 +144,9 @@ extension ProjectViewModel {
                    let filePath = self.openTabs[selectedTabIndex].filePath,
                    let repositoryRoot = self.gitRepositoryStatus.repositoryRoot,
                    self.normalizedPath(for: filePath) == self.normalizedPath(for: repositoryRoot.appendingPathComponent(changedFile.path)) {
-                    _ = self.closeTab(at: selectedTabIndex, confirmUnsavedChanges: false)
+                    Task { @MainActor [weak self] in
+                        _ = await self?.closeTab(at: selectedTabIndex, confirmUnsavedChanges: false)
+                    }
                 }
             }
         )

@@ -236,12 +236,11 @@ extension ProjectViewModel {
     func openSearchResult(_ result: ProjectSearchResult) {
         activeProjectSearchResultID = result.id
         openFile(at: result.filePath)
-        if let selectedTabIndex, openTabs.indices.contains(selectedTabIndex) {
-            // Route the caret through the live buffer path (consistent with all other navigation),
-            // not a direct @Published struct write.
-            updateCursorPosition(line: result.lineNumber, column: result.columnNumber)
-            openTabs[selectedTabIndex].pendingLineJump = result.lineNumber
-        }
+        guard let selectedTabIndex, openTabs.indices.contains(selectedTabIndex) else { return }
+        // Route the caret through the live buffer path (consistent with all other navigation),
+        // not a direct @Published struct write.
+        updateCursorPosition(line: result.lineNumber, column: result.columnNumber)
+        openTabs[selectedTabIndex].pendingLineJump = result.lineNumber
     }
 
     func clearProjectSearchResults() {

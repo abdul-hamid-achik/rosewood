@@ -36,7 +36,7 @@ final class GitModel: ObservableObject {
     private var gitChangedDescendantCountByDirectoryPath: [String: Int] = [:]
     private var gitChangeIndexByPath: [String: Int] = [:]
     private var cachedGitChangeSections: [GitChangeSectionGroup] = []
-    private var normalizedIgnoredGitPathsCache: [String] = []
+    private var ignoredPathSet: Set<String> = []
 
     var gitChangeSections: [GitChangeSectionGroup] {
         cachedGitChangeSections
@@ -58,10 +58,11 @@ final class GitModel: ObservableObject {
     }
 
     func isGitIgnored(relativePath: String) -> Bool {
-        for ignoredPath in normalizedIgnoredGitPathsCache {
-            if relativePath == ignoredPath || relativePath.hasPrefix(ignoredPath + "/") {
-                return true
-            }
+        if ignoredPathSet.contains(relativePath) { return true }
+        var current = relativePath
+        while let lastSlash = current.lastIndex(of: "/") {
+            current = String(current[current.startIndex..<lastSlash])
+            if ignoredPathSet.contains(current) { return true }
         }
         return false
     }
@@ -69,9 +70,9 @@ final class GitModel: ObservableObject {
     private func rebuildGitCaches() {
         gitChangedFileByPath = Dictionary(uniqueKeysWithValues: gitRepositoryStatus.changedFiles.map { ($0.path, $0) })
         gitChangeIndexByPath = Dictionary(uniqueKeysWithValues: gitRepositoryStatus.changedFiles.enumerated().map { ($0.element.path, $0.offset) })
-        normalizedIgnoredGitPathsCache = gitRepositoryStatus.ignoredPaths.map { ignoredPath in
+        ignoredPathSet = Set(gitRepositoryStatus.ignoredPaths.map { ignoredPath in
             ignoredPath.hasSuffix("/") ? String(ignoredPath.dropLast()) : ignoredPath
-        }
+        })
         cachedGitChangeSections = GitChangeSection.allCases.compactMap { section in
             let files = gitRepositoryStatus.changedFiles.filter { $0.section == section }
             guard !files.isEmpty else { return nil }

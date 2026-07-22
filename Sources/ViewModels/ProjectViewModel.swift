@@ -853,6 +853,16 @@ final class ProjectViewModel: ObservableObject {
                 self?.handleDebugSessionEvent(event)
             }
         }
+        self.debugSessionService.confirmShellCommand = { [weak self] command in
+            guard let self else { return false }
+            let response = self.ui.confirm(
+                "Run Shell Command?",
+                "The debug configuration wants to run:\n\n\(command)\n\nDo you want to allow this?",
+                .warning,
+                ["Run", "Cancel"]
+            )
+            return response == .alertFirstButtonReturn
+        }
         // DiagnosticsModel now owns the LSP diagnostics-change handler. Touch the lazy child so it
         // is created at startup (registering that handler) and seed its initial editor context.
         pushDiagnosticsContext()
@@ -2498,7 +2508,6 @@ final class ProjectViewModel: ObservableObject {
         guard prepareForSessionTransition(title: "Open Folder", message: "Do you want to save changes before opening a different folder?") else {
             return
         }
-
         openFolder(at: url)
     }
 
@@ -2729,7 +2738,7 @@ final class ProjectViewModel: ObservableObject {
                 duration: 2.0
             ))
         } catch {
-            ui.alert("Error", "Could not create file: \(error.localizedDescription)", .warning)
+            ui.alert("Error", fileOperationMessage("create file", error), .warning)
         }
     }
 
@@ -2752,7 +2761,7 @@ final class ProjectViewModel: ObservableObject {
                 duration: 2.0
             ))
         } catch {
-            ui.alert("Error", "Could not create folder: \(error.localizedDescription)", .warning)
+            ui.alert("Error", fileOperationMessage("create folder", error), .warning)
         }
     }
 
@@ -2839,7 +2848,7 @@ final class ProjectViewModel: ObservableObject {
             loadingFileProgress = nil
             recordRecentlyOpenedURLs([url])
         } catch {
-            ui.alert("Error", "Could not open file: \(error.localizedDescription)", .warning)
+            ui.alert("Error", fileOperationMessage("open file", error), .warning)
             isLoadingFile = false
             loadingFileProgress = nil
         }
@@ -3647,7 +3656,7 @@ final class ProjectViewModel: ObservableObject {
             refreshGitState()
             refreshCurrentLineBlame()
         } catch {
-            ui.alert("Error", "Could not reload file: \(error.localizedDescription)", .warning)
+            ui.alert("Error", fileOperationMessage("reload file", error), .warning)
         }
     }
 
@@ -3667,29 +3676,32 @@ final class ProjectViewModel: ObservableObject {
         )
         guard confirmation == .alertFirstButtonReturn else { return }
 
-        guard resolveUnsavedChanges(
-            for: affectedIndices,
-            title: "Delete \(item.name)?",
-            message: "Deleting this item will close any open tabs for it."
-        ) else {
-            return
-        }
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            guard await self.resolveUnsavedChanges(
+                for: affectedIndices,
+                title: "Delete \(item.name)?",
+                message: "Deleting this item will close any open tabs for it."
+            ) else {
+                return
+            }
 
-        do {
-            try fileService.delete(at: item.path)
-            pruneExpandedDirectoryPaths(removingDescendantsOf: item.path)
-            breakpoints = breakpointStore.removeBreakpoints(
-                inside: item.path,
-                includeDescendants: item.isDirectory,
-                for: rootDirectory
-            )
-            syncActiveDebugBreakpoints()
-            closeTabs(at: affectedIndices, confirmUnsavedChanges: false)
-            reloadFileTree()
-            refreshGitState()
-            persistSession()
-        } catch {
-            ui.alert("Error", "Could not delete: \(error.localizedDescription)", .warning)
+            do {
+                try self.fileService.delete(at: item.path)
+                self.pruneExpandedDirectoryPaths(removingDescendantsOf: item.path)
+                self.breakpoints = self.breakpointStore.removeBreakpoints(
+                    inside: item.path,
+                    includeDescendants: item.isDirectory,
+                    for: self.rootDirectory
+                )
+                self.syncActiveDebugBreakpoints()
+                await self.closeTabs(at: affectedIndices, confirmUnsavedChanges: false)
+                self.reloadFileTree()
+                self.refreshGitState()
+                self.persistSession()
+            } catch {
+                self.ui.alert("Error", self.fileOperationMessage("delete", error), .warning)
+            }
         }
     }
 
@@ -3713,7 +3725,7 @@ final class ProjectViewModel: ObservableObject {
             refreshGitState()
             persistSession()
         } catch {
-            ui.alert("Error", "Could not rename: \(error.localizedDescription)", .warning)
+            ui.alert("Error", fileOperationMessage("rename", error), .warning)
         }
     }
 
@@ -3724,7 +3736,7 @@ final class ProjectViewModel: ObservableObject {
             openFile(at: newURL)
             refreshGitState()
         } catch {
-            ui.alert("Error", "Could not duplicate: \(error.localizedDescription)", .warning)
+            ui.alert("Error", fileOperationMessage("duplicate", error), .warning)
         }
     }
 
@@ -4520,7 +4532,7 @@ final class ProjectViewModel: ObservableObject {
 
             return true
         } catch {
-            ui.alert("Error", "Could not save file: \(error.localizedDescription)", .warning)
+            ui.alert("Error", fileOperationMessage("save file", error), .warning)
             return false
         }
     }
@@ -5428,6 +5440,21 @@ final class ProjectViewModel: ObservableObject {
         var isDirectory = ObjCBool(false)
         FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory)
         return isDirectory.boolValue
+    }
+
+    private func fileOperationMessage(_ action: String, _ error: Error) -> String {
+        let nsError = error as NSError
+        if nsError.domain == NSCocoaErrorDomain && (
+            nsError.code == NSFileWriteNoPermissionError ||
+            nsError.code == NSFileReadNoPermissionError ||
+            nsError.code == NSFileWriteVolumeReadOnlyError
+        ) {
+            return "Could not \(action): You don't have permission to write to this location. Check the file permissions in Finder (Get Info → Sharing & Permissions)."
+        }
+        if nsError.domain == NSCocoaErrorDomain && nsError.code == NSFileWriteOutOfSpaceError {
+            return "Could not \(action): The disk is full. Free up space and try again."
+        }
+        return "Could not \(action): \(error.localizedDescription)"
     }
 
     private func restoredCursorPosition(for tabState: ProjectSessionTabState, clampedTo content: String? = nil) -> CursorPosition {

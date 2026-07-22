@@ -143,7 +143,7 @@ struct ProjectViewModelTests {
         #expect(viewModel.openTabs.first?.content == "original\n")
 
         // Save must flush the buffer first (data-loss guard) and persist the latest typed text.
-        viewModel.saveCurrentFile()
+        await viewModel.saveCurrentFile()
 
         #expect(try String(contentsOf: fileURL, encoding: .utf8) == "FINAL TEXT\n")
         #expect(viewModel.openTabs.first?.content == "FINAL TEXT\n")
@@ -178,7 +178,7 @@ struct ProjectViewModelTests {
         }
 
         viewModel.updateTabContent("let value = 2\n")
-        viewModel.saveCurrentFile()
+        await viewModel.saveCurrentFile()
 
         #expect(!viewModel.isLoadingFileTree)
         #expect(try String(contentsOf: fileURL, encoding: .utf8) == "let value = 2\n")
@@ -593,7 +593,7 @@ struct ProjectViewModelTests {
         #expect(viewModel.selectedTab?.requiresExplicitSave == true)
         #expect(try String(contentsOf: fileURL, encoding: .utf8) == "let value = 3\n")
 
-        viewModel.saveCurrentFile()
+        await viewModel.saveCurrentFile()
         try await waitUntil {
             recoveryStore.load() == nil
         }
@@ -820,7 +820,7 @@ struct ProjectViewModelTests {
         )
 
         viewModel.updateTabContent("let value = 3\n")
-        let canCloseWhileLoading = viewModel.prepareForSessionTransition(
+        let canCloseWhileLoading = await viewModel.prepareForSessionTransition(
             title: "Quit Rosewood?",
             message: "Save changes?"
         )
@@ -894,7 +894,7 @@ struct ProjectViewModelTests {
         #expect(viewModel.selectedTab?.isDirty == true)
         #expect(viewModel.selectedTab?.requiresExplicitSave == true)
 
-        viewModel.saveCurrentFile()
+        await viewModel.saveCurrentFile()
         #expect(FileManager.default.fileExists(atPath: missingFileURL.path) == false)
         try await waitUntil {
             recoveryStore.load()?.tabs.first?.content == ""
@@ -955,7 +955,7 @@ struct ProjectViewModelTests {
         #expect(viewModel.selectedTab?.filePath == nil)
         #expect(viewModel.selectedTab?.content == "let recovered = 2\n")
         #expect(viewModel.selectedTab?.requiresExplicitSave == true)
-        viewModel.saveCurrentFile()
+        await viewModel.saveCurrentFile()
         #expect(FileManager.default.fileExists(atPath: fileURL.path) == false)
     }
 
@@ -987,7 +987,7 @@ struct ProjectViewModelTests {
         viewModel.updateTabContent("let value = 2\n")
         try await waitUntil { recoveryStore.load()?.tabs.first?.content == "let value = 2\n" }
 
-        #expect(viewModel.closeTab(at: 0))
+        #expect(await viewModel.closeTab(at: 0))
         #expect(recoveryStore.load() == nil)
         #expect(try String(contentsOf: fileURL, encoding: .utf8) == "let value = 1\n")
     }
@@ -1021,7 +1021,7 @@ struct ProjectViewModelTests {
         viewModel.updateTabContent("let value = 2\n")
         try await waitUntil { recoveryStore.load()?.tabs.first?.filePath == oldFileURL.path }
 
-        viewModel.saveCurrentFileAs()
+        await viewModel.saveCurrentFileAs()
 
         #expect(viewModel.selectedTab?.filePath == newFileURL)
         #expect(recoveryStore.load() == nil)
@@ -1102,7 +1102,7 @@ struct ProjectViewModelTests {
     }
 
     @Test
-    func workspaceDiagnosticsRefreshAfterEditingOpenTabContent() throws {
+    func workspaceDiagnosticsRefreshAfterEditingOpenTabContent() async throws {
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let fileURL = rootURL.appendingPathComponent("Alpha.swift")
@@ -1698,7 +1698,7 @@ struct ProjectViewModelTests {
     }
 
     @Test
-    func openFilesUsesPanelSelectionAndOpensPickedFiles() throws {
+    func openFilesUsesPanelSelectionAndOpensPickedFiles() async throws {
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let alphaURL = rootURL.appendingPathComponent("Alpha.swift")
@@ -1720,7 +1720,7 @@ struct ProjectViewModelTests {
             ui: ui
         )
 
-        viewModel.openFiles()
+        await viewModel.openFiles()
 
         #expect(viewModel.rootDirectory?.standardizedFileURL.path == rootURL.standardizedFileURL.path)
         #expect(viewModel.openTabs.compactMap { $0.filePath?.standardizedFileURL.path } == [alphaURL.path, betaURL.path])
@@ -1728,7 +1728,7 @@ struct ProjectViewModelTests {
     }
 
     @Test
-    func saveCurrentFileAsWritesToNewLocationAndRetargetsWatchers() throws {
+    func saveCurrentFileAsWritesToNewLocationAndRetargetsWatchers() async throws {
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let sourceURL = rootURL.appendingPathComponent("Alpha.swift")
@@ -1755,7 +1755,7 @@ struct ProjectViewModelTests {
         viewModel.openFile(at: sourceURL)
         viewModel.updateTabContent("let beta = 2\n")
 
-        viewModel.saveCurrentFileAs()
+        await viewModel.saveCurrentFileAs()
 
         #expect(try String(contentsOf: sourceURL, encoding: .utf8) == "let alpha = 1\n")
         #expect(try String(contentsOf: destinationURL, encoding: .utf8) == "let beta = 2\n")
@@ -1809,7 +1809,7 @@ struct ProjectViewModelTests {
     }
 
     @Test
-    func renamingOpenFileMovesWatchedPath() throws {
+    func renamingOpenFileMovesWatchedPath() async throws {
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let fileURL = rootURL.appendingPathComponent("Example.swift")
@@ -1905,7 +1905,7 @@ struct ProjectViewModelTests {
     }
 
     @Test
-    func commandPaletteWorkspaceProblemActionStartsQuickOpenInProblemMode() throws {
+    func commandPaletteWorkspaceProblemActionStartsQuickOpenInProblemMode() async throws {
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let alphaURL = rootURL.appendingPathComponent("Alpha.swift")
@@ -1952,7 +1952,7 @@ struct ProjectViewModelTests {
     }
 
     @Test
-    func commandPaletteActionsPrioritizeRecentCommandsWhenQueryIsEmpty() throws {
+    func commandPaletteActionsPrioritizeRecentCommandsWhenQueryIsEmpty() async throws {
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
@@ -1984,7 +1984,7 @@ struct ProjectViewModelTests {
     }
 
     @Test
-    func commandPaletteSectionsExposeRecentAndGroupedCategories() throws {
+    func commandPaletteSectionsExposeRecentAndGroupedCategories() async throws {
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
@@ -2046,7 +2046,7 @@ struct ProjectViewModelTests {
     }
 
     @Test
-    func commandPaletteScopePrefixesFilterCategoriesAndExposeScopedHelp() throws {
+    func commandPaletteScopePrefixesFilterCategoriesAndExposeScopedHelp() async throws {
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
@@ -2112,7 +2112,7 @@ struct ProjectViewModelTests {
     }
 
     @Test
-    func commandPaletteOffersTabManagementActionsForActiveEditorState() throws {
+    func commandPaletteOffersTabManagementActionsForActiveEditorState() async throws {
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
@@ -2150,7 +2150,7 @@ struct ProjectViewModelTests {
     }
 
     @Test
-    func commandPaletteProblemsCommandTogglesProblemsPanelAndSupportsAliases() throws {
+    func commandPaletteProblemsCommandTogglesProblemsPanelAndSupportsAliases() async throws {
         let fileURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
             .appendingPathExtension("swift")
@@ -2254,7 +2254,7 @@ struct ProjectViewModelTests {
     }
 
     @Test
-    func commandPaletteFileUtilityCommandsCopyPathsAndRevealCurrentFile() throws {
+    func commandPaletteFileUtilityCommandsCopyPathsAndRevealCurrentFile() async throws {
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
@@ -2298,7 +2298,7 @@ struct ProjectViewModelTests {
     }
 
     @Test
-    func commandPaletteOffersDebugCommandsAndConfigurationSelection() throws {
+    func commandPaletteOffersDebugCommandsAndConfigurationSelection() async throws {
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let fileURL = rootURL.appendingPathComponent("Alpha.swift")
@@ -2751,7 +2751,7 @@ struct ProjectViewModelTests {
     }
 
     @Test
-    func quickOpenPrioritizesOpenTabsAndStrongerMatches() throws {
+    func quickOpenPrioritizesOpenTabsAndStrongerMatches() async throws {
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let sourcesURL = rootURL.appendingPathComponent("Sources", isDirectory: true)
@@ -2816,7 +2816,7 @@ struct ProjectViewModelTests {
     }
 
     @Test
-    func quickOpenSupportsCurrentFileLineJumpAndFileScopedLineJump() throws {
+    func quickOpenSupportsCurrentFileLineJumpAndFileScopedLineJump() async throws {
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let sourcesURL = rootURL.appendingPathComponent("Sources", isDirectory: true)
@@ -2878,7 +2878,7 @@ struct ProjectViewModelTests {
     }
 
     @Test
-    func quickOpenWorkspaceSymbolSearchFindsDeclarationsAndPrefersRecentFiles() throws {
+    func quickOpenWorkspaceSymbolSearchFindsDeclarationsAndPrefersRecentFiles() async throws {
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let sourcesURL = rootURL.appendingPathComponent("Sources", isDirectory: true)
@@ -3028,7 +3028,7 @@ struct ProjectViewModelTests {
     }
 
     @Test
-    func quickOpenWorkspaceSymbolSearchShowsCurrentFileSectionBeforeWorkspace() throws {
+    func quickOpenWorkspaceSymbolSearchShowsCurrentFileSectionBeforeWorkspace() async throws {
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let sourcesURL = rootURL.appendingPathComponent("Sources", isDirectory: true)
@@ -3081,7 +3081,7 @@ struct ProjectViewModelTests {
     }
 
     @Test
-    func currentFileSymbolsTrackCursorAndOpenOutlineSelection() throws {
+    func currentFileSymbolsTrackCursorAndOpenOutlineSelection() async throws {
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let sourcesURL = rootURL.appendingPathComponent("Sources", isDirectory: true)
@@ -3222,7 +3222,7 @@ struct ProjectViewModelTests {
     }
 
     @Test
-    func quickOpenWorkspaceProblemSearchShowsCurrentFileAndWorkspaceSectionsAndOpensSelectedProblem() throws {
+    func quickOpenWorkspaceProblemSearchShowsCurrentFileAndWorkspaceSectionsAndOpensSelectedProblem() async throws {
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let alphaURL = rootURL.appendingPathComponent("Alpha.swift")
@@ -3307,7 +3307,7 @@ struct ProjectViewModelTests {
     }
 
     @Test
-    func quickOpenWorkspaceProblemSearchSupportsSeverityFilters() throws {
+    func quickOpenWorkspaceProblemSearchSupportsSeverityFilters() async throws {
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let alphaURL = rootURL.appendingPathComponent("Alpha.swift")
@@ -3429,7 +3429,7 @@ struct ProjectViewModelTests {
     }
 
     @Test
-    func quickOpenHelpTextExplainsLineFileAndSymbolModes() throws {
+    func quickOpenHelpTextExplainsLineFileAndSymbolModes() async throws {
         let configURL = tempConfigURL()
         defer { try? FileManager.default.removeItem(at: configURL) }
 
@@ -4039,7 +4039,7 @@ struct ProjectViewModelTests {
     }
 
     @Test
-    func commandPaletteShowsFindReferencesOnlyWhenLSPIsReady() throws {
+    func commandPaletteShowsFindReferencesOnlyWhenLSPIsReady() async throws {
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let fileURL = rootURL.appendingPathComponent("Alpha.swift")
@@ -4070,7 +4070,7 @@ struct ProjectViewModelTests {
     }
 
     @Test
-    func openFileSelectingExistingTabDoesNotDuplicateTab() throws {
+    func openFileSelectingExistingTabDoesNotDuplicateTab() async throws {
         let fileURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
             .appendingPathExtension("swift")
@@ -4097,7 +4097,7 @@ struct ProjectViewModelTests {
     }
 
     @Test
-    func closeTabCancelsWhenUserRejectsDirtyClose() throws {
+    func closeTabCancelsWhenUserRejectsDirtyClose() async throws {
         let fileURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
             .appendingPathExtension("swift")
@@ -4120,7 +4120,7 @@ struct ProjectViewModelTests {
         viewModel.openFile(at: fileURL)
         viewModel.updateTabContent("print(\"dirty\")")
 
-        let didClose = viewModel.closeTab(at: 0)
+        let didClose = await viewModel.closeTab(at: 0)
 
         #expect(didClose == false)
         #expect(viewModel.openTabs.count == 1)
@@ -4128,7 +4128,7 @@ struct ProjectViewModelTests {
     }
 
     @Test
-    func closeTabSavesDirtyFileWhenConfirmed() throws {
+    func closeTabSavesDirtyFileWhenConfirmed() async throws {
         let fileURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
             .appendingPathExtension("swift")
@@ -4151,7 +4151,7 @@ struct ProjectViewModelTests {
         viewModel.openFile(at: fileURL)
         viewModel.updateTabContent("print(\"after\")")
 
-        let didClose = viewModel.closeTab(at: 0)
+        let didClose = await viewModel.closeTab(at: 0)
 
         #expect(didClose == true)
         #expect(viewModel.openTabs.isEmpty)
@@ -4160,7 +4160,7 @@ struct ProjectViewModelTests {
     }
 
     @Test
-    func reopenLastClosedTabRestoresClosedFileTab() throws {
+    func reopenLastClosedTabRestoresClosedFileTab() async throws {
         let fileURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
             .appendingPathExtension("swift")
@@ -4182,7 +4182,7 @@ struct ProjectViewModelTests {
         viewModel.openFile(at: fileURL)
         viewModel.updateCursorPosition(line: 1, column: 6)
 
-        #expect(viewModel.closeTab(at: 0, confirmUnsavedChanges: false) == true)
+        #expect(await viewModel.closeTab(at: 0, confirmUnsavedChanges: false) == true)
         #expect(viewModel.canReopenClosedTab == true)
         #expect(viewModel.openTabs.isEmpty)
 
@@ -4197,7 +4197,7 @@ struct ProjectViewModelTests {
     }
 
     @Test
-    func reopenLastClosedTabUsesSavedContentAfterDiscardingDirtyChanges() throws {
+    func reopenLastClosedTabUsesSavedContentAfterDiscardingDirtyChanges() async throws {
         let fileURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
             .appendingPathExtension("swift")
@@ -4219,7 +4219,7 @@ struct ProjectViewModelTests {
         viewModel.openFile(at: fileURL)
         viewModel.updateTabContent("print(\"dirty\")")
 
-        #expect(viewModel.closeTab(at: 0) == true)
+        #expect(await viewModel.closeTab(at: 0) == true)
         viewModel.reopenLastClosedTab()
 
         #expect(viewModel.selectedTab?.content == "print(\"before\")")
@@ -4692,7 +4692,7 @@ struct ProjectViewModelTests {
             ui: ui
         )
 
-        viewModel.openFolder()
+        await viewModel.openFolder()
         try await waitUntil {
             viewModel.rootDirectory?.standardizedFileURL.path == firstRoot.standardizedFileURL.path &&
                 viewModel.fileTree.map(\.name) == ["One.swift"] &&
@@ -4713,7 +4713,7 @@ struct ProjectViewModelTests {
         ])
         #expect(viewModel.isReferencesPanelVisible == true)
 
-        viewModel.openFolder()
+        await viewModel.openFolder()
         try await waitUntil {
             viewModel.rootDirectory?.standardizedFileURL.path == secondRoot.standardizedFileURL.path &&
                 viewModel.fileTree.map(\.name) == ["Two.swift"] &&
@@ -4778,13 +4778,13 @@ struct ProjectViewModelTests {
             ui: ui
         )
 
-        viewModel.openFolder()
+        await viewModel.openFolder()
         try await waitUntil {
             viewModel.rootDirectory?.standardizedFileURL.path == rootURL.standardizedFileURL.path &&
                 !viewModel.isLoadingFileTree
         }
 
-        viewModel.openFolder()
+        await viewModel.openFolder()
         try await waitUntil {
             viewModel.rootDirectory?.standardizedFileURL.path == rootURL.standardizedFileURL.path &&
                 !viewModel.isLoadingFileTree
@@ -4824,7 +4824,7 @@ struct ProjectViewModelTests {
             ui: ui
         )
 
-        viewModel.openExternalItems([firstRoot])
+        await viewModel.openExternalItems([firstRoot])
         try await waitUntil {
             viewModel.rootDirectory?.standardizedFileURL.path == firstRoot.standardizedFileURL.path &&
                 viewModel.fileTree.map(\.name) == ["One.swift"] &&
@@ -4842,7 +4842,7 @@ struct ProjectViewModelTests {
             )
         ])
 
-        viewModel.openExternalItems([secondRoot])
+        await viewModel.openExternalItems([secondRoot])
         try await waitUntil {
             viewModel.rootDirectory?.standardizedFileURL.path == secondRoot.standardizedFileURL.path &&
                 viewModel.fileTree.map(\.name) == ["Two.swift"] &&
@@ -4877,7 +4877,7 @@ struct ProjectViewModelTests {
             ui: TestProjectUI()
         )
 
-        viewModel.openExternalItems([fileURL])
+        await viewModel.openExternalItems([fileURL])
 
         try await waitUntil {
             viewModel.rootDirectory?.standardizedFileURL.path == rootURL.standardizedFileURL.path &&
@@ -5446,7 +5446,7 @@ struct ProjectViewModelTests {
     }
 
     @Test
-    func canCloseWindowSavesAllDirtyTabsWhenConfirmed() throws {
+    func canCloseWindowSavesAllDirtyTabsWhenConfirmed() async throws {
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let firstURL = rootURL.appendingPathComponent("One.swift")
@@ -5476,7 +5476,7 @@ struct ProjectViewModelTests {
         viewModel.selectedTabIndex = 1
         viewModel.updateTabContent("print(\"two updated\")")
 
-        let canClose = viewModel.canCloseWindow()
+        let canClose = await viewModel.canCloseWindow()
 
         #expect(canClose == true)
         #expect(viewModel.hasUnsavedChanges == false)
@@ -5532,7 +5532,7 @@ struct ProjectViewModelTests {
     }
 
     @Test
-    func saveCurrentFileAndUpdateCursorPositionPersistTabState() throws {
+    func saveCurrentFileAndUpdateCursorPositionPersistTabState() async throws {
         let fileURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
             .appendingPathExtension("swift")
@@ -5553,7 +5553,7 @@ struct ProjectViewModelTests {
         viewModel.openFile(at: fileURL)
         viewModel.updateCursorPosition(line: 7, column: 3)
         viewModel.updateTabContent("print(\"after\")")
-        viewModel.saveCurrentFile()
+        await viewModel.saveCurrentFile()
 
         #expect(viewModel.selectedTab?.cursorPosition.line == 7)
         #expect(viewModel.selectedTab?.cursorPosition.column == 3)
@@ -5774,7 +5774,7 @@ struct ProjectViewModelTests {
     // MARK: - Tab Management Context Menu Methods
 
     @Test
-    func closeOtherTabsKeepsOnlyTargetTab() throws {
+    func closeOtherTabsKeepsOnlyTargetTab() async throws {
         let rootURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: rootURL) }
@@ -5803,13 +5803,13 @@ struct ProjectViewModelTests {
         viewModel.openFile(at: file3)
         #expect(viewModel.openTabs.count == 3)
 
-        viewModel.closeOtherTabs(except: 1)
+        await viewModel.closeOtherTabs(except: 1)
         #expect(viewModel.openTabs.count == 1)
         #expect(viewModel.openTabs[0].filePath == file2)
     }
 
     @Test
-    func closeAllTabsClearsAllTabs() throws {
+    func closeAllTabsClearsAllTabs() async throws {
         let rootURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: rootURL) }
@@ -5836,12 +5836,12 @@ struct ProjectViewModelTests {
         viewModel.openFile(at: file2)
         #expect(viewModel.openTabs.count == 2)
 
-        viewModel.closeAllTabs()
+        await viewModel.closeAllTabs()
         #expect(viewModel.openTabs.isEmpty)
     }
 
     @Test
-    func closeTabsToTheRightRemovesOnlyLaterTabs() throws {
+    func closeTabsToTheRightRemovesOnlyLaterTabs() async throws {
         let rootURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: rootURL) }
@@ -5870,13 +5870,13 @@ struct ProjectViewModelTests {
         viewModel.openFile(at: file3)
         #expect(viewModel.openTabs.count == 3)
 
-        viewModel.closeTabsToTheRight(of: 0)
+        await viewModel.closeTabsToTheRight(of: 0)
         #expect(viewModel.openTabs.count == 1)
         #expect(viewModel.openTabs[0].filePath == file1)
     }
 
     @Test
-    func closeTabsToTheRightOfLastTabIsNoOp() throws {
+    func closeTabsToTheRightOfLastTabIsNoOp() async throws {
         let rootURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: rootURL) }
@@ -5899,7 +5899,7 @@ struct ProjectViewModelTests {
         viewModel.openFile(at: file1)
         #expect(viewModel.openTabs.count == 1)
 
-        viewModel.closeTabsToTheRight(of: 0)
+        await viewModel.closeTabsToTheRight(of: 0)
         #expect(viewModel.openTabs.count == 1)
     }
 
@@ -6032,7 +6032,7 @@ struct ProjectViewModelTests {
     }
 
     @Test
-    func openDiagnosticSetsPendingLineJumpOnSelectedTab() throws {
+    func openDiagnosticSetsPendingLineJumpOnSelectedTab() async throws {
         let fileURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
             .appendingPathExtension("swift")
@@ -6067,7 +6067,7 @@ struct ProjectViewModelTests {
     }
 
     @Test
-    func openNextAndPreviousProblemWrapWithinCurrentTab() throws {
+    func openNextAndPreviousProblemWrapWithinCurrentTab() async throws {
         let fileURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
             .appendingPathExtension("swift")
@@ -6135,7 +6135,7 @@ struct ProjectViewModelTests {
     }
 
     @Test
-    func problemNavigationAdvancesFromActiveDiagnosticBeforeCursorSync() throws {
+    func problemNavigationAdvancesFromActiveDiagnosticBeforeCursorSync() async throws {
         let fileURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
             .appendingPathExtension("swift")
@@ -6198,7 +6198,7 @@ struct ProjectViewModelTests {
     }
 
     @Test
-    func activeProblemSelectionTracksCursorMovement() throws {
+    func activeProblemSelectionTracksCursorMovement() async throws {
         let fileURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
             .appendingPathExtension("swift")
@@ -6256,7 +6256,7 @@ struct ProjectViewModelTests {
     }
 
     @Test
-    func workspaceProblemScopeAggregatesAcrossFilesAndNavigatesBetweenFiles() throws {
+    func workspaceProblemScopeAggregatesAcrossFilesAndNavigatesBetweenFiles() async throws {
         let rootURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         let alphaURL = rootURL.appendingPathComponent("Alpha.swift")
         let betaURL = rootURL.appendingPathComponent("Beta.swift")
@@ -6330,7 +6330,7 @@ struct ProjectViewModelTests {
     }
 
     @Test
-    func toggleDiagnosticsPanelDefaultsToWorkspaceScopeWhenCurrentFileHasNoProblems() throws {
+    func toggleDiagnosticsPanelDefaultsToWorkspaceScopeWhenCurrentFileHasNoProblems() async throws {
         let rootURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         let alphaURL = rootURL.appendingPathComponent("Alpha.swift")
         let betaURL = rootURL.appendingPathComponent("Beta.swift")
@@ -6377,7 +6377,7 @@ struct ProjectViewModelTests {
     }
 
     @Test
-    func openNextAndPreviousBreakpointWrapAcrossWorkspace() throws {
+    func openNextAndPreviousBreakpointWrapAcrossWorkspace() async throws {
         let rootURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         let alphaURL = rootURL.appendingPathComponent("Alpha.swift")
         let betaURL = rootURL.appendingPathComponent("Beta.swift")
@@ -6547,7 +6547,7 @@ struct ProjectViewModelTests {
     }
 
     @Test
-    func openReferenceResultDoesNotJumpWhenFileOpenFails() throws {
+    func openReferenceResultDoesNotJumpWhenFileOpenFails() async throws {
         let rootURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         let fileURL = rootURL.appendingPathComponent("Alpha.swift")
         let missingURL = rootURL.appendingPathComponent("Missing.swift")
@@ -6594,7 +6594,7 @@ struct ProjectViewModelTests {
     }
 
     @Test
-    func openFolderClosesVisibleReferencesPanel() throws {
+    func openFolderClosesVisibleReferencesPanel() async throws {
         let initialRootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let replacementRootURL = FileManager.default.temporaryDirectory
@@ -6634,7 +6634,7 @@ struct ProjectViewModelTests {
         #expect(viewModel.isReferencesPanelVisible == true)
         #expect(viewModel.referencesModel.referenceResults.count == 1)
 
-        viewModel.openFolder()
+        await viewModel.openFolder()
 
         #expect(viewModel.rootDirectory == replacementRootURL)
         #expect(viewModel.isReferencesPanelVisible == false)
@@ -6642,7 +6642,7 @@ struct ProjectViewModelTests {
     }
 
     @Test
-    func paletteTransitionsKeepQuickOpenAndCommandPaletteInSync() throws {
+    func paletteTransitionsKeepQuickOpenAndCommandPaletteInSync() async throws {
         let fileURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
             .appendingPathExtension("swift")

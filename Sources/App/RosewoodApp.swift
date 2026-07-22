@@ -157,17 +157,21 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItem
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         let contexts = Array(windowContexts.values)
-        var approvedContexts: [AppWindowContext] = []
-        for context in contexts {
-            guard context.projectViewModel.canCloseWindow() else {
-                for approvedContext in approvedContexts {
-                    approvedContext.projectViewModel.resumeAfterCancelledSessionTransition()
+        Task { @MainActor in
+            var approvedContexts: [AppWindowContext] = []
+            for context in contexts {
+                guard await context.projectViewModel.canCloseWindow() else {
+                    for approvedContext in approvedContexts {
+                        approvedContext.projectViewModel.resumeAfterCancelledSessionTransition()
+                    }
+                    NSApp.reply(toApplicationShouldTerminate: false)
+                    return
                 }
-                return .terminateCancel
+                approvedContexts.append(context)
             }
-            approvedContexts.append(context)
+            NSApp.reply(toApplicationShouldTerminate: true)
         }
-        return .terminateNow
+        return .terminateLater
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -182,9 +186,22 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItem
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         if let context = windowContexts[ObjectIdentifier(sender)] {
-            return context.projectViewModel.canCloseWindow()
+            Task { @MainActor in
+                if await context.projectViewModel.canCloseWindow() {
+                    sender.close()
+                }
+            }
+            return false
         }
-        return projectViewModel?.canCloseWindow() ?? true
+        if let projectViewModel {
+            Task { @MainActor in
+                if await projectViewModel.canCloseWindow() {
+                    sender.close()
+                }
+            }
+            return false
+        }
+        return true
     }
 
     func windowDidBecomeKey(_ notification: Notification) {
@@ -299,7 +316,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItem
                 notificationCenter: effectiveNotificationCenter,
                 commandDispatcher: dispatcher,
                 ui: .live,
-                lspService: LSPService(forTesting: false),
+                lspService: LSPService(),
                 breakpointStore: BreakpointStore(),
                 debugConfigurationService: DebugConfigurationService(),
                 debugSessionService: DebugSessionService(),
@@ -335,6 +352,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItem
         )
 
         window.center()
+        window.collectionBehavior.insert(.fullScreenPrimary)
         if sessionKey == Self.defaultSessionKey {
             window.setFrameAutosaveName("RosewoodMainWindow")
         }
@@ -555,6 +573,26 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItem
 
         viewMenu.addItem(NSMenuItem.separator())
 
+        let zoomInItem = NSMenuItem(title: "Zoom In", action: #selector(handleZoomIn), keyEquivalent: "=")
+        zoomInItem.keyEquivalentModifierMask = [.command]
+        viewMenu.addItem(zoomInItem)
+
+        let zoomOutItem = NSMenuItem(title: "Zoom Out", action: #selector(handleZoomOut), keyEquivalent: "-")
+        zoomOutItem.keyEquivalentModifierMask = [.command]
+        viewMenu.addItem(zoomOutItem)
+
+        let zoomResetItem = NSMenuItem(title: "Actual Size", action: #selector(handleZoomReset), keyEquivalent: "0")
+        zoomResetItem.keyEquivalentModifierMask = [.command]
+        viewMenu.addItem(zoomResetItem)
+
+        viewMenu.addItem(NSMenuItem.separator())
+
+        let fullScreenItem = NSMenuItem(title: "Enter Full Screen", action: #selector(handleToggleFullScreen), keyEquivalent: "f")
+        fullScreenItem.keyEquivalentModifierMask = [.control, .command]
+        viewMenu.addItem(fullScreenItem)
+
+        viewMenu.addItem(NSMenuItem.separator())
+
         let nextTabItem = NSMenuItem(title: "Show Next Tab", action: #selector(handleNextTab), keyEquivalent: "]")
         nextTabItem.keyEquivalentModifierMask = [.command, .shift]
         viewMenu.addItem(nextTabItem)
@@ -631,7 +669,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItem
     }
 
     @objc func handleNewFile() {
-        dispatch(.newFile, legacyNotification: .handleNewFile)
+        dispatch(.newFile)
     }
 
     @MainActor
@@ -643,115 +681,131 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItem
     }
 
     @objc func handleOpenFile() {
-        dispatch(.openFile, legacyNotification: .handleOpenFile)
+        dispatch(.openFile)
     }
 
     @objc func handleOpenFolder() {
-        dispatch(.openFolder, legacyNotification: .handleOpenFolder)
+        dispatch(.openFolder)
     }
 
     @objc func handleSave() {
-        dispatch(.save, legacyNotification: .handleSave)
+        dispatch(.save)
     }
 
     @objc func handleSaveAs() {
-        dispatch(.saveAs, legacyNotification: .handleSaveAs)
+        dispatch(.saveAs)
     }
 
     @objc func handleSaveAll() {
-        dispatch(.saveAll, legacyNotification: .handleSaveAll)
+        dispatch(.saveAll)
     }
 
     @objc func handleNextTab() {
-        dispatch(.nextTab, legacyNotification: .handleNextTab)
+        dispatch(.nextTab)
     }
 
     @objc func handlePreviousTab() {
-        dispatch(.previousTab, legacyNotification: .handlePreviousTab)
+        dispatch(.previousTab)
     }
 
     @objc func handleGoToTab(_ sender: NSMenuItem) {
-        dispatch(.goToTab(sender.tag), legacyNotification: .handleGoToTab)
+        dispatch(.goToTab(sender.tag))
     }
 
     @objc func handleQuickOpen() {
-        dispatch(.quickOpen, legacyNotification: .handleQuickOpen)
+        dispatch(.quickOpen)
     }
 
     @objc func handleCommandPalette() {
-        dispatch(.commandPalette, legacyNotification: .handleCommandPalette)
+        dispatch(.commandPalette)
     }
 
     @objc func handleToggleProblems() {
-        dispatch(.toggleProblems, legacyNotification: .handleToggleProblems)
+        dispatch(.toggleProblems)
     }
 
     @objc func handleToggleTerminal() {
-        dispatch(.toggleTerminal, legacyNotification: .handleToggleTerminal)
+        dispatch(.toggleTerminal)
     }
 
     @objc func handleCloseTab() {
-        dispatch(.closeTab, legacyNotification: .handleCloseTab)
+        dispatch(.closeTab)
     }
 
     @objc func handleReopenClosedTab() {
-        dispatch(.reopenClosedTab, legacyNotification: .handleReopenClosedTab)
+        dispatch(.reopenClosedTab)
     }
 
     @objc func handleProjectSearch() {
-        dispatch(.projectSearch, legacyNotification: .handleProjectSearch)
+        dispatch(.projectSearch)
     }
 
     @objc func handleFindInFile() {
-        dispatch(.findInFile, legacyNotification: .handleFindInFile)
+        dispatch(.findInFile)
     }
 
     @objc func handleToggleLineComment() {
-        dispatch(.toggleLineComment, legacyNotification: .handleToggleLineComment)
+        dispatch(.toggleLineComment)
     }
 
     @objc func handleMoveLineUp() {
-        dispatch(.moveLineUp, legacyNotification: .handleMoveLineUp)
+        dispatch(.moveLineUp)
     }
 
     @objc func handleMoveLineDown() {
-        dispatch(.moveLineDown, legacyNotification: .handleMoveLineDown)
+        dispatch(.moveLineDown)
     }
 
     @objc func handleDuplicateLine() {
-        dispatch(.duplicateLine, legacyNotification: .handleDuplicateLine)
+        dispatch(.duplicateLine)
     }
 
     @objc func handleDeleteLine() {
-        dispatch(.deleteLine, legacyNotification: .handleDeleteLine)
+        dispatch(.deleteLine)
     }
 
     @objc func handleJoinLines() {
-        dispatch(.joinLines, legacyNotification: .handleJoinLines)
+        dispatch(.joinLines)
+    }
+
+    @objc func handleZoomIn() {
+        dispatch(.zoomIn)
+    }
+
+    @objc func handleZoomOut() {
+        dispatch(.zoomOut)
+    }
+
+    @objc func handleZoomReset() {
+        dispatch(.zoomReset)
+    }
+
+    @objc func handleToggleFullScreen() {
+        NSApp.keyWindow?.toggleFullScreen(nil)
     }
 
     @objc func handleFindNext() {
-        dispatch(.findNext, legacyNotification: .handleFindNext)
+        dispatch(.findNext)
     }
 
     @objc func handleFindPrevious() {
-        dispatch(.findPrevious, legacyNotification: .handleFindPrevious)
+        dispatch(.findPrevious)
     }
 
     @objc func handleUseSelectionForFind() {
-        dispatch(.useSelectionForFind, legacyNotification: .handleUseSelectionForFind)
+        dispatch(.useSelectionForFind)
     }
 
     @objc func handleShowReplace() {
-        dispatch(.showReplace, legacyNotification: .handleShowReplace)
+        dispatch(.showReplace)
     }
 
     @objc func handleGoToLine() {
-        dispatch(.goToLine, legacyNotification: .handleGoToLine)
+        dispatch(.goToLine)
     }
 
     @objc func handleSettings() {
-        dispatch(.settings, legacyNotification: .handleSettings)
+        dispatch(.settings)
     }
 
     @objc func handleShowHelp() {
@@ -763,19 +817,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItem
     }
 
     @objc func handleGoToDefinition() {
-        dispatch(.goToDefinition, legacyNotification: .handleGoToDefinition)
+        dispatch(.goToDefinition)
     }
 
     @objc func handleFindReferences() {
-        dispatch(.findReferences, legacyNotification: .handleFindReferences)
+        dispatch(.findReferences)
     }
 
     @objc func handleNextProblem() {
-        dispatch(.nextProblem, legacyNotification: .handleNextProblem)
+        dispatch(.nextProblem)
     }
 
     @objc func handlePreviousProblem() {
-        dispatch(.previousProblem, legacyNotification: .handlePreviousProblem)
+        dispatch(.previousProblem)
     }
 
     @MainActor
@@ -789,9 +843,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItem
         rebuildOpenRecentMenu()
     }
 
-    private func dispatch(_ command: AppCommand, legacyNotification: Notification.Name) {
+    private func dispatch(_ command: AppCommand) {
         (activeWindowContext?.commandDispatcher ?? commandDispatcher).send(command)
-        notificationCenter?.post(name: legacyNotification, object: nil)
     }
 
     @MainActor
@@ -934,39 +987,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItem
 }
 
 extension Notification.Name {
-    static let handleFindInFile = Notification.Name("handleFindInFile")
-    static let handleToggleLineComment = Notification.Name("handleToggleLineComment")
-    static let handleMoveLineUp = Notification.Name("handleMoveLineUp")
-    static let handleMoveLineDown = Notification.Name("handleMoveLineDown")
-    static let handleDuplicateLine = Notification.Name("handleDuplicateLine")
-    static let handleDeleteLine = Notification.Name("handleDeleteLine")
-    static let handleJoinLines = Notification.Name("handleJoinLines")
-    static let handleFindNext = Notification.Name("handleFindNext")
-    static let handleFindPrevious = Notification.Name("handleFindPrevious")
-    static let handleNextProblem = Notification.Name("handleNextProblem")
-    static let handlePreviousProblem = Notification.Name("handlePreviousProblem")
-    static let handleUseSelectionForFind = Notification.Name("handleUseSelectionForFind")
-    static let handleShowReplace = Notification.Name("handleShowReplace")
-    static let handleGoToLine = Notification.Name("handleGoToLine")
-    static let handleGoToDefinition = Notification.Name("handleGoToDefinition")
-    static let handleFindReferences = Notification.Name("handleFindReferences")
-    static let handleNewFile = Notification.Name("handleNewFile")
     static let handleNewWindow = Notification.Name("handleNewWindow")
-    static let handleOpenFile = Notification.Name("handleOpenFile")
-    static let handleOpenFolder = Notification.Name("handleOpenFolder")
-    static let handleSave = Notification.Name("handleSave")
-    static let handleSaveAs = Notification.Name("handleSaveAs")
-    static let handleSaveAll = Notification.Name("handleSaveAll")
-    static let handleNextTab = Notification.Name("handleNextTab")
-    static let handlePreviousTab = Notification.Name("handlePreviousTab")
-    static let handleGoToTab = Notification.Name("handleGoToTab")
-    static let handleQuickOpen = Notification.Name("handleQuickOpen")
-    static let handleCommandPalette = Notification.Name("handleCommandPalette")
-    static let handleToggleProblems = Notification.Name("handleToggleProblems")
-    static let handleToggleTerminal = Notification.Name("handleToggleTerminal")
-    static let handleCloseTab = Notification.Name("handleCloseTab")
-    static let handleReopenClosedTab = Notification.Name("handleReopenClosedTab")
-    static let handleProjectSearch = Notification.Name("handleProjectSearch")
-    static let handleSettings = Notification.Name("handleSettings")
     static let projectDidOpenURLs = Notification.Name("projectDidOpenURLs")
 }

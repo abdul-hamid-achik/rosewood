@@ -54,11 +54,7 @@ final class LSPService: ObservableObject, LSPServiceProtocol {
     private var presentedServerIssueKeys: Set<String> = []
     private var semanticTokensLegends: [String: SemanticTokensLegend] = [:]  // keyed by serverKey
 
-    private init() {}
-
-    // MARK: - Testable init
-
-    init(forTesting: Bool) {}
+    init() {}
 
     // MARK: - Project Root
 

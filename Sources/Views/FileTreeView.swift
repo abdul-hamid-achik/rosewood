@@ -249,6 +249,7 @@ private struct FileTreeRow: View {
     let onActivate: () -> Void
 
     @State private var isHovering = false
+    @State private var isDropTargeted = false
 
     private var item: FileItem {
         entry.item
@@ -340,6 +341,7 @@ private struct FileTreeRow: View {
             }
         }
         .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
         .accessibilityIdentifier("file-tree-row-\(item.name)")
         .accessibilityValue(accessibilityValue)
         .contextMenu {
@@ -386,6 +388,13 @@ private struct FileTreeRow: View {
                 projectViewModel.deleteItem(item)
             }
         }
+        .draggable(item.id)
+        .dropDestination(for: String.self) { items, _ in
+            guard item.isDirectory else { return false }
+            return handleFileDrop(sourcePaths: items)
+        } isTargeted: { targeted in
+            isDropTargeted = targeted && item.isDirectory
+        }
     }
 
     private func copyToPasteboard(_ value: String?) {
@@ -393,6 +402,27 @@ private struct FileTreeRow: View {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(value, forType: .string)
+    }
+
+    private func handleFileDrop(sourcePaths: [String]) -> Bool {
+        guard let sourcePath = sourcePaths.first else { return false }
+
+        let sourceURL = URL(fileURLWithPath: sourcePath)
+        let destinationURL = item.path.appendingPathComponent(sourceURL.lastPathComponent)
+
+        // Prevent dropping a folder into itself or its own subdirectory
+        guard sourcePath != item.id,
+              !item.id.hasPrefix(sourcePath + "/"),
+              sourceURL.deletingLastPathComponent().standardizedFileURL != item.path.standardizedFileURL
+        else { return false }
+
+        do {
+            try FileManager.default.moveItem(at: sourceURL, to: destinationURL)
+            projectViewModel.reloadFileTree()
+            return true
+        } catch {
+            return false
+        }
     }
 
     private var primaryTextColor: Color {
@@ -403,16 +433,23 @@ private struct FileTreeRow: View {
     }
 
     private var accessibilityValue: String {
+        var parts: [String] = []
+
+        if item.isDirectory {
+            parts.append(item.isExpanded ? "expanded" : "collapsed")
+        }
+
         if isIgnored {
-            return "Ignored"
+            parts.append("Ignored")
+        } else if let gitChange {
+            parts.append(gitChange.kind.displayName)
+        } else if item.isDirectory && changedDescendantCount > 0 {
+            parts.append("\(changedDescendantCount) changed descendants")
+        } else {
+            parts.append("Clean")
         }
-        if let gitChange {
-            return gitChange.kind.displayName
-        }
-        if item.isDirectory && changedDescendantCount > 0 {
-            return "\(changedDescendantCount) changed descendants"
-        }
-        return "Clean"
+
+        return parts.joined(separator: ", ")
     }
 
     private func gitBadgeColor(for kind: GitChangeKind) -> Color {
@@ -429,6 +466,10 @@ private struct FileTreeRow: View {
     }
 
     private var rowBackground: Color {
+        if isDropTargeted {
+            return themeColors.accent.opacity(RosewoodUI.stateOpacitySelected)
+        }
+
         if isSelected {
             return themeColors.rowSelection
         }

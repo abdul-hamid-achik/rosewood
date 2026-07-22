@@ -46,6 +46,7 @@ private struct DirectoryEntry {
     let url: URL
     let name: String
     let isDirectory: Bool
+    let isSymbolicLink: Bool
     let sortKey: String
 }
 
@@ -413,6 +414,7 @@ final class FileService {
         at url: URL,
         expandedPaths: Set<String> = [],
         includeHidden: Bool = false,
+        maxDepth: Int = 50,
         isCancelled: @escaping () -> Bool = { false }
     ) -> [FileItem] {
         loadDirectory(
@@ -420,6 +422,7 @@ final class FileService {
             expandedPaths: expandedPaths,
             includeHidden: includeHidden,
             currentDepth: 0,
+            maxDepth: maxDepth,
             isCancelled: isCancelled
         )
     }
@@ -429,6 +432,7 @@ final class FileService {
         expandedPaths: Set<String>,
         includeHidden: Bool,
         currentDepth: Int,
+        maxDepth: Int,
         isCancelled: @escaping () -> Bool
     ) -> [FileItem] {
         if isCancelled() {
@@ -438,7 +442,7 @@ final class FileService {
         let fileManager = FileManager.default
         guard let contents = try? fileManager.contentsOfDirectory(
             at: url,
-            includingPropertiesForKeys: [.isDirectoryKey, .nameKey],
+            includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey, .nameKey],
             options: includeHidden ? [] : [.skipsHiddenFiles]
         ) else {
             return []
@@ -452,17 +456,19 @@ final class FileService {
                 return nil
             }
 
-            guard let resourceValues = try? itemURL.resourceValues(forKeys: [.isDirectoryKey]),
+            guard let resourceValues = try? itemURL.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey]),
                   let isDirectory = resourceValues.isDirectory else {
                 return nil
             }
 
             let name = itemURL.lastPathComponent
+            let isSymbolicLink = resourceValues.isSymbolicLink == true
 
             return DirectoryEntry(
                 url: itemURL,
                 name: name,
                 isDirectory: isDirectory,
+                isSymbolicLink: isSymbolicLink,
                 sortKey: Self.naturalSortKey(for: name)
             )
         }.sorted { lhs, rhs in
@@ -481,13 +487,17 @@ final class FileService {
         return entries.compactMap { entry in
             if entry.isDirectory {
                 let itemPath = normalizedPath(for: entry.url)
-                let shouldLoadChildren = currentDepth == 0 || expandedPaths.contains(itemPath)
+                // Do not recurse into symlinks (prevents infinite cycles) or beyond maxDepth.
+                let shouldLoadChildren = !entry.isSymbolicLink
+                    && currentDepth + 1 < maxDepth
+                    && (currentDepth == 0 || expandedPaths.contains(itemPath))
                 let children = shouldLoadChildren
                     ? loadDirectory(
                         at: entry.url,
                         expandedPaths: expandedPaths,
                         includeHidden: includeHidden,
                         currentDepth: currentDepth + 1,
+                        maxDepth: maxDepth,
                         isCancelled: isCancelled
                     )
                     : []

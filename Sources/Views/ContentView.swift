@@ -11,8 +11,11 @@ struct ContentView: View {
     @EnvironmentObject private var commandDispatcher: AppCommandDispatcher
     @EnvironmentObject private var debugModel: DebugModel
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     @State private var bottomPanelHeight: CGFloat = RosewoodUI.defaultBottomPanelHeight
     @State private var bottomPanelResizeBaseline: CGFloat?
+    @State private var isFileDropTargeted = false
 
     private var themeColors: ThemeColors {
         configService.currentThemeColors
@@ -86,7 +89,9 @@ struct ContentView: View {
             projectViewModel.toggleTerminalPanel()
         case .closeTab:
             if let index = projectViewModel.selectedTabIndex {
-                projectViewModel.closeTab(at: index)
+                Task { @MainActor in
+                    _ = await projectViewModel.closeTab(at: index)
+                }
             }
         case .projectSearch:
             projectViewModel.showSearchSidebar()
@@ -104,6 +109,18 @@ struct ContentView: View {
             projectViewModel.openPreviousProblem()
         case .settings:
             projectViewModel.showSettings = true
+        case .zoomIn:
+            var settings = projectViewModel.configService.settings
+            settings.editor.fontSize = min(settings.editor.fontSize + 1, 24)
+            projectViewModel.configService.updateSettings(settings)
+        case .zoomOut:
+            var settings = projectViewModel.configService.settings
+            settings.editor.fontSize = max(settings.editor.fontSize - 1, 8)
+            projectViewModel.configService.updateSettings(settings)
+        case .zoomReset:
+            var settings = projectViewModel.configService.settings
+            settings.editor.fontSize = 13
+            projectViewModel.configService.updateSettings(settings)
         case .findInFile, .useSelectionForFind, .showReplace, .goToDefinition, .findReferences,
              .toggleLineComment, .moveLineUp, .moveLineDown, .duplicateLine, .deleteLine, .joinLines:
             break
@@ -132,7 +149,7 @@ struct ContentView: View {
                             .transition(.move(edge: .bottom).combined(with: .opacity))
                     }
                 }
-                .animation(.rosewoodStandard, value: projectViewModel.bottomPanel)
+                .animation(reduceMotion ? nil : .rosewoodStandard, value: projectViewModel.bottomPanel)
             }
 
             StatusBarView()
@@ -356,6 +373,32 @@ struct ContentView: View {
             }
         }
         .background(themeColors.background)
+        .dropDestination(for: URL.self) { urls, _ in
+            let fileURLs = urls.filter(\.isFileURL)
+            guard !fileURLs.isEmpty else { return false }
+            projectViewModel.openExternalItems(fileURLs)
+            return true
+        } isTargeted: { isTargeted in
+            isFileDropTargeted = isTargeted
+        }
+        .overlay {
+            if isFileDropTargeted {
+                ZStack {
+                    Rectangle()
+                        .fill(themeColors.accent.opacity(0.12))
+
+                    VStack(spacing: RosewoodUI.spacing3) {
+                        Image(systemName: "arrow.down.doc")
+                            .font(.system(size: 32, weight: .regular))
+                            .foregroundColor(themeColors.accent)
+                        Text("Drop to open")
+                            .font(RosewoodType.bodyStrong)
+                            .foregroundColor(themeColors.accent)
+                    }
+                }
+                .allowsHitTesting(false)
+            }
+        }
     }
 
     @ViewBuilder
@@ -479,6 +522,7 @@ struct ActivitySidebarView: View {
     // Observed so the source-control activity badge (changed-file count) refreshes on git change.
     @EnvironmentObject private var gitModel: GitModel
     @EnvironmentObject private var configService: ConfigurationService
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var themeColors: ThemeColors {
         configService.currentThemeColors
@@ -538,7 +582,7 @@ struct ActivitySidebarView: View {
             badge: badge,
             themeColors: themeColors,
             action: {
-                withAnimation(.rosewoodFast) {
+                withAnimation(reduceMotion ? nil : .rosewoodFast) {
                     projectViewModel.sidebarMode = mode
                 }
             }

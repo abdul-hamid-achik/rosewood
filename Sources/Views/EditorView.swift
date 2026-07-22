@@ -112,11 +112,9 @@ struct EditorView: View {
                 }
             },
             onNavigateToDefinition: { url, line in
-                DispatchQueue.main.async {
-                    projectViewModel.openFile(at: url)
-                    if let idx = projectViewModel.selectedTabIndex {
-                        projectViewModel.openTabs[idx].pendingLineJump = line
-                    }
+                projectViewModel.openFile(at: url)
+                if let idx = projectViewModel.selectedTabIndex {
+                    projectViewModel.openTabs[idx].pendingLineJump = line
                 }
             },
             onShowReferences: { locations in
@@ -245,6 +243,7 @@ private struct CodeEditorRepresentable: NSViewRepresentable {
         nsView.lineNumberView.breakpointLines = breakpointLines
         nsView.lineNumberView.currentExecutionLine = executionLine
         nsView.lineNumberView.onToggleBreakpoint = onToggleBreakpoint
+        nsView.lineNumberView.refreshAccessibilityValue()
         nsView.lineNumberView.needsDisplay = true
         context.coordinator.applyExternalState(text: text, language: language)
 
@@ -2569,12 +2568,7 @@ final class EditorContainerView: NSView {
         lineNumberView.foldedLines = snapshot.foldedLines
         lineNumberView.actualLineNumberForDisplayLine = { snapshot.actualLine(forDisplayLine: $0) }
         lineNumberView.onToggleFold = onToggleFold
-        lineNumberView.setAccessibilityValue(
-            snapshot.foldedLines
-                .sorted()
-                .map(String.init)
-                .joined(separator: ",")
-        )
+        lineNumberView.refreshAccessibilityValue()
         lineNumberView.needsDisplay = true
     }
 
@@ -2799,6 +2793,19 @@ private final class LineNumberRulerView: NSRulerView {
         self.setAccessibilityLabel("Editor gutter")
         self.setAccessibilityIdentifier("editor-gutter")
         self.setAccessibilityValue("")
+    }
+
+    func refreshAccessibilityValue() {
+        var parts: [String] = []
+        if !breakpointLines.isEmpty {
+            let lines = breakpointLines.sorted().map(String.init).joined(separator: ", ")
+            parts.append("breakpoints on lines \(lines)")
+        }
+        if !foldedLines.isEmpty {
+            let lines = foldedLines.sorted().map(String.init).joined(separator: ", ")
+            parts.append("folded lines \(lines)")
+        }
+        setAccessibilityValue(parts.joined(separator: ", "))
     }
 
     @available(*, unavailable)

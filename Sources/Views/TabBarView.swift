@@ -4,33 +4,61 @@ import SwiftUI
 struct TabBarView: View {
     @EnvironmentObject var projectViewModel: ProjectViewModel
     @EnvironmentObject private var configService: ConfigurationService
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    @State private var dropTargetIndex: Int?
 
     private var themeColors: ThemeColors {
         configService.currentThemeColors
     }
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 0) {
-                ForEach(Array(projectViewModel.openTabs.enumerated()), id: \.element.id) { index, tab in
-                    TabItemView(
-                        index: index,
-                        tab: tab,
-                        isSelected: index == projectViewModel.selectedTabIndex,
-                        onSelect: {
-                            withAnimation(.rosewoodFast) {
-                                projectViewModel.selectTab(at: index)
+        HStack(spacing: 0) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 0) {
+                    ForEach(Array(projectViewModel.openTabs.enumerated()), id: \.element.id) { index, tab in
+                        TabItemView(
+                            index: index,
+                            tab: tab,
+                            isSelected: index == projectViewModel.selectedTabIndex,
+                            onSelect: {
+                                withAnimation(reduceMotion ? nil : .rosewoodFast) {
+                                    projectViewModel.selectTab(at: index)
+                                }
+                            },
+                            onClose: {
+                                Task { @MainActor in
+                                    _ = await projectViewModel.closeTab(at: index)
+                                }
                             }
-                        },
-                        onClose: {
-                            projectViewModel.closeTab(at: index)
+                        )
+                        .draggable(tab.id.uuidString)
+                        .dropDestination(for: String.self) { items, _ in
+                            handleTabDrop(items: items, at: index)
+                        } isTargeted: { isTargeted in
+                            if isTargeted {
+                                dropTargetIndex = index
+                            } else if dropTargetIndex == index {
+                                dropTargetIndex = nil
+                            }
                         }
-                    )
+                        .overlay(alignment: .leading) {
+                            if dropTargetIndex == index {
+                                Rectangle()
+                                    .fill(themeColors.accent)
+                                    .frame(width: 2)
+                            }
+                        }
 
-                    Rectangle()
-                        .fill(themeColors.border.opacity(RosewoodUI.borderOpacitySubtle))
-                        .frame(width: 1, height: 18)
+                        Rectangle()
+                            .fill(themeColors.border.opacity(RosewoodUI.borderOpacitySubtle))
+                            .frame(width: 1, height: 18)
+                    }
                 }
+            }
+
+            if projectViewModel.openTabs.count > 5 {
+                tabOverflowMenu
             }
         }
         .frame(height: RosewoodUI.rowHeightRegular)
@@ -40,6 +68,68 @@ struct TabBarView: View {
                 .fill(themeColors.border.opacity(RosewoodUI.borderOpacitySubtle))
                 .frame(height: 1)
         }
+    }
+
+    private var tabOverflowMenu: some View {
+        Menu {
+            ForEach(Array(projectViewModel.openTabs.enumerated()), id: \.element.id) { index, tab in
+                Button {
+                    withAnimation(reduceMotion ? nil : .rosewoodFast) {
+                        projectViewModel.selectTab(at: index)
+                    }
+                } label: {
+                    HStack {
+                        Image(systemName: tab.contentType.isText ? "doc.text" : "photo")
+                        Text(tab.fileName)
+                        if tab.isDirty {
+                            Image(systemName: "circle.fill")
+                                .font(.system(size: 6))
+                        }
+                    }
+                }
+            }
+        } label: {
+            Image(systemName: "chevron.down")
+                .font(.system(size: 10, weight: .medium))
+                .foregroundColor(themeColors.subduedText)
+                .frame(width: 28, height: RosewoodUI.rowHeightRegular)
+                .contentShape(Rectangle())
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .accessibilityLabel("Open tabs")
+        .accessibilityIdentifier("tab-overflow-menu")
+    }
+
+    private func handleTabDrop(items: [String], at toIndex: Int) -> Bool {
+        guard let idString = items.first,
+              let draggedId = UUID(uuidString: idString),
+              let fromIndex = projectViewModel.openTabs.firstIndex(where: { $0.id == draggedId }),
+              fromIndex != toIndex
+        else {
+            dropTargetIndex = nil
+            return false
+        }
+
+        let selectedTabId = projectViewModel.selectedTabIndex.flatMap {
+            projectViewModel.openTabs.indices.contains($0) ? projectViewModel.openTabs[$0].id : nil
+        }
+
+        withAnimation(reduceMotion ? nil : .rosewoodFast) {
+            var tabs = projectViewModel.openTabs
+            let tab = tabs.remove(at: fromIndex)
+            let insertIndex = fromIndex < toIndex ? toIndex - 1 : toIndex
+            tabs.insert(tab, at: insertIndex)
+            projectViewModel.openTabs = tabs
+
+            if let selectedTabId {
+                projectViewModel.selectedTabIndex = tabs.firstIndex(where: { $0.id == selectedTabId })
+            }
+        }
+
+        dropTargetIndex = nil
+        return true
     }
 }
 
@@ -74,6 +164,7 @@ struct TabItemView: View {
                     Image(systemName: "circle.fill")
                         .font(.system(size: 8))
                         .foregroundColor(themeColors.warning)
+                        .accessibilityLabel("unsaved changes")
                 }
 
                 ZStack {

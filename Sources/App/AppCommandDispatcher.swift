@@ -35,6 +35,9 @@ enum AppCommand: Equatable {
     case duplicateLine
     case deleteLine
     case joinLines
+    case zoomIn
+    case zoomOut
+    case zoomReset
 }
 
 final class AppCommandDispatcher: ObservableObject {

@@ -4,6 +4,8 @@ struct CommandPaletteView: View {
     @EnvironmentObject var projectViewModel: ProjectViewModel
     @EnvironmentObject var commandPaletteViewModel: CommandPaletteViewModel
     @EnvironmentObject private var configService: ConfigurationService
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     let mode: PaletteMode
 
@@ -96,12 +98,18 @@ struct CommandPaletteView: View {
 
     var body: some View {
         ZStack {
-            themeColors.overlayScrim
-                .ignoresSafeArea()
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    projectViewModel.closeCommandPalette()
+            Group {
+                if reduceTransparency {
+                    themeColors.background
+                } else {
+                    themeColors.overlayScrim
                 }
+            }
+            .ignoresSafeArea()
+            .contentShape(Rectangle())
+            .onTapGesture {
+                projectViewModel.closeCommandPalette()
+            }
 
             VStack(spacing: 0) {
                 headerView
@@ -258,7 +266,7 @@ struct CommandPaletteView: View {
             resultsScrollView
                 .onChange(of: selectedIndex) { _, newIndex in
                     // Keep the keyboard-selected row visible as the user arrows past the fold.
-                    withAnimation(.rosewoodFast) {
+                    withAnimation(reduceMotion ? nil : .rosewoodFast) {
                         proxy.scrollTo(newIndex, anchor: .center)
                     }
                 }

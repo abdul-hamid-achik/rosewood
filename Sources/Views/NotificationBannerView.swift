@@ -1,14 +1,16 @@
+import AppKit
 import SwiftUI
 import Combine
 
 struct NotificationBannerView: View {
     @StateObject private var notificationManager = NotificationManager.shared
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(spacing: RosewoodUI.spacing3) {
             ForEach(notificationManager.notifications) { notification in
                 NotificationBanner(item: notification)
-                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .transition(reduceMotion ? .identity : .move(edge: .top).combined(with: .opacity))
             }
         }
         .padding(.horizontal, RosewoodUI.spacing6)
@@ -53,6 +55,8 @@ struct NotificationBanner: View {
                     .foregroundColor(themeColors.subduedText)
                     .lineLimit(2)
             }
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(.isStaticText)
 
             Spacer()
 
@@ -92,6 +96,15 @@ struct NotificationBanner: View {
             RoundedRectangle(cornerRadius: RosewoodUI.radiusMedium)
                 .stroke(tint.opacity(RosewoodUI.borderOpacitySubtle), lineWidth: 1)
         )
+        .onAppear {
+            NSAccessibility.post(
+                element: NSApp as Any,
+                notification: .announcementRequested,
+                userInfo: [
+                    NSAccessibility.NotificationUserInfoKey.announcement: "\(item.title): \(item.message)"
+                ]
+            )
+        }
     }
 }
 

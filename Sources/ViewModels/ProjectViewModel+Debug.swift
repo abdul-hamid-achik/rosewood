@@ -76,22 +76,22 @@ extension ProjectViewModel {
             return
         }
 
-        guard prepareForSessionTransition(
-            title: "Start Debugger",
-            message: "Do you want to save changes before starting the debug session?"
-        ) else {
-            return
-        }
-
-        showDebugSidebar()
-        bottomPanel = .debugConsole
-        persistDebugPreferences()
-        clearStoppedLocation()
-        debugSessionState = .starting
-        appendDebugConsole("Starting \"\(configuration.name)\"...", kind: .info)
-
         Task { @MainActor [weak self] in
             guard let self else { return }
+            guard await self.prepareForSessionTransition(
+                title: "Start Debugger",
+                message: "Do you want to save changes before starting the debug session?"
+            ) else {
+                return
+            }
+
+            self.showDebugSidebar()
+            self.bottomPanel = .debugConsole
+            self.persistDebugPreferences()
+            self.clearStoppedLocation()
+            self.debugSessionState = .starting
+            self.appendDebugConsole("Starting \"\(configuration.name)\"...", kind: .info)
+
             do {
                 let result = try await self.debugSessionService.start(
                     configuration: configuration,
@@ -149,9 +149,8 @@ extension ProjectViewModel {
     func openBreakpoint(_ breakpoint: Breakpoint) {
         let fileURL = URL(fileURLWithPath: breakpoint.filePath)
         openFile(at: fileURL)
-        if let selectedTabIndex, openTabs.indices.contains(selectedTabIndex) {
-            openTabs[selectedTabIndex].pendingLineJump = breakpoint.line
-        }
+        guard let selectedTabIndex, openTabs.indices.contains(selectedTabIndex) else { return }
+        openTabs[selectedTabIndex].pendingLineJump = breakpoint.line
     }
 
     func openNextBreakpoint() {
@@ -275,9 +274,8 @@ extension ProjectViewModel {
             guard let filePath, let line else { return }
             let fileURL = URL(fileURLWithPath: filePath)
             openFile(at: fileURL)
-            if let selectedTabIndex, openTabs.indices.contains(selectedTabIndex) {
-                openTabs[selectedTabIndex].pendingLineJump = line
-            }
+            guard let selectedTabIndex, openTabs.indices.contains(selectedTabIndex) else { return }
+            openTabs[selectedTabIndex].pendingLineJump = line
         case .terminated:
             clearStoppedLocation()
             appendDebugConsole("Debug session terminated.", kind: .info)
@@ -304,9 +302,8 @@ extension ProjectViewModel {
         let fileURL = URL(fileURLWithPath: path)
         guard FileManager.default.fileExists(atPath: fileURL.path) else { return }
         openFile(at: fileURL)
-        if let selectedTabIndex, openTabs.indices.contains(selectedTabIndex) {
-            openTabs[selectedTabIndex].pendingLineJump = frame.line
-        }
+        guard let selectedTabIndex, openTabs.indices.contains(selectedTabIndex) else { return }
+        openTabs[selectedTabIndex].pendingLineJump = frame.line
     }
 
     /// Fetch the scopes (Locals/Arguments/…) for the selected frame as depth-0 variable rows.
